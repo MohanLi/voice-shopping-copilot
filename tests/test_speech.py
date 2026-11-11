@@ -18,6 +18,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+from fakes import FakeEars, FakeVoice
 from voiceshop.agents.listen import after_listen, listen_node
 from voiceshop.assistant import Assistant
 from voiceshop.guardrails import policy
@@ -54,37 +55,7 @@ from voiceshop.speech.tts import SentenceAudio, VoiceOutput, choose_speed, speak
 LIMIT = 15.0
 
 
-# ------------------------------------------------------------------ stand-ins
-class FakeVoice:
-    """A synthesizer whose audio length is exactly ``seconds_per_word`` per spoken word."""
-
-    name = "fake"
-    voice = "test"
-
-    def __init__(self, seconds_per_word: float = 0.33, sample_rate: int = 8000) -> None:
-        self.seconds_per_word, self.sample_rate = seconds_per_word, sample_rate
-        self.calls: list[tuple[str, float]] = []
-
-    def synthesize(self, text: str, speed: float = 1.0) -> tuple[np.ndarray, int]:
-        self.calls.append((text, speed))
-        n = int(spoken_words(text) * self.seconds_per_word / speed * self.sample_rate)
-        return (0.3 * np.sign(np.sin(np.arange(n) * 0.5))).astype(np.float32), self.sample_rate       # loud from the first sample
-
-
-class FakeEars:
-    """A transcriber that returns what it is told to."""
-
-    name = "fake"
-
-    def __init__(self, transcript: Transcript) -> None:
-        self.transcript = transcript
-        self.heard: list[Any] = []
-
-    def transcribe(self, audio: Any, *, word_timestamps: bool = False) -> Transcript:
-        self.heard.append(audio)
-        return self.transcript
-
-
+# ------------------------------------------------------------------ helpers
 def tone(seconds: float, rate: int = 16000, hz: float = 440.0, level: float = 0.3) -> np.ndarray:
     return (level * np.sin(2 * np.pi * hz * np.arange(int(seconds * rate)) / rate)).astype(np.float32)
 

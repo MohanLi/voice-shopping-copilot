@@ -293,7 +293,7 @@ class FinalAnswer(BaseModel):
     citations: list[Citation] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
     follow_up_question: str | None = None
-    kind: Literal["recommendation", "abstain", "clarify", "chitchat", "out_of_scope", "refusal", "error"] = "recommendation"
+    kind: Literal["recommendation", "abstain", "clarify", "chitchat", "out_of_scope", "refusal", "emergency", "support", "error"] = "recommendation"
     grounded_by: Literal["llm+critic", "template"] | None = None
     revisions: int = 0
 

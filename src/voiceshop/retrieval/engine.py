@@ -165,8 +165,17 @@ class SearchEngine:
             ranking = [doc for doc, _ in self.lexical.search(query, n, mask)]
             lexical_rank = {doc: r for r, doc in enumerate(ranking, start=1)}
             rankings.append(ranking)
-        fused = [doc for doc, _ in reciprocal_rank_fusion(rankings, k=self.rrf_k)]
+        # Rankings are [dense, lexical]. On a tie the lexical order decides (see docs/decisions.md, 2026-11-11: tie-breaking).
+        fused = [doc for doc, _ in reciprocal_rank_fusion(rankings, k=self.rrf_k, prefer=self.tie_break(len(rankings)))]
         return fused, dense_rank, lexical_rank
+
+    HYBRID_TIES: Literal["lexical", "dense", "index"] = "lexical"
+    RERANK_TIES: Literal["reranker", "retrieval", "index"] = "reranker"
+
+    def tie_break(self, n_rankings: int) -> int | None:
+        if n_rankings < 2 or self.HYBRID_TIES == "index":
+            return None
+        return 1 if self.HYBRID_TIES == "lexical" else 0
 
     def search(
         self,
@@ -225,7 +234,8 @@ class SearchEngine:
             if rerank_mode == "replace":
                 new_head = by_score
             else:
-                new_head = [doc for doc, _ in reciprocal_rank_fusion([head, by_score], k=self.rrf_k, weights=[1.0, self.rerank_weight])]
+                prefer = {"reranker": 1, "retrieval": 0, "index": None}[self.RERANK_TIES]
+                new_head = [doc for doc, _ in reciprocal_rank_fusion([head, by_score], k=self.rrf_k, weights=[1.0, self.rerank_weight], prefer=prefer)]
             ordered = [*new_head, *fused[len(head):]]
             scores = {doc: 1.0 / (rank + 1) for rank, doc in enumerate(ordered)}
             timings["rerank"] = (time.perf_counter() - t) * 1000

@@ -26,8 +26,8 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 
 | ID | Requirement | Where it lives | Status |
 |----|-------------|----------------|:------:|
-| S1 | Voice-to-voice interaction for product discovery and comparison | `speech/`, `agents/graph.py`, `api/`, `frontend/` | ⬜ |
-| S2 | Multi-agent workflow: Intent → Plan → Retrieve/Tools → Answer/Critic → Voice response | `agents/` | 🔄 |
+| S1 | Voice-to-voice interaction for product discovery and comparison | `speech/`, `agents/graph.py` (`voiceshop voice <file>` runs voice to voice end to end); `api/`, `frontend/` still to come | 🔄 |
+| S2 | Multi-agent workflow: Intent → Plan → Retrieve/Tools → Answer/Critic → Voice response | `agents/` (listen, guard, router, planner, retriever, reconcile, answerer, critic, finalize, voice); live run on the Mac 2026-11-11 | ✅ |
 | S3 | LangGraph orchestrates the agents | `agents/graph.py` | ✅ |
 | S4 | Agentic RAG over a private product catalog | `retrieval/`, `agents/retriever.py` | ✅ |
 | S5 | One MCP server with two tools (private retrieval + live web search) | `mcp_server/` | ✅ |
@@ -35,7 +35,7 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 | S7 | Basic guardrails and safety checks | `guardrails/` | ✅ |
 | S8 | ProofAgent evaluation of the completed agent | `eval/proofagent/` | ⬜ |
 | S9 | UI shows transcript, agent execution, results, citations, evaluation evidence | `frontend/` | ⬜ |
-| S10 | ASR/TTS fragment-based (streaming optional) | `speech/` | ⬜ |
+| S10 | ASR/TTS fragment-based (streaming optional) | `speech/` (fragment in, fragment out; sentence-level streaming of the reply as an extra) | ✅ |
 
 ### 2.2 Agentic orchestration (LangGraph)
 
@@ -47,7 +47,7 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 | O4 | Planner decides which sources and tools to use (private RAG, live web, or both) | `agents/planner.py` | ✅ |
 | O5 | Planner defines retrieval fields and comparison criteria | `agents/planner.py` | ✅ |
 | O6 | Retriever searches the private catalog with vector search + metadata filters | `agents/retriever.py`, `retrieval/engine.py` | ✅ |
-| O7 | Retriever invokes MCP tools for current prices / availability when appropriate | `agents/retriever.py` | 🔄 |
+| O7 | Retriever invokes MCP tools for current prices / availability when appropriate | `agents/retriever.py` (function calling over the MCP-discovered tools; live Serper run 2026-11-11) | ✅ |
 | O8 | Retriever reconciles conflicting information | `agents/reconcile.py` | ✅ |
 | O9 | Answerer generates a concise recommendation with citations | `agents/answerer.py`, `agents/finalize.py` | ✅ |
 | O10 | Critic verifies grounding against retrieved evidence; safety and response-quality checks | `agents/answerer.py` (critic node), `guardrails/output.py` | ✅ |
@@ -57,10 +57,10 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 
 | ID | Requirement | Where it lives | Status |
 |----|-------------|----------------|:------:|
-| A1 | Whisper (or comparable) ASR | `speech/asr.py` (faster-whisper) | ⬜ |
-| A2 | Fragment-based recording (WAV/MP3) | `api/`, `frontend/` | ⬜ |
+| A1 | Whisper (or comparable) ASR | `speech/asr.py` (faster-whisper, own audio decoding, transcript status) | ✅ |
+| A2 | Fragment-based recording (WAV/MP3) | `speech/audio.py` decodes WAV, MP3, WebM/Opus, MP4/AAC, FLAC; recording in `frontend/` still to come | 🔄 |
 | A3 | Handles common accents and speech variations (measured) | `evals/asr_eval.py` | ⬜ |
-| A4 | Timestamps returned when available | `speech/asr.py` | ⬜ |
+| A4 | Timestamps returned when available | `speech/asr.py` (segment timestamps always; word timestamps on request) | ✅ |
 
 ### 2.4 Agentic RAG — private + live data
 
@@ -71,7 +71,7 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 | R3 | Metadata stored: brand, price, rating, ingredients, category | `data/schema.py` | ✅ |
 | R4 | Hybrid retrieval: vector similarity + metadata filtering | `retrieval/engine.py` | ✅ |
 | R5 | Reranker (optional in the assignment) | `retrieval/rerank.py` | ✅ |
-| R6 | MCP web search used for current price / availability | `mcp_server/web.py`, `mcp_server/providers/` | 🔄 |
+| R6 | MCP web search used for current price / availability | `mcp_server/web.py`, `mcp_server/providers/` (live Serper check passed 2026-11-11; `price_max`) | ✅ |
 | R7 | Product matches reconciled using SKU, brand, title or similarity | `agents/reconcile.py` | ✅ |
 | R8 | `products.parquet` with id, title, brand, category, price, rating, features, ingredients | `data/processed/` | ✅ |
 | R9 | `reviews.parquet` (optional): product_id, stars, summary/snippets | stretch (section 3.5) | ⬜ |
@@ -99,9 +99,9 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 
 | ID | Requirement | Where it lives | Status |
 |----|-------------|----------------|:------:|
-| T1 | Fragment-based synthesis with a TTS solution | `speech/tts.py` (Kokoro; OpenAI/ElevenLabs optional) | ⬜ |
-| T2 | Spoken summary of about 15 s or less | `agents/voice.py` (enforced + measured) | ⬜ |
-| T3 | Spoken summary aligned with the detailed results and citations on screen | `agents/answerer.py`, `agents/critic.py` | ⬜ |
+| T1 | Fragment-based synthesis with a TTS solution | `speech/tts.py` (Kokoro, sentence by sentence; OpenAI/ElevenLabs optional) | ✅ |
+| T2 | Spoken summary of about 15 s or less | `speech/tts.py` (limit enforced on the audio; `tests/test_speech.py`), `agents/finalize.py` (time-based assembly) | ✅ |
+| T3 | Spoken summary aligned with the detailed results and citations on screen | `agents/finalize.py` (spoken text, table and citations built from the same evidence handles), `agents/answerer.py` | ✅ |
 
 ### 2.7 User interface
 
@@ -153,7 +153,7 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 
 | ID | Requirement | Where it lives | Status |
 |----|-------------|----------------|:------:|
-| D1 | At least one live MCP web comparison demonstrated | demo script, `docs/evaluation.md` | ⬜ |
+| D1 | At least one live MCP web comparison demonstrated | live runs logged on the Mac 2026-11-11 (`voiceshop ask`, `scripts/mac_refresh.sh` step 7); demo script and write-up still to come | 🔄 |
 | D2 | Docs: data preprocessing and indexing | `docs/data.md`, `notebooks/01_data_ingestion.ipynb` | ⬜ |
 | D3 | Docs: LangGraph architecture | `docs/architecture.md` | ⬜ |
 | D4 | Docs: MCP server and tool schemas | `docs/mcp.md` | ✅ |

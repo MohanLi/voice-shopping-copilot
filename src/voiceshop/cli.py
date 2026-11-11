@@ -291,6 +291,23 @@ def say(
                   highlight=False)
 
 
+@app.command()
+def serve(
+    host: Annotated[str | None, typer.Option(help="Interface to bind (default: API_HOST, 127.0.0.1)")] = None,
+    port: Annotated[int | None, typer.Option(help="Port (default: API_PORT, 8000)")] = None,
+    reload: Annotated[bool, typer.Option("--reload", help="Restart when source files change (development)")] = False,
+) -> None:
+    """Start the web app: the API and, when it has been built, the UI (http://127.0.0.1:8000)."""
+    import uvicorn
+
+    from voiceshop.config import get_settings
+
+    settings = get_settings()
+    _logging()
+    uvicorn.run("voiceshop.api.app:create_app", factory=True, host=host or settings.api_host, port=port or settings.api_port, reload=reload,
+                log_level="info")
+
+
 # ------------------------------------------------------------------------ mcp
 mcp_app = typer.Typer(no_args_is_help=True, help="The MCP server (rag.search, web.search) and a client to inspect it")
 app.add_typer(mcp_app, name="mcp")

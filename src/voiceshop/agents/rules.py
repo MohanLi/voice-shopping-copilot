@@ -250,8 +250,9 @@ def search_query(constraints: Constraints, fallback: str = "") -> str:
 def plan(route_decision: RouteDecision, constraints: Constraints, user_text: str, shown: list[dict[str, Any]] | None, *, web_available: bool) -> Plan:
     query = search_query(constraints, user_text)
     low = f"{user_text} {query}".lower()
-    if route_decision.intent in ("follow_up", "compare") and shown and not constraints.product and not constraints.wants_current_info \
-            and not (constraints.budget_max or constraints.age_years or constraints.sort != "relevance"):
+    own = route_decision.constraints                     # what THIS turn said; ``constraints`` also carries what earlier turns said
+    if route_decision.intent in ("follow_up", "compare") and shown and not own.wants_current_info and (route_decision.refers_to or not own.product) \
+            and not (own.budget_max or own.age_years or own.sort != "relevance"):
         return Plan(strategy="from_memory", reason="The products on screen can answer this follow-up.", comparison_criteria=["price"], retrieval_fields=["price"])
     if route_decision.intent in ("follow_up", "compare") and shown and constraints.wants_current_info and web_available:
         positions = route_decision.refers_to or [1]

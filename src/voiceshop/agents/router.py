@@ -28,7 +28,8 @@ from voiceshop.guardrails.input import screen_input
 from voiceshop.llm.ledger import BudgetExceededError
 from voiceshop.prompts import load_prompt
 
-_GUARD_KIND = {"empty": "clarify", "too_long": "clarify"}
+# How a reply of the input guard is labelled; a screen shows an emergency or a support line differently from a refusal.
+_GUARD_KIND = {"empty": "clarify", "too_long": "clarify", "emergency": "emergency", "self_harm": "support"}
 
 
 def begin_node(state: TurnState) -> dict[str, Any]:
