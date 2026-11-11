@@ -1,6 +1,6 @@
 # PROGRESS — Voice Shopping Copilot build log
 
-**Last updated:** 2026-11-11 05:15 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
+**Last updated:** 2026-11-11 07:30 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
 (`~/Desktop/2026 Autumn/Applied Generative AI/Final Project/voice-shopping-copilot`).
 **The folder on the Mac is the source of truth.**
 
@@ -27,12 +27,13 @@ Legend: ✅ done · 🔄 in progress · ⏳ waiting on Kevin · ⬜ not started
 | 2 | MCP server: `rag.search` + `web.search` (schemas, cache, rate limit, logging, both transports) | ✅ | live Serper check passed on the Mac 2026-11-11; `docs/mcp.md`; `tests/test_mcp_*.py` |
 | 3 | LangGraph agents (Router, Planner, Retriever, Answerer, Critic), guardrails, prompts, memory | ✅ | four live turns on the Mac 2026-11-11 (Claude + Serper); three defects found there are fixed and tested (`docs/decisions.md`, "First live run") |
 | 4 | Speech: faster-whisper ASR, Kokoro TTS, ≤15 s spoken summary, voice turns | ✅ (⏳ run on the Mac) | `src/voiceshop/speech/`, `agents/listen.py`, `voiceshop voice / transcribe / say`, `tests/test_speech.py` |
-| 5 | FastAPI service + React UI | 🔄 | API done and tested (`src/voiceshop/api/`, `voiceshop serve`, `tests/test_api.py`); **React UI not started** |
+| 5 | FastAPI service + React UI | ✅ (⏳ try it on the Mac) | `src/voiceshop/api/`, `frontend/` (bundle in `frontend/dist`), `voiceshop serve`, `tests/test_api.py`, `frontend/e2e/smoke.cjs` (passes here, including a spoken request through a fake microphone); screenshots in `docs/images/` |
 | 6 | ProofAgent evaluation, component metrics, failure analysis with before/after | ⬜ | material for failure analyses so far: the age-field finding, the over-eager critic, the false reconciliation matches, the unanswerable flagship query |
 | 7 | Beyond-requirements bundles (retrieval & grounding, eval rigor, voice UX, engineering showcase) | 🔄 | retrieval & grounding bundle largely in place; sentence-level speech streaming in place |
 | 8 | Documentation, verification pass against `docs/objectives.md` | ⬜ | |
 
-Tests: 472 passing (`python -m pytest tests -q`, ~18 s, no key or network needed) plus one behind `--run-models`.
+Tests: 472 passing (`python -m pytest tests -q`, ~18 s, no key or network needed) plus one behind `--run-models`,
+and the browser check `node frontend/e2e/smoke.cjs` against a running server.
 Lint clean (`ruff check src tests scripts eval`).
 
 ## Results so far
@@ -53,25 +54,25 @@ Per call: router 1.1-1.5 s, planner 1.5-1.8 s, answerer 1.6-2.1 s, critic 0.6-1.
 
 ## Next action
 
-**Phase 5, the React UI** (`frontend/`, Vite + TypeScript), on top of the finished API:
-microphone recording (MediaRecorder -> `POST /api/voice`) and file upload, editable transcript with the
-confidence badge, live step log from the event stream, the top-3 comparison table (Product, Price, Rating,
-Ingredients, Source, Citation) with thumbnails, citations (document ids and live links), notes, audio playback
-that starts with the first `speech_sentence`, a tools panel (`/api/tools`), an evaluation panel
-(`/api/evaluation`), a status chip from `/api/health` (model, live or offline web data). Build to
-`frontend/dist` (served by `voiceshop serve`), commit the bundle, add a Playwright smoke test.
-
-Then Phase 6 (evaluation):
+**Phase 6, evaluation:**
 - ProofAgent harness around `Assistant` (adapter, context, trap pack, governance profile, scorecard);
 - component evals: router, planner, groundedness with planted errors, WER by accent (Kokoro's accented voices
   as a synthetic test set), TTS duration, latency and cost;
 - reconciliation accuracy on real data: for ~40 catalog products with a model number, fetch live listings and
   use "the listing title contains the same model number" as the label for the title-only matcher;
 - a record/replay search provider so evaluation runs are repeatable and cost no search credits;
-- stage attribution (ASR -> Router -> Planner -> RAG/MCP -> Answerer -> TTS) and the failure analyses.
+- stage attribution (ASR -> Router -> Planner -> RAG/MCP -> Answerer -> TTS) and the failure analyses
+  (material so far: the age field, the over-eager critic, false reconciliation matches, the unanswerable
+  flagship query, the over-long spoken lead);
+- show the scorecard in the UI's evaluation panel (it already lists everything under `eval/results`).
 
-Also open:
-- `docs/retrieval.md`, `docs/data.md`, the ingestion notebook;
+Then Phase 7/8: README with results and screenshots, `docs/architecture.md`, `docs/retrieval.md`, `docs/data.md`,
+`docs/safety.md`, `docs/evaluation.md`, the ingestion notebook, CI, Docker, a demo GIF, the second-provider
+run (Ollama), light checkpoint documents.
+
+Open points:
+- UI polish once it has been seen on the Mac with live data: product pictures (2020 Amazon links may be dead;
+  live listings carry thumbnails), reply latency, a history view of earlier turns;
 - the MCP Python SDK has a 2.x line (`FastMCP` is `MCPServer` there); the project is pinned to 1.x and a
   deliberate migration is a candidate for the engineering bundle;
 - latency: the Critic's model call could run while the first sentence is synthesized.
@@ -82,6 +83,7 @@ Also open:
 |---|------|-----------------|------------|
 | 1 | Run the refresh again (about 10 minutes, a few cents) | `bash scripts/mac_refresh.sh` in the project folder | checks the fixes against the live APIs and runs voice to voice with the real speech models on the Mac for the first time (step 8) |
 | 2 | Listen to one reply | open the newest `.wav` in `logs/audio/` after step 8 | a human check that the voice sounds right and is not rushed |
+| 2b | Try the app | `source .venv/bin/activate && voiceshop serve`, then open http://127.0.0.1:8000 and press Talk | first use with a real microphone and live data |
 | 3 | (When convenient) capped Anthropic key | claude.ai -> Settings -> Billing -> API credits; create a workspace with a $50 limit | replaces the reused NLP-project key |
 
 Done by Kevin so far: bootstrap on the Mac (dataset + models), Serper key in `.env`, two refresh runs
