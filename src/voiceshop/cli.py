@@ -4,9 +4,12 @@
     voiceshop enrich          optional LLM attribute extraction -> data/derived/
     voiceshop index           embeddings + Qdrant + BM25 -> data/index/
     voiceshop search "…"      query the index directly (no LLM)
+    voiceshop mcp serve       start the MCP server (stdio or streamable HTTP)
+    voiceshop mcp tools       connect as a client and print what discovery returns
+    voiceshop mcp call …      call rag.search / web.search through MCP
     voiceshop config          effective configuration, secrets masked
 
-Further commands (mcp, ask, voice, serve, eval) are added by the modules that implement them.
+Further commands (ask, voice, serve, eval) are added by the modules that implement them.
 """
 
 from __future__ import annotations
@@ -132,6 +135,100 @@ def search(
     for i, h in enumerate(res.results, 1):
         table.add_row(str(i), h.doc_id, f"${h.price:.2f}", h.brand or "-", h.title[:60], h.age_label or "-", "; ".join(h.constraint_notes) or "-")
     console.print(table)
+
+
+# ------------------------------------------------------------------------ mcp
+mcp_app = typer.Typer(no_args_is_help=True, help="The MCP server (rag.search, web.search) and a client to inspect it")
+app.add_typer(mcp_app, name="mcp")
+
+
+@mcp_app.command("serve")
+def mcp_serve(
+    transport: Annotated[str | None, typer.Option(help="stdio | http (default: MCP_TRANSPORT)")] = None,
+    host: Annotated[str | None, typer.Option(help="HTTP bind address (default: MCP_HTTP_HOST)")] = None,
+    port: Annotated[int | None, typer.Option(help="HTTP port (default: MCP_HTTP_PORT)")] = None,
+) -> None:
+    """Start the MCP server and block. With stdio, stdout is the protocol channel (logs go to stderr)."""
+    from voiceshop.mcp_server.server import run
+
+    if transport not in (None, "stdio", "http"):
+        raise typer.BadParameter("transport must be 'stdio' or 'http'")
+    run(transport, host, port)  # type: ignore[arg-type]
+
+
+def _with_client(coro_factory):  # type: ignore[no-untyped-def]
+    """Open an MCP session the way the agents do (stdio subprocess, or MCP_SERVER_URL) and run one coroutine with it."""
+    import asyncio
+
+    from voiceshop.mcp_client import MCPConnectionError, MCPToolClient
+
+    async def main():  # type: ignore[no-untyped-def]
+        async with MCPToolClient() as client:
+            return await coro_factory(client)
+
+    try:
+        return asyncio.run(main())
+    except MCPConnectionError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+
+@mcp_app.command("tools")
+def mcp_tools(
+    schemas: Annotated[bool, typer.Option("--schemas", help="Also print each tool's input and output JSON Schema")] = False,
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Run MCP discovery (tools/list, resources/list) and show what the server advertises."""
+
+    async def work(client):  # type: ignore[no-untyped-def]
+        return client.describe(), client.tools
+
+    described, tools = _with_client(work)
+    if as_json:
+        payload = {**described, "schemas": {t.name: {"input": t.input_schema, "output": t.output_schema} for t in tools}} if schemas else described
+        console.print_json(json.dumps(payload, default=str))
+        return
+    console.print(f"server: [bold]{described['server'].get('name')}[/bold] {described['server'].get('version')}  "
+                  f"protocol {described['server'].get('protocol')}  via {described['transport']}")
+    table = Table("tool", "alias for the LLM", "arguments (required*)", "read-only", "open world")
+    for t in described["tools"]:
+        args = ", ".join(f"{a}*" if a in t["required"] else a for a in t["arguments"])
+        table.add_row(t["name"], t["alias"], args, str(t["read_only"]), str(t["open_world"]))
+    console.print(table)
+    for r in described["resources"]:
+        console.print(f"resource: {r['uri']}  [dim]{r['description']}[/dim]")
+    for t in tools:
+        console.print(f"\n[bold]{t.name}[/bold] - {t.title}\n{t.description}")
+        if schemas:
+            console.print("[dim]input schema[/dim]")
+            console.print_json(json.dumps(t.input_schema))
+            console.print("[dim]output schema[/dim]")
+            console.print_json(json.dumps(t.output_schema))
+
+
+@mcp_app.command("call")
+def mcp_call(
+    tool: Annotated[str, typer.Argument(help="rag.search or web.search")],
+    arguments: Annotated[str, typer.Argument(help='JSON arguments, e.g. \'{"query": "wooden puzzle", "filters": {"price_max": 20}}\'')],
+    full: Annotated[bool, typer.Option("--full", help="Print the whole structured result instead of the compact view")] = False,
+) -> None:
+    """Call one tool through MCP and print the result (the same path the agents use)."""
+    from voiceshop.mcp_client.adapters import render_for_model
+
+    try:
+        args = json.loads(arguments)
+    except ValueError as exc:
+        raise typer.BadParameter(f"arguments must be JSON: {exc}") from exc
+
+    async def work(client):  # type: ignore[no-untyped-def]
+        return await client.call(tool, args)
+
+    result = _with_client(work)
+    if not result.ok:
+        console.print(f"[red]error[/red] ({result.duration_ms:.0f} ms): {result.error}")
+        raise typer.Exit(1)
+    console.print_json(json.dumps(result.data) if full else render_for_model(result))
+    console.print(f"[dim]{result.tool}: {len(result.results)} result(s) in {result.duration_ms:.0f} ms[/dim]")
 
 
 if __name__ == "__main__":
