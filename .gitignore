@@ -7,9 +7,10 @@
 data/raw/
 data/processed/
 data/index/
-data/enrichment/
 data/transfer/
+# small, committed inputs: a raw sample for tests and the cached LLM attribute extraction
 !data/sample/
+!data/derived/
 
 # --- local models (hundreds of MB; fetched by scripts/download_assets.py) ---
 models/
