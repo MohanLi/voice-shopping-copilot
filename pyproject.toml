@@ -23,15 +23,16 @@ classifiers = [
 # Runtime: no PyTorch. Embeddings/reranker/TTS run on onnxruntime, Whisper on CTranslate2.
 dependencies = [
     # --- agent orchestration + model-agnostic LLM access ---
-    "langgraph>=1.2",
-    "langgraph-checkpoint-sqlite>=3.0",
-    "langchain>=1.4",
-    "langchain-core>=1.7",
-    "langchain-anthropic>=1.7",
-    "langchain-openai>=1.7",
-    "langchain-ollama>=1.1",
+    "langgraph>=1.2,<2",
+    "langgraph-checkpoint-sqlite>=3.0,<4",
+    "langchain>=1.4,<2",
+    "langchain-core>=1.7,<2",
+    "langchain-anthropic>=1.7,<2",
+    "langchain-openai>=1.7,<2",
+    "langchain-ollama>=1.1,<2",
     # --- MCP server + client ---
-    "mcp>=1.30",
+    # The 1.x SDK line (FastMCP). 2.x renames FastMCP to MCPServer and McpError to MCPError; see docs/decisions.md.
+    "mcp>=1.30,<2",
     # --- retrieval ---
     "qdrant-client>=1.20",
     "fastembed>=0.9",
@@ -39,7 +40,8 @@ dependencies = [
     "PyStemmer>=2.2",
     "rapidfuzz>=3.14",
     # --- speech ---
-    "faster-whisper>=1.2",
+    "faster-whisper>=1.2,<2",
+    "av>=12",                 # audio decoding (WAV, MP3, WebM/Opus, MP4) for speech recognition
     "kokoro-onnx>=0.6",
     "soundfile>=0.13",
     "numpy>=2.0",

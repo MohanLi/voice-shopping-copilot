@@ -41,7 +41,9 @@ echo "-- python: $($PY --version)"
 # ------------------------------------------------------------ 2. Dependencies
 echo "-- installing the project and its extras (a few minutes the first time)"
 if command -v uv >/dev/null 2>&1; then
-  uv pip install --python "$PY" -e ".[download,eval,dev]" || { echo "dependency install failed"; exit 1; }
+  # exact versions from uv.lock (what the code was tested with); pyproject.toml ranges only as a fallback
+  uv sync --frozen --extra download --extra eval --extra dev \
+    || uv pip install --python "$PY" -e ".[download,eval,dev]" || { echo "dependency install failed"; exit 1; }
 else
   "$PY" -m pip install --upgrade pip && "$PY" -m pip install -e ".[download,eval,dev]" \
     || { echo "dependency install failed"; exit 1; }
