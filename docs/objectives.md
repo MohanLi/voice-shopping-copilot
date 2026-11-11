@@ -155,15 +155,15 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 |----|-------------|----------------|:------:|
 | D1 | At least one live MCP web comparison demonstrated | live runs logged on the Mac 2026-11-11 (`voiceshop ask`, `scripts/mac_refresh.sh` step 7); demo script and write-up still to come | 🔄 |
 | D2 | Docs: data preprocessing and indexing | `docs/data.md`, `notebooks/01_data_ingestion.ipynb` | ⬜ |
-| D3 | Docs: LangGraph architecture | `docs/architecture.md` | ⬜ |
+| D3 | Docs: LangGraph architecture | `docs/architecture.md` (workflow, node responsibilities, state and memory, evidence handles, failure handling, event stream) | ✅ |
 | D4 | Docs: MCP server and tool schemas | `docs/mcp.md` | ✅ |
 | D5 | Docs: safety considerations | `docs/safety.md` | ⬜ |
 | D6 | Docs: evaluation methodology | `docs/evaluation.md` | ⬜ |
-| D7 | Setup instructions, `.env.example`, run/build scripts (index + MCP) | `README.md`, `scripts/`, `Makefile` | ⬜ |
+| D7 | Setup instructions, `.env.example`, run/build scripts (index + MCP) | `README.md` (quick start), `.env.example`, `uv.lock`, `scripts/bootstrap_mac.sh`, `scripts/mac_refresh.sh`, `voiceshop ingest / index / mcp serve / serve` | ✅ |
 | D8 | `prompts/` folder: system, router, planner, tool-call, answerer/critic, guardrail prompts and few-shots, each mapped to its node/agent/tool | `prompts/` | ✅ |
 | D9 | Checkpoint 1: proposal, problem definition, data slice, tools, ingestion notebook, related work | `docs/checkpoints/checkpoint1.md` | ⬜ |
 | D10 | Checkpoint 2: architecture diagram, LangGraph flow, MCP/tool calls, UI wireframe, RAG evaluation plan, MCP README + schemas, initial ProofAgent plan | `docs/checkpoints/checkpoint2.md` | ⬜ |
-| D11 | Repository with clean code and README | repo | ⬜ |
+| D11 | Repository with clean code and README | repo: README with results so far; evaluation write-up and remaining docs still to come | 🔄 |
 | D12 | ≤7-minute live demo and short presentation | later (not part of the technical build) | ⬜ |
 
 ## 3. Beyond the requirements

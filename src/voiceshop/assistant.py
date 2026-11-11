@@ -39,7 +39,7 @@ from voiceshop.agents.state import (
     new_turn_id,
 )
 from voiceshop.config import Settings, get_settings
-from voiceshop.llm.ledger import get_ledger
+from voiceshop.llm.ledger import BudgetExceededError, get_ledger
 from voiceshop.mcp_client import MCPToolClient
 from voiceshop.mcp_server.controls import redact
 
@@ -236,18 +236,26 @@ class Assistant:
         cost_before = get_ledger().total_usd
         config = self._config(thread_id)
         yield {"type": "start", "turn_id": turn_id, "thread_id": thread_id, "user_text": text}
-        async for mode, chunk in self.graph.astream({"user_text": text, "asr": asr, "turn_id": turn_id}, config, stream_mode=["updates", "custom"]):
-            if mode == "custom":
-                yield {"turn_id": turn_id, **chunk}
-                continue
-            for node, update in (chunk or {}).items():
-                for entry in (update or {}).get("trace") or []:
-                    yield {"type": "step", "turn_id": turn_id, "title": NODE_TITLES.get(node, node), **entry}
+        stopped: FinalAnswer | None = None
+        try:
+            async for mode, chunk in self.graph.astream({"user_text": text, "asr": asr, "turn_id": turn_id}, config, stream_mode=["updates", "custom"]):
+                if mode == "custom":
+                    yield {"turn_id": turn_id, **chunk}
+                    continue
+                for node, update in (chunk or {}).items():
+                    for entry in (update or {}).get("trace") or []:
+                        yield {"type": "step", "turn_id": turn_id, "title": NODE_TITLES.get(node, node), **entry}
+        except BudgetExceededError as exc:
+            # The spending limit is a hard stop: say so plainly instead of answering without the model or failing with a stack trace.
+            log.warning("turn stopped: %s", exc)
+            said = "I have reached the spending limit set for this project, so I can't answer right now."
+            stopped = FinalAnswer(spoken=said, text=f"{said} {str(exc)[0].upper()}{str(exc)[1:]}.", kind="error")
+            yield {"type": "step", "turn_id": turn_id, "node": "budget", "title": "Spending limit", "status": "error", "summary": str(exc), "duration_ms": None}
         state = (await self.graph.aget_state(config)).values
         trace = state.get("trace") or []
         result = TurnResult(
             turn_id=turn_id, thread_id=thread_id, user_text=state.get("user_text") or text,
-            answer=state.get("answer") or FinalAnswer(spoken="Sorry, something went wrong.", text="Sorry, something went wrong.", kind="error"),
+            answer=stopped or state.get("answer") or FinalAnswer(spoken="Sorry, something went wrong.", text="Sorry, something went wrong.", kind="error"),
             route=state.get("route"), plan=state.get("plan"), evidence=state.get("evidence"), critique=state.get("critique"),
             tool_log=state.get("tool_log") or [], trace=trace, speech=state.get("speech"), asr=asr,
             seconds=time.perf_counter() - started, cost_usd=max(0.0, get_ledger().total_usd - cost_before), timings_ms=_node_timings(trace),

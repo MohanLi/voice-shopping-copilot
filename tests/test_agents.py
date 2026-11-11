@@ -399,6 +399,23 @@ async def test_retriever_round_limit_and_fast_path(agent_env: Any, assistant: As
     assert calls["n"] == 1        # hashing index has no match-quality score, so the model is asked once; with web off it has nothing to add
 
 
+async def test_the_spending_limit_ends_a_turn_with_an_explanation_not_an_exception(agent_env: Any, assistant: Assistant, monkeypatch: pytest.MonkeyPatch) -> None:
+    from voiceshop.agents import router
+    from voiceshop.llm.ledger import BudgetExceededError
+
+    async def over_budget(*args: Any, **kwargs: Any) -> Any:
+        raise BudgetExceededError("LLM budget reached: $50.00 spent of $50.00 (raise LLM_BUDGET_USD to continue)")
+
+    register_fake("any-model", lambda messages, tools, schema: AIMessage(content="{}"))
+    agent_env(LLM_MODEL="fake:any-model")                      # model-driven agents, so the router makes a model call
+    monkeypatch.setattr(router, "call_structured", over_budget)
+    events = [event async for event in assistant.stream(BOARD_GAME)]
+    result = events[-1]["result"]
+    assert result.answer.kind == "error" and "spending limit" in result.answer.spoken and "LLM_BUDGET_USD" in result.answer.text
+    assert result.tools_called == [] and result.answer.table == []
+    assert any(e["type"] == "step" and e.get("node") == "budget" and e["status"] == "error" for e in events)
+
+
 # ================================================================ pure pieces
 def catalog_item(ref: str, title: str, price: float, **kw: Any) -> CatalogItem:
     return CatalogItem(ref=ref, doc_id=f"AMZ-{ref}", sku=kw.pop("sku", f"SKU{ref}"), title=title, price=price, **kw)

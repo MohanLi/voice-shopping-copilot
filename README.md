@@ -67,7 +67,7 @@ voiceshop ask "a wooden puzzle for my three year old under twenty dollars" "is t
 voiceshop voice question.m4a         # voice in, voice out; the reply is kept in logs/audio/
 voiceshop mcp tools                  # what the agents discover on the MCP server
 voiceshop eval retrieval             # the retrieval benchmark below
-python -m pytest tests -q            # 474 tests, about 20 s, no key or network needed
+python -m pytest tests -q            # 475 tests, about 20 s, no key or network needed
 ```
 
 `LLM_MODEL=fake:rules` runs every agent on rules only (no key, no cost); `LLM_MODEL=ollama:<model>` or any other
