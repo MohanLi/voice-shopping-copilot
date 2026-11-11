@@ -53,3 +53,6 @@ _sync/
 .DS_Store
 .vscode/
 .idea/
+
+# --- derived caches (speech evaluation clips, embeddings) ---
+data/cache/

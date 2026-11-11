@@ -521,6 +521,38 @@ async def test_a_recogniser_that_breaks_ends_the_turn_politely(voice_assistant: 
     assert "unavailable (OSError)" in result.asr["error"]
 
 
+# ---------------------------------------------------------- speech evaluation
+def test_speech_evaluation_compares_what_was_said_not_how_it_was_written() -> None:
+    from voiceshop.evals.speech_eval import add_noise, brand_heard, normalise, slots, word_error_rate
+
+    said = "I need a wooden puzzle for my three year old, under twenty dollars."
+    heard_text = "Um, I need a wooden puzzle for my three-year-old, under $20."
+    assert normalise(said) == normalise(heard_text) == "i need a wooden puzzle for my 3 year old under 20 dollars"
+    assert word_error_rate(said, heard_text) == 0.0
+    assert word_error_rate("less than twenty five dollars", "less than $25") == 0.0
+    assert word_error_rate("a wooden puzzle", "a wooden puddle") == pytest.approx(1 / 3)
+    assert word_error_rate("a wooden puzzle", "") == 1.0
+    assert slots(said) == slots(heard_text) == (20.0, 3.0)                                 # the values that become search filters survive
+    assert slots("under thirty dollars") != slots("under thirteen dollars")
+    assert brand_heard("Melissa & Doug", "the Melissa and Doug farm puzzle") and brand_heard("LEGO", "any Lego sets")
+    assert not brand_heard("Play-Doh", "show me play dough sets")                          # spelled differently: the brand filter would miss it
+    clean = tone(1.0)
+    noisy = add_noise(clean, 10.0)
+    snr = 10 * np.log10(np.mean(clean**2) / np.mean((noisy - clean) ** 2))
+    assert 9.0 < snr < 11.0 and noisy.dtype == np.float32
+
+
+def test_speech_evaluation_report_is_readable(tmp_path: Path) -> None:
+    from voiceshop.evals.speech_eval import asr_markdown
+
+    score = {"clips": 16, "wer_pct": 3.1, "budget_ok_pct": 100.0, "age_ok_pct": 87.5, "brand_ok_pct": None, "usable_pct": 100.0, "confidence": 0.84}
+    text = asr_markdown({"utterances": 16, "voices": ["af_heart", "hf_alpha"], "clips": 32, "asr_model": "small.en", "real_time_factor": 0.11,
+                         "by_group": {"American English": score, "Hindi-accented": {**score, "wer_pct": 9.4}}, "overall_clean": score,
+                         "conditions": {"clean": score}, "brand_hint": {"with the brand hint": score, "without it": score}})
+    assert "| American English | 16 | 3.1 | 100.0 | 87.5 | - | 100.0 | 0.84 |" in text
+    assert "stand-in for accents, not a sample of people" in text and "with and without the catalog's brand names" in text
+
+
 # ------------------------------------------------- with the real model files
 @pytest.mark.models
 def test_real_voice_and_real_ears_agree_and_respect_the_limit(tmp_path: Path) -> None:

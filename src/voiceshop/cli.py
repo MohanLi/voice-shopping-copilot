@@ -433,3 +433,25 @@ def eval_retrieval(
 
 if __name__ == "__main__":
     app()
+
+
+@eval_app.command("speech")
+def eval_speech(
+    utterances: Annotated[int | None, typer.Option(help="Use only the first N requests (default: all 16)")] = None,
+    voices: Annotated[int, typer.Option(help="Voices per language and gender (default 1: about 17 voices)")] = 1,
+    skip_asr: Annotated[bool, typer.Option("--skip-asr", help="Only check the spoken-reply time limit")] = False,
+) -> None:
+    """Speech recognition across accented voices and speech variations, and the 15-second limit on spoken replies."""
+    from voiceshop.evals import speech_eval
+    from voiceshop.paths import project_root
+
+    _logging()
+    out = project_root() / "eval" / "results" / "speech"
+    tts = speech_eval.run_tts()
+    console.print((out / "tts_duration.md").read_text(), markup=False)
+    if not skip_asr:
+        speech_eval.run_asr(utterances=utterances, voices_per_prefix=voices)
+        console.print((out / "asr_accents.md").read_text(), markup=False)
+    if tts["within_limit_pct"] < 100:
+        raise typer.Exit(1)
+
