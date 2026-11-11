@@ -8,9 +8,10 @@
     voiceshop mcp tools       connect as a client and print what discovery returns
     voiceshop mcp call …      call rag.search / web.search through MCP
     voiceshop ask "…"         one text turn through the full agent workflow (add more quoted turns for a conversation)
+    voiceshop eval retrieval  retrieval benchmark and ablation table
     voiceshop config          effective configuration, secrets masked
 
-Further commands (voice, serve, eval) are added by the modules that implement them.
+Further commands (voice, serve) are added by the modules that implement them.
 """
 
 from __future__ import annotations
@@ -280,6 +281,35 @@ def mcp_call(
         raise typer.Exit(1)
     console.print_json(json.dumps(result.data) if full else render_for_model(result))
     console.print(f"[dim]{result.tool}: {len(result.results)} result(s) in {result.duration_ms:.0f} ms[/dim]")
+
+
+# ----------------------------------------------------------------------- eval
+eval_app = typer.Typer(no_args_is_help=True, help="Evaluation: component metrics and end-to-end scorecards")
+app.add_typer(eval_app, name="eval")
+
+
+@eval_app.command("retrieval")
+def eval_retrieval(
+    sample: Annotated[int | None, typer.Option(help="Score only this many queries (a seeded sample)")] = None,
+    slow_sample: Annotated[int | None, typer.Option(help="Queries for the variant that re-ranks all 40 candidates (slow on a small CPU)")] = None,
+    out: Annotated[Path | None, typer.Option(help="Output folder (default: eval/results/retrieval)")] = None,
+) -> None:
+    """Score every retrieval variant on the benchmark queries and write benchmark.json / benchmark.md."""
+    from voiceshop.evals import retrieval_eval as ev
+    from voiceshop.paths import project_root
+    from voiceshop.retrieval.engine import SearchEngine
+
+    _logging()
+    root = project_root()
+    engine = SearchEngine.load()
+    try:
+        if engine.reranker is None:
+            console.print("[yellow]The re-ranker is not available (RERANKER_ENABLED or model files); its variants are skipped.[/yellow]")
+        report = ev.run(engine, root / "eval" / "datasets" / "retrieval_queries.jsonl", out or (root / "eval" / "results" / "retrieval"),
+                        max_queries=sample, rerank_max_queries=slow_sample)
+    finally:
+        engine.close()
+    console.print(ev.to_markdown(report), highlight=False, markup=False)
 
 
 if __name__ == "__main__":

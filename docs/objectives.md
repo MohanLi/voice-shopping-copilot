@@ -27,12 +27,12 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 | ID | Requirement | Where it lives | Status |
 |----|-------------|----------------|:------:|
 | S1 | Voice-to-voice interaction for product discovery and comparison | `speech/`, `agents/graph.py`, `api/`, `frontend/` | ⬜ |
-| S2 | Multi-agent workflow: Intent → Plan → Retrieve/Tools → Answer/Critic → Voice response | `agents/` | ⬜ |
-| S3 | LangGraph orchestrates the agents | `agents/graph.py` | ⬜ |
-| S4 | Agentic RAG over a private product catalog | `retrieval/`, `agents/retriever.py` | ⬜ |
-| S5 | One MCP server with two tools (private retrieval + live web search) | `mcp_server/` | ⬜ |
-| S6 | Grounded recommendations with citations | `agents/answerer.py`, `agents/critic.py` | ⬜ |
-| S7 | Basic guardrails and safety checks | `guardrails/` | ⬜ |
+| S2 | Multi-agent workflow: Intent → Plan → Retrieve/Tools → Answer/Critic → Voice response | `agents/` | 🔄 |
+| S3 | LangGraph orchestrates the agents | `agents/graph.py` | ✅ |
+| S4 | Agentic RAG over a private product catalog | `retrieval/`, `agents/retriever.py` | ✅ |
+| S5 | One MCP server with two tools (private retrieval + live web search) | `mcp_server/` | ✅ |
+| S6 | Grounded recommendations with citations | `agents/answerer.py`, `agents/finalize.py`, `guardrails/output.py` | ✅ |
+| S7 | Basic guardrails and safety checks | `guardrails/` | ✅ |
 | S8 | ProofAgent evaluation of the completed agent | `eval/proofagent/` | ⬜ |
 | S9 | UI shows transcript, agent execution, results, citations, evaluation evidence | `frontend/` | ⬜ |
 | S10 | ASR/TTS fragment-based (streaming optional) | `speech/` | ⬜ |
@@ -41,17 +41,17 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 
 | ID | Requirement | Where it lives | Status |
 |----|-------------|----------------|:------:|
-| O1 | Router identifies the user's task | `agents/router.py` | ⬜ |
-| O2 | Router extracts constraints: budget, material, brand, category, preferences | `agents/router.py`, `agents/state.py` | ⬜ |
-| O3 | Router detects basic safety concerns | `agents/router.py`, `guardrails/input.py` | ⬜ |
-| O4 | Planner decides which sources and tools to use (private RAG, live web, or both) | `agents/planner.py` | ⬜ |
-| O5 | Planner defines retrieval fields and comparison criteria | `agents/planner.py` | ⬜ |
-| O6 | Retriever searches the private catalog with vector search + metadata filters | `agents/retriever.py`, `retrieval/engine.py` | ⬜ |
-| O7 | Retriever invokes MCP tools for current prices / availability when appropriate | `agents/retriever.py` | ⬜ |
-| O8 | Retriever reconciles conflicting information | `agents/reconcile.py` | ⬜ |
-| O9 | Answerer generates a concise recommendation with citations | `agents/answerer.py` | ⬜ |
-| O10 | Critic verifies grounding against retrieved evidence; safety and response-quality checks | `agents/critic.py` | ⬜ |
-| O11 | Transparent pipeline: plans, tool calls, results and citations are logged | `observability/trace.py`, `logs/` | ⬜ |
+| O1 | Router identifies the user's task | `agents/router.py` | ✅ |
+| O2 | Router extracts constraints: budget, material, brand, category, preferences | `agents/router.py`, `agents/state.py` | ✅ |
+| O3 | Router detects basic safety concerns | `agents/router.py`, `guardrails/input.py` | ✅ |
+| O4 | Planner decides which sources and tools to use (private RAG, live web, or both) | `agents/planner.py` | ✅ |
+| O5 | Planner defines retrieval fields and comparison criteria | `agents/planner.py` | ✅ |
+| O6 | Retriever searches the private catalog with vector search + metadata filters | `agents/retriever.py`, `retrieval/engine.py` | ✅ |
+| O7 | Retriever invokes MCP tools for current prices / availability when appropriate | `agents/retriever.py` | 🔄 |
+| O8 | Retriever reconciles conflicting information | `agents/reconcile.py` | ✅ |
+| O9 | Answerer generates a concise recommendation with citations | `agents/answerer.py`, `agents/finalize.py` | ✅ |
+| O10 | Critic verifies grounding against retrieved evidence; safety and response-quality checks | `agents/answerer.py` (critic node), `guardrails/output.py` | ✅ |
+| O11 | Transparent pipeline: plans, tool calls, results and citations are logged | `logs/turns.jsonl`, `logs/llm_calls.jsonl`, `logs/mcp_calls.jsonl` | ✅ |
 
 ### 2.3 Speech recognition
 
@@ -66,34 +66,34 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 
 | ID | Requirement | Where it lives | Status |
 |----|-------------|----------------|:------:|
-| R1 | Curated subset of the Amazon Product Dataset 2020 is indexed | `data/ingest.py`, `retrieval/index.py` | ⬜ |
-| R2 | Embeddings over title, features, description, selected review snippets | `retrieval/documents.py` | ⬜ |
-| R3 | Metadata stored: brand, price, rating, ingredients, category | `data/schema.py` | ⬜ |
-| R4 | Hybrid retrieval: vector similarity + metadata filtering | `retrieval/engine.py` | ⬜ |
-| R5 | Reranker (optional in the assignment) | `retrieval/rerank.py` | ⬜ |
-| R6 | MCP web search used for current price / availability | `mcp_server/tools_web.py` | ⬜ |
-| R7 | Product matches reconciled using SKU, brand, title or similarity | `agents/reconcile.py` | ⬜ |
-| R8 | `products.parquet` with id, title, brand, category, price, rating, features, ingredients | `data/processed/` | ⬜ |
+| R1 | Curated subset of the Amazon Product Dataset 2020 is indexed | `data/ingest.py`, `retrieval/engine.py` (`voiceshop ingest`, `voiceshop index`) | ✅ |
+| R2 | Embeddings over title, features, description, selected review snippets | `retrieval/documents.py` | ✅ |
+| R3 | Metadata stored: brand, price, rating, ingredients, category | `data/schema.py` | ✅ |
+| R4 | Hybrid retrieval: vector similarity + metadata filtering | `retrieval/engine.py` | ✅ |
+| R5 | Reranker (optional in the assignment) | `retrieval/rerank.py` | ✅ |
+| R6 | MCP web search used for current price / availability | `mcp_server/web.py`, `mcp_server/providers/` | 🔄 |
+| R7 | Product matches reconciled using SKU, brand, title or similarity | `agents/reconcile.py` | ✅ |
+| R8 | `products.parquet` with id, title, brand, category, price, rating, features, ingredients | `data/processed/` | ✅ |
 | R9 | `reviews.parquet` (optional): product_id, stars, summary/snippets | stretch (section 3.5) | ⬜ |
-| R10 | Vectors stored in FAISS, Chroma or another suitable vector database | Qdrant (embedded) | ⬜ |
-| R11 | Units normalised for fair comparison (e.g. price per ounce) | `data/units.py` | ⬜ |
+| R10 | Vectors stored in FAISS, Chroma or another suitable vector database | Qdrant (embedded) | ✅ |
+| R11 | Units normalised for fair comparison (e.g. price per ounce) | `data/units.py` | ✅ |
 
 ### 2.5 Tool & MCP layer
 
 | ID | Requirement | Where it lives | Status |
 |----|-------------|----------------|:------:|
-| M1 | One MCP server exposing exactly `web.search` and `rag.search` | `mcp_server/server.py` | ⬜ |
-| M2 | `web.search` wraps a legitimate search API; returns `{title, url, snippet, price?, availability?}` | `mcp_server/providers/` (Serper) | ⬜ |
-| M3 | `web.search`: rate limiting | `mcp_server/ratelimit.py` | ⬜ |
-| M4 | `web.search`: caching with a 60–300 s TTL | `mcp_server/cache.py` | ⬜ |
-| M5 | `web.search`: source URLs kept | `mcp_server/tools_web.py` | ⬜ |
-| M6 | `web.search`: request/response logging | `mcp_server/audit.py` | ⬜ |
-| M7 | `rag.search` queries the local vector DB; returns `{sku, title, price, rating, brand?, ingredients?, doc_id}` | `mcp_server/tools_rag.py` | ⬜ |
-| M8 | MCP tool discovery | `mcp_client/` | ⬜ |
-| M9 | Tool names and JSON schemas defined | `mcp_server/schemas.py`, `docs/mcp.md` | ⬜ |
-| M10 | stdio or streamable HTTP/SSE transport | both | ⬜ |
-| M11 | Tool requests, responses, timestamps and sources logged | `logs/mcp_calls.jsonl` | ⬜ |
-| M12 | API terms and source restrictions respected | `docs/safety.md`, provider code | ⬜ |
+| M1 | One MCP server exposing exactly `web.search` and `rag.search` | `mcp_server/server.py` | ✅ |
+| M2 | `web.search` wraps a legitimate search API; returns `{title, url, snippet, price?, availability?}` | `mcp_server/providers/` (Serper) | ✅ |
+| M3 | `web.search`: rate limiting | `mcp_server/controls.py` (`RateLimiter`) | ✅ |
+| M4 | `web.search`: caching with a 60–300 s TTL | `mcp_server/controls.py` (`TTLCache`), `mcp_server/web.py` | ✅ |
+| M5 | `web.search`: source URLs kept | `mcp_server/web.py`, `mcp_server/normalize.py` | ✅ |
+| M6 | `web.search`: request/response logging | `mcp_server/controls.py` (`AuditLog`) | ✅ |
+| M7 | `rag.search` queries the local vector DB; returns `{sku, title, price, rating, brand?, ingredients?, doc_id}` | `mcp_server/server.py` | ✅ |
+| M8 | MCP tool discovery | `mcp_client/` | ✅ |
+| M9 | Tool names and JSON schemas defined | `mcp_server/schemas.py`, `docs/mcp.md` | ✅ |
+| M10 | stdio or streamable HTTP/SSE transport | both | ✅ |
+| M11 | Tool requests, responses, timestamps and sources logged | `logs/mcp_calls.jsonl` | ✅ |
+| M12 | API terms and source restrictions respected | `docs/safety.md`, provider code | 🔄 |
 
 ### 2.6 Text-to-speech
 
@@ -132,22 +132,22 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 
 | ID | Requirement | Where it lives | Status |
 |----|-------------|----------------|:------:|
-| L1 | Model swappable through environment variables or configuration | `config.py`, `llm/factory.py` | ⬜ |
-| L2 | Tool/function calling stays enabled | `agents/retriever.py`, structured outputs | ⬜ |
-| L3 | Context limited to grounded evidence | `agents/answerer.py` | ⬜ |
-| L4 | Citations required for factual product recommendations | `agents/critic.py` | ⬜ |
-| L5 | Important prompts and system messages logged | `observability/trace.py` | ⬜ |
-| L6 | Not hard-coded to one provider (second provider demonstrated) | Claude default + local Ollama run | ⬜ |
+| L1 | Model swappable through environment variables or configuration | `config.py`, `llm/factory.py` | ✅ |
+| L2 | Tool/function calling stays enabled | `agents/retriever.py`, structured outputs | ✅ |
+| L3 | Context limited to grounded evidence | `agents/context.py` (`render_evidence`), `agents/answerer.py` | ✅ |
+| L4 | Citations required for factual product recommendations | `agents/finalize.py`, `guardrails/output.py` | ✅ |
+| L5 | Important prompts and system messages logged | `agents/llm_utils.py` -> `logs/llm_calls.jsonl` | ✅ |
+| L6 | Not hard-coded to one provider (second provider demonstrated) | Claude default + local Ollama run | 🔄 |
 
 ### 2.10 Safety
 
 | ID | Requirement | Where it lives | Status |
 |----|-------------|----------------|:------:|
-| G1 | Tool/domain restrictions | `mcp_server/`, `guardrails/` | ⬜ |
-| G2 | Guardrails | `guardrails/` | ⬜ |
-| G3 | Grounded answers, no unsupported claims | `agents/critic.py` | ⬜ |
-| G4 | Safe handling of chemical/product advice | `guardrails/policies.py` | ⬜ |
-| G5 | Secrets and API keys protected | `.gitignore`, log redaction, tests | ⬜ |
+| G1 | Tool/domain restrictions | `mcp_client/client.py` (tool allow-list), `mcp_server/normalize.py` (domain policy) | ✅ |
+| G2 | Guardrails | `guardrails/` | ✅ |
+| G3 | Grounded answers, no unsupported claims | `guardrails/output.py`, `agents/answerer.py` (critic node) | ✅ |
+| G4 | Safe handling of chemical/product advice | `guardrails/policy.py`, `guardrails/input.py`, `agents/finalize.py` | ✅ |
+| G5 | Secrets and API keys protected | `.gitignore`, log redaction, tests | ✅ |
 
 ### 2.11 Deliverables and documentation
 
@@ -156,11 +156,11 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 | D1 | At least one live MCP web comparison demonstrated | demo script, `docs/evaluation.md` | ⬜ |
 | D2 | Docs: data preprocessing and indexing | `docs/data.md`, `notebooks/01_data_ingestion.ipynb` | ⬜ |
 | D3 | Docs: LangGraph architecture | `docs/architecture.md` | ⬜ |
-| D4 | Docs: MCP server and tool schemas | `docs/mcp.md` | ⬜ |
+| D4 | Docs: MCP server and tool schemas | `docs/mcp.md` | ✅ |
 | D5 | Docs: safety considerations | `docs/safety.md` | ⬜ |
 | D6 | Docs: evaluation methodology | `docs/evaluation.md` | ⬜ |
 | D7 | Setup instructions, `.env.example`, run/build scripts (index + MCP) | `README.md`, `scripts/`, `Makefile` | ⬜ |
-| D8 | `prompts/` folder: system, router, planner, tool-call, answerer/critic, guardrail prompts and few-shots, each mapped to its node/agent/tool | `prompts/` | ⬜ |
+| D8 | `prompts/` folder: system, router, planner, tool-call, answerer/critic, guardrail prompts and few-shots, each mapped to its node/agent/tool | `prompts/` | ✅ |
 | D9 | Checkpoint 1: proposal, problem definition, data slice, tools, ingestion notebook, related work | `docs/checkpoints/checkpoint1.md` | ⬜ |
 | D10 | Checkpoint 2: architecture diagram, LangGraph flow, MCP/tool calls, UI wireframe, RAG evaluation plan, MCP README + schemas, initial ProofAgent plan | `docs/checkpoints/checkpoint2.md` | ⬜ |
 | D11 | Repository with clean code and README | repo | ⬜ |
