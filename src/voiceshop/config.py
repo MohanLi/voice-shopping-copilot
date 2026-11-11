@@ -99,6 +99,9 @@ class Settings(BaseSettings):
     asr_model: str = "small.en"
     asr_device: str = "auto"
     asr_compute_type: str = "int8"
+    asr_max_seconds: float = Field(default=30.0, ge=3.0, le=120.0)     # longer recordings: only the start is transcribed
+    asr_low_confidence: float = Field(default=0.45, ge=0.0, le=1.0)    # below: used, but shown as uncertain
+    asr_reject_confidence: float = Field(default=0.25, ge=0.0, le=1.0) # below: the shopper is asked to repeat
     tts_provider: Literal["kokoro", "openai", "elevenlabs", "none"] = "kokoro"
     tts_voice: str = "af_heart"
     tts_speed: float = 1.0

@@ -33,6 +33,36 @@ SELF_HARM = (
     "In the United States you can call or text 988 to reach the Suicide and Crisis Lifeline at any time."
 )
 OUT_OF_SCOPE = "That is outside what I can help with. " + ASSISTANT_SCOPE
+
+# What is said aloud when the on-screen wording is too long to say comfortably in 15 seconds.
+# The phone number is the point of an emergency reply, so it must never be the part that is cut.
+SPOKEN: dict[str, str] = {
+    EMERGENCY: (
+        "This could be an emergency. Call Poison Control at 1-800-222-1222 right away, or 911 if the person has "
+        "trouble breathing or is not responding."
+    ),
+    SELF_HARM: (
+        "I'm really sorry you're feeling this way. You don't have to face it alone. "
+        "You can call or text 988 to reach the Suicide and Crisis Lifeline at any time."
+    ),
+    REFUSALS["dangerous_chemistry"]: (
+        "I can't help with that. Mixing cleaning products, such as bleach with ammonia, can release toxic gas. "
+        "Use one product at a time and follow its label."
+    ),
+}
+
+
+def spoken_for(reply: str) -> str:
+    """The spoken form of a fixed reply (the reply itself unless a shorter spoken wording exists)."""
+    return SPOKEN.get(reply, reply)
+
+
+# Replies of the speech-recognition stage (no model, no search): nothing heard, not understood, unreadable recording.
+LISTEN: dict[str, str] = {
+    "empty": "I didn't hear anything. Hold the button and tell me what you are looking for.",
+    "unclear": "Sorry, I didn't catch that. Could you say it again?",
+    "error": "I couldn't read that recording. Please try again.",
+}
 MEDICAL_NOTE = "I can't give medical advice; please ask a health professional."
 
 # --------------------------------------------------- notes attached to answers

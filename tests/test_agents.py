@@ -418,8 +418,9 @@ def test_answer_assembly_copies_every_table_cell_from_the_evidence() -> None:
     assert (first.product, first.price, first.ingredients, first.citation) == (item.title, "$12.00 (catalog, Jan 2020); $1.00 each (12-pack)", "glue", "AMZ-C1")
     assert (second.price, second.rating, second.source, second.citation) == ("$8.00 at Example Shop", "4.5 (1,200)", "Web: Example Shop", web.url)
     assert policy.FLAG_NOTES["choking_hazard"] in answer.notes and policy.NO_RATING_NOTE not in answer.notes
-    assert answer.spoken == ("My top pick is the glow slime kit at a catalog price of $12.00. One more option and the sources are on screen. "
-                             "It has small parts, so it is not for children under three.")
+    # most important first: the lead, the safety sentence, the pointer to the screen, then the question (it fits within 15 s here)
+    assert answer.spoken == ("My top pick is the glow slime kit at a catalog price of $12.00. It has small parts, so it is not for children under three. "
+                             "One more option and the sources are on screen. Is it for a party?")
     assert answer.follow_up_question == "Is it for a party?" and "Is it for a party?" in answer.text
 
 

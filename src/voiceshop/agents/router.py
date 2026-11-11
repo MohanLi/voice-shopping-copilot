@@ -42,8 +42,8 @@ def guard_node(state: TurnState) -> dict[str, Any]:
     if verdict.allowed:
         return {"guard": verdict.as_dict(), "user_text": verdict.text,
                 "trace": [step("guard", "Input passed the safety screen", started=started)]}
-    answer = FinalAnswer(spoken=verdict.reply or policy.REFUSALS["harmful"], text=verdict.reply or policy.REFUSALS["harmful"],
-                         kind=_GUARD_KIND.get(verdict.category or "", "refusal"))  # type: ignore[arg-type]
+    reply = verdict.reply or policy.REFUSALS["harmful"]
+    answer = FinalAnswer(spoken=policy.spoken_for(reply), text=reply, kind=_GUARD_KIND.get(verdict.category or "", "refusal"))  # type: ignore[arg-type]
     return {
         "guard": verdict.as_dict(),
         "answer": answer,

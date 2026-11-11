@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from rich.console import Console
@@ -139,46 +139,62 @@ def search(
     console.print(table)
 
 
-@app.command()
-def ask(
-    turns: Annotated[list[str], typer.Argument(help="What the shopper says. Several arguments make a multi-turn conversation.")],
-    as_json: Annotated[bool, typer.Option("--json", help="Print the full turn record instead of the readable view")] = False,
-    quiet: Annotated[bool, typer.Option("--quiet", help="Hide the agent step log")] = False,
-) -> None:
-    """Run text turns through the whole workflow: guard, router, planner, retriever (MCP), answerer, critic."""
+def _print_step(event: dict[str, Any]) -> None:
+    mark = {"ok": "[green]ok[/green]", "warn": "[yellow]note[/yellow]", "error": "[red]error[/red]"}[event["status"]]
+    took = f"{event['duration_ms']:.0f} ms" if event.get("duration_ms") is not None else ""
+    console.print(f"  [dim]{event['title']:<28}[/dim] {mark:<5} {event['summary']} [dim]{took}[/dim]", highlight=False)
+
+
+def _print_turn(result: Any) -> None:
+    answer = result.answer
+    console.print(f"\n[bold magenta]Assistant (spoken, {len(answer.spoken.split())} words):[/bold magenta] {answer.spoken}", highlight=False)
+    if answer.text and answer.text != answer.spoken and not answer.table:
+        console.print(f"[dim]on screen:[/dim] {answer.text}", highlight=False)
+    if answer.table:
+        table = Table("#", "Product", "Price", "Rating", "Ingredients", "Source", "Citation", show_lines=True)
+        for row in answer.table:
+            table.add_row(str(row.rank), row.product[:48], row.price, row.rating, row.ingredients[:28], row.source, row.citation[:52])
+        console.print(table)
+    for note in answer.notes:
+        console.print(f"  [dim]- {note}[/dim]", highlight=False)
+    speech = result.speech or {}
+    if speech.get("audio"):
+        extra = f", {len(speech['dropped_sentences'])} closing sentence(s) on screen only" if speech.get("dropped_sentences") else ""
+        console.print(f"[dim]audio: {speech['audio']} ({speech['duration_s']:.1f} s at speed {speech['speed']:g}{extra})[/dim]", highlight=False)
+    console.print(f"[dim]{answer.kind} | grounded by {answer.grounded_by or '-'} | {result.seconds:.1f} s | "
+                  f"${result.cost_usd:.4f} | tools: {', '.join(result.tools_called) or 'none'}[/dim]", highlight=False)
+
+
+def _run_turns(inputs: list[str], *, audio: bool, speak: bool, as_json: bool, quiet: bool) -> None:
+    """Shared by ``ask`` (typed turns) and ``voice`` (recordings): run the turns of one conversation and print them."""
     import asyncio
 
     from voiceshop.assistant import Assistant
     from voiceshop.mcp_client import MCPConnectionError
 
     async def run() -> None:
-        async with Assistant() as assistant:
-            for text in turns:
+        assistant = Assistant.from_settings(voice=True) if (audio or speak) else Assistant()
+        async with assistant:
+            for item in inputs:
                 result = None
-                if not as_json:
-                    console.print(f"\n[bold cyan]You:[/bold cyan] {text}")
-                async for event in assistant.stream(text, thread_id="cli"):
-                    if event["type"] == "step" and not quiet and not as_json:
-                        mark = {"ok": "[green]ok[/green]", "warn": "[yellow]note[/yellow]", "error": "[red]error[/red]"}[event["status"]]
-                        took = f"{event['duration_ms']:.0f} ms" if event.get("duration_ms") is not None else ""
-                        console.print(f"  [dim]{event['title']:<28}[/dim] {mark:<5} {event['summary']} [dim]{took}[/dim]", highlight=False)
-                    elif event["type"] == "result":
+                if not as_json and not audio:
+                    console.print(f"\n[bold cyan]You:[/bold cyan] {item}")
+                events = assistant.stream_audio(Path(item), thread_id="cli") if audio else assistant.stream(item, thread_id="cli")
+                async for event in events:
+                    if as_json:
+                        pass
+                    elif event["type"] == "transcript":
+                        heard = event["transcript"]
+                        console.print(f"\n[bold cyan]You said ({Path(item).name}):[/bold cyan] {heard['text'] or '[nothing heard]'}", highlight=False)
+                    elif event["type"] == "step" and not quiet:
+                        _print_step(event)
+                    if event["type"] == "result":
                         result = event["result"]
                 assert result is not None
                 if as_json:
                     console.print_json(json.dumps(result.to_dict(include_evidence=False), default=str))
-                    continue
-                answer = result.answer
-                console.print(f"\n[bold magenta]Assistant (spoken, {len(answer.spoken.split())} words):[/bold magenta] {answer.spoken}", highlight=False)
-                if answer.table:
-                    table = Table("#", "Product", "Price", "Rating", "Ingredients", "Source", "Citation", show_lines=True)
-                    for row in answer.table:
-                        table.add_row(str(row.rank), row.product[:48], row.price, row.rating, row.ingredients[:28], row.source, row.citation[:52])
-                    console.print(table)
-                for note in answer.notes:
-                    console.print(f"  [dim]- {note}[/dim]", highlight=False)
-                console.print(f"[dim]{answer.kind} | grounded by {answer.grounded_by or '-'} | {result.seconds:.1f} s | "
-                              f"${result.cost_usd:.4f} | tools: {', '.join(result.tools_called) or 'none'}[/dim]", highlight=False)
+                else:
+                    _print_turn(result)
 
     _logging()
     logging.getLogger().setLevel(logging.WARNING)
@@ -187,6 +203,92 @@ def ask(
     except MCPConnectionError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
+
+
+@app.command()
+def ask(
+    turns: Annotated[list[str], typer.Argument(help="What the shopper says. Several arguments make a multi-turn conversation.")],
+    speak: Annotated[bool, typer.Option("--speak", help="Also synthesize the spoken reply (audio is kept in logs/audio/)")] = False,
+    as_json: Annotated[bool, typer.Option("--json", help="Print the full turn record instead of the readable view")] = False,
+    quiet: Annotated[bool, typer.Option("--quiet", help="Hide the agent step log")] = False,
+) -> None:
+    """Run text turns through the whole workflow: guard, router, planner, retriever (MCP), answerer, critic."""
+    _run_turns(turns, audio=False, speak=speak, as_json=as_json, quiet=quiet)
+
+
+@app.command()
+def voice(
+    recordings: Annotated[list[Path], typer.Argument(help="Audio files (WAV, MP3, M4A, WebM...). Several files make a multi-turn conversation.")],
+    as_json: Annotated[bool, typer.Option("--json", help="Print the full turn record instead of the readable view")] = False,
+    quiet: Annotated[bool, typer.Option("--quiet", help="Hide the agent step log")] = False,
+) -> None:
+    """Voice to voice: recognise each recording, run the agents, and speak the reply (audio is kept in logs/audio/)."""
+    missing = [str(path) for path in recordings if not path.exists()]
+    if missing:
+        console.print(f"[red]No such file: {', '.join(missing)}[/red]")
+        raise typer.Exit(1)
+    _run_turns([str(path) for path in recordings], audio=True, speak=True, as_json=as_json, quiet=quiet)
+
+
+@app.command()
+def transcribe(
+    recording: Annotated[Path, typer.Argument(help="Audio file to transcribe")],
+    words: Annotated[bool, typer.Option("--words", help="Also show word timestamps")] = False,
+    as_json: Annotated[bool, typer.Option("--json", help="Print the transcript record")] = False,
+) -> None:
+    """Speech to text with timestamps and confidence (the ASR stage on its own)."""
+    from voiceshop.speech import build_transcriber
+
+    _logging()
+    logging.getLogger().setLevel(logging.WARNING)
+    transcriber = build_transcriber()
+    if transcriber is None:
+        console.print("[red]Speech recognition is off (ASR_PROVIDER=none).[/red]")
+        raise typer.Exit(1)
+    result = transcriber.transcribe(recording, word_timestamps=words)
+    if as_json:
+        console.print_json(json.dumps(result.to_dict()))
+        return
+    if result.status == "error":
+        console.print(f"[red]{result.error}[/red]")
+        raise typer.Exit(1)
+    for segment in result.segments:
+        confidence = f"{segment.confidence:.2f}" if segment.confidence is not None else "-"
+        console.print(f"[dim]\\[{segment.start:6.2f} - {segment.end:6.2f} s] confidence {confidence}[/dim]  {segment.text}", highlight=False)
+        if words and segment.words:
+            console.print("    [dim]" + "  ".join(f"{w.word}@{w.start:.2f}" for w in segment.words) + "[/dim]", highlight=False)
+    confidence = f"{result.confidence:.2f}" if result.confidence is not None else "-"
+    console.print(f"[bold]{result.text or '[nothing heard]'}[/bold]", highlight=False)
+    console.print(f"[dim]status {result.status} | confidence {confidence} | {result.duration_s:.1f} s of audio ({result.speech_s:.1f} s speech) | "
+                  f"{result.model} via {result.provider} | {result.seconds:.2f} s, real-time factor {result.real_time_factor}[/dim]", highlight=False)
+
+
+@app.command()
+def say(
+    text: Annotated[str, typer.Argument(help="What to say")],
+    out: Annotated[Path, typer.Option("--out", "-o", help="Where to write the WAV file")] = Path("say.wav"),
+    max_seconds: Annotated[float | None, typer.Option("--max-seconds", help="Length limit (default: TTS_MAX_SECONDS)")] = None,
+) -> None:
+    """Text to speech within the length limit (the TTS stage on its own)."""
+    from voiceshop.config import get_settings
+    from voiceshop.speech import build_synthesizer, speak_within
+
+    _logging()
+    logging.getLogger().setLevel(logging.WARNING)
+    settings = get_settings()
+    synthesizer = build_synthesizer(settings)
+    if synthesizer is None:
+        console.print("[red]Speech synthesis is off (TTS_PROVIDER=none).[/red]")
+        raise typer.Exit(1)
+    speech = speak_within(synthesizer, text, max_seconds=max_seconds or settings.tts_max_seconds, speed=settings.tts_speed)
+    out.write_bytes(speech.audio)
+    for sentence in speech.sentences:
+        console.print(f"[dim]\\[{sentence['start_s']:5.2f} - {sentence['end_s']:5.2f} s][/dim]  {sentence['text']}", highlight=False)
+    for sentence in speech.dropped_sentences:
+        console.print(f"[yellow]left out to stay within the limit:[/yellow] {sentence}", highlight=False)
+    console.print(f"[dim]{out} | {speech.duration_s:.2f} s at speed {speech.speed:g} (estimated {speech.estimated_s:.1f} s at normal speed) | "
+                  f"{speech.voice} via {speech.provider} | first sentence ready after {speech.first_audio_s:.2f} s, all after {speech.seconds:.2f} s[/dim]",
+                  highlight=False)
 
 
 # ------------------------------------------------------------------------ mcp

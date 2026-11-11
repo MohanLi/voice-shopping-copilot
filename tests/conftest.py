@@ -87,9 +87,8 @@ def agent_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):  # type: ignore[
 
 
 @pytest.fixture
-async def assistant(agent_env, sample_engine, tmp_path: Path):  # type: ignore[no-untyped-def]
-    """The full assistant wired to an in-process MCP server (sample catalog, fixture web results)."""
-    from voiceshop.assistant import Assistant
+async def mcp_client(agent_env, sample_engine, tmp_path: Path):  # type: ignore[no-untyped-def]
+    """An MCP client connected to an in-process server (sample catalog, fixture web results)."""
     from voiceshop.config import get_settings
     from voiceshop.mcp_client import MCPToolClient
     from voiceshop.mcp_server.controls import AuditLog
@@ -100,12 +99,22 @@ async def assistant(agent_env, sample_engine, tmp_path: Path):  # type: ignore[n
     settings = get_settings()
     server = build_server(settings, engine=sample_engine, web=WebSearchService([FixtureProvider(FIXTURE_WEB)], per_minute=600),
                           audit=AuditLog(tmp_path / "logs" / "mcp_calls.jsonl"))
-    mcp = MCPToolClient(settings, server=server)
-    await mcp.start()
-    bot = Assistant(mcp=mcp)                    # follows the process configuration, so a test can change it mid-way
+    client = MCPToolClient(settings, server=server)
+    await client.start()
+    try:
+        yield client
+    finally:
+        await client.aclose()
+
+
+@pytest.fixture
+async def assistant(mcp_client):  # type: ignore[no-untyped-def]
+    """The full assistant (text in, text out) on the in-process MCP server."""
+    from voiceshop.assistant import Assistant
+
+    bot = Assistant(mcp=mcp_client)             # follows the process configuration, so a test can change it mid-way
     await bot.start()
     try:
         yield bot
     finally:
         await bot.aclose()
-        await mcp.aclose()

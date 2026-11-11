@@ -29,6 +29,7 @@ from voiceshop.agents.state import (
 )
 from voiceshop.guardrails import policy
 from voiceshop.guardrails.output import trim_spoken, word_count
+from voiceshop.speech.text import COMFORT_SPEED, MAX_SPEED, estimate_seconds, fits, split_sentences
 
 MAX_HISTORY = 12
 SPOKEN_SAFETY: dict[str, str] = {
@@ -132,7 +133,7 @@ def spoken_tail(others: int) -> str:
 
 
 def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraints, route: RouteDecision | None, *,
-                 max_words: int, grounded_by: str | None, revisions: int) -> FinalAnswer:
+                 max_words: int, grounded_by: str | None, revisions: int, max_seconds: float = 15.0) -> FinalAnswer:
     about_screen = route is not None and route.intent in ("follow_up", "compare")     # not a fresh list of picks
     picked: list[tuple[CatalogItem | WebItem, str, str | None]] = []
     for rec in draft.recommendations[:3]:
@@ -157,17 +158,20 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
     if items and all(i.rating is None for i in items):
         notes.append(policy.NO_RATING_NOTE)
 
-    # ---- spoken: the model's lead, then (written by code) the count of alternatives, a safety sentence, the question
+    # ---- spoken, most important first: the model's lead, a safety sentence, the pointer to the screen (the count is
+    #      written by code), the question. Speech is held to ``max_seconds``; whatever has to give way is at the end.
     question = (draft.follow_up_question or "").strip() or None
     spoken = trim_spoken(draft.spoken, max_words)
     if rows and not draft.abstain:
-        spoken = trim_spoken(draft.spoken, max(16, max_words - 16))     # the lead; room is kept for what follows
-        spoken = f"{spoken} {spoken_tail(0 if about_screen else len(rows) - 1)}"
-        extra = spoken_notes[0] if spoken_notes else question          # safety comes before the question when both cannot fit
-        if extra and extra.lower() not in spoken.lower() and word_count(spoken) + word_count(extra) <= max_words + 3:
-            spoken = f"{spoken} {extra}"
-        elif spoken_notes and spoken_notes[0].lower() not in spoken.lower():
-            spoken = f"{spoken} {spoken_notes[0]}"                       # a safety sentence is never dropped for length
+        lead = split_sentences(trim_spoken(draft.spoken, max(16, max_words - 16)))
+        safety = [note for note in spoken_notes[:1] if note.lower() not in " ".join(lead).lower()]      # never dropped for length
+        tail = spoken_tail(0 if about_screen else len(rows) - 1)
+        while len(lead) > 1 and not fits(" ".join([*lead, *safety, tail]), max_seconds, MAX_SPEED):
+            lead.pop()                                       # a second lead sentence gives way before the safety sentence does
+        parts = [*lead, *safety, tail]
+        if question and question.lower() not in " ".join(parts).lower() and fits(" ".join([*parts, question]), max_seconds, COMFORT_SPEED):
+            parts.append(question)
+        spoken = " ".join(parts)
 
     # ---- on-screen text
     lines: list[str] = []
@@ -243,9 +247,9 @@ def make_finalize_node(deps: Any):  # type: ignore[no-untyped-def]
         draft: AnswerDraft = state["draft"]  # type: ignore[assignment]
         grounded_by = "template" if state.get("draft_source") == "template" else "llm+critic"
         answer = build_answer(draft, evidence, constraints, state.get("route"), max_words=max_words, grounded_by=grounded_by,
-                              revisions=state.get("revisions") or 0)
-        summary = (f"{len(answer.table)} product(s) in the table, {len(answer.citations)} citation(s), "
-                   f"{word_count(answer.spoken)} words spoken; grounded by {grounded_by}") if answer.table else "Abstained: nothing suitable in the evidence"
+                              revisions=state.get("revisions") or 0, max_seconds=deps.settings.tts_max_seconds)
+        summary = (f"{len(answer.table)} product(s) in the table, {len(answer.citations)} citation(s), {word_count(answer.spoken)} words "
+                   f"to say (about {estimate_seconds(answer.spoken):.0f} s); grounded by {grounded_by}") if answer.table else "Abstained: nothing suitable in the evidence"
         return {
             "answer": answer,
             **remember(state, answer),

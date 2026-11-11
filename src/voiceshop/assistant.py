@@ -5,12 +5,18 @@
         print(result.answer.spoken)
 
 ``ask`` runs one turn; ``stream`` yields step-log events while the turn runs (the API relays
-them to the UI). Every finished turn is appended to ``logs/turns.jsonl`` with its plan, tool
-calls, citations, timings and cost.
+them to the UI). ``ask_audio`` / ``stream_audio`` take a recording instead of text: speech
+recognition, the same agents, and a spoken reply. Every finished turn is appended to
+``logs/turns.jsonl`` with its plan, tool calls, citations, timings and cost.
+
+    async with Assistant.from_settings() as assistant:           # with speech in and out
+        result = await assistant.ask_audio("question.wav")
+        print(result.asr["text"], "->", result.speech["audio"])
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -96,13 +102,28 @@ def _node_timings(trace: list[dict[str, Any]]) -> dict[str, float]:
 
 
 class Assistant:
-    def __init__(self, settings: Settings | None = None, *, mcp: MCPToolClient | None = None, speech: Any = None, checkpointer: Any = None) -> None:
+    def __init__(self, settings: Settings | None = None, *, mcp: MCPToolClient | None = None, speech: Any = None, transcriber: Any = None,
+                 checkpointer: Any = None) -> None:
         self._settings = settings                       # None: follow the process configuration
         self.mcp = mcp or MCPToolClient(self.settings)
         self._owns_mcp = mcp is None
-        self.speech = speech
+        self.speech = speech                            # text to speech (speech.VoiceOutput); None = text only
+        self.transcriber = transcriber                  # speech recognition (speech.Transcriber); None = typed input only
         self.checkpointer = checkpointer or memory_saver()
         self.graph: Any = None
+        self._warming: asyncio.Task[None] | None = None
+
+    @classmethod
+    def from_settings(cls, settings: Settings | None = None, *, voice: bool = True, **kwargs: Any) -> Assistant:
+        """An assistant with the speech providers the configuration names (``ASR_PROVIDER``, ``TTS_PROVIDER``)."""
+        s = settings or get_settings()
+        if voice:
+            from voiceshop.speech import VoiceOutput, build_synthesizer, build_transcriber
+
+            synthesizer = build_synthesizer(s)
+            kwargs.setdefault("speech", VoiceOutput(synthesizer, settings) if synthesizer is not None else None)
+            kwargs.setdefault("transcriber", build_transcriber(s))
+        return cls(settings, **kwargs)
 
     @property
     def settings(self) -> Settings:
@@ -114,9 +135,44 @@ class Assistant:
             if not self.mcp.connected:
                 await self.mcp.start()
             self.graph = build_graph(Deps(mcp=self.mcp, speech=self.speech, settings_override=self._settings), self.checkpointer)
+            self._warming = asyncio.create_task(self.warm_up())          # in the background: the first turn does not wait for it
         return self
 
+    async def warm_up(self) -> None:
+        """Load what the first turn would otherwise pay for: the model provider's client and the local speech models.
+
+        Measured on the first live run: the first Router call took 4.3 s, of which 2.9 s was
+        importing the provider library and building its client. Nothing is sent to any API here.
+        """
+        def load() -> None:
+            from voiceshop.llm.factory import get_chat_model
+
+            for role in ("router", "planner", "retriever", "answerer", "critic"):
+                try:
+                    get_chat_model(role)
+                except Exception as exc:                     # a missing key is reported by the first real call, with context
+                    log.debug("warm-up: %s model not built (%s)", role, type(exc).__name__)
+            for part in (self.transcriber, getattr(self.speech, "synthesizer", None)):
+                loader = getattr(part, "load", None)
+                if callable(loader):
+                    try:
+                        loader()
+                    except Exception as exc:
+                        log.warning("warm-up: %s could not be loaded (%s: %s)", type(part).__name__, type(exc).__name__, exc)
+
+        started = time.perf_counter()
+        await asyncio.to_thread(load)
+        log.info("warm-up finished in %.1f s", time.perf_counter() - started)
+
     async def aclose(self) -> None:
+        if self._warming is not None:
+            if not self._warming.done():
+                self._warming.cancel()
+            try:
+                await self._warming
+            except (asyncio.CancelledError, Exception):      # warm-up is best effort
+                pass
+            self._warming = None
         if self._owns_mcp:
             await self.mcp.aclose()
         self.graph = None
@@ -140,11 +196,43 @@ class Assistant:
         assert result is not None
         return result
 
-    async def stream(self, text: str, *, thread_id: str = "default", asr: dict[str, Any] | None = None) -> AsyncIterator[dict[str, Any]]:
-        """Yield ``{"type": "step" | "tool_call" | "tool_result" | "result", ...}`` while a turn runs."""
-        await self.start()
+    async def transcribe(self, audio: Any, *, word_timestamps: bool = False) -> Any:
+        """Speech to text (a ``speech.Transcript``). Never raises for bad audio; the transcript's ``status`` says what happened."""
+        from voiceshop.speech.asr import Transcript
+
+        if self.transcriber is None:
+            raise RuntimeError("Speech recognition is off (ASR_PROVIDER=none), or this assistant was built without a transcriber.")
+        try:
+            return await asyncio.to_thread(self.transcriber.transcribe, audio, word_timestamps=word_timestamps)
+        except Exception as exc:                        # a model that cannot be loaded, a provider that is down
+            log.exception("speech recognition failed")
+            return Transcript.failed(f"speech recognition is unavailable ({type(exc).__name__})", provider=getattr(self.transcriber, "name", ""))
+
+    async def ask_audio(self, audio: Any, *, thread_id: str = "default", word_timestamps: bool = False) -> TurnResult:
+        """One voice turn to completion: recognise the recording, run the agents, speak the reply."""
+        result: TurnResult | None = None
+        async for event in self.stream_audio(audio, thread_id=thread_id, word_timestamps=word_timestamps):
+            if event["type"] == "result":
+                result = event["result"]
+        assert result is not None
+        return result
+
+    async def stream_audio(self, audio: Any, *, thread_id: str = "default", word_timestamps: bool = False) -> AsyncIterator[dict[str, Any]]:
+        """Like ``stream``, for a recording: yields ``listening``, then ``transcript``, then the events of the turn."""
         turn_id = new_turn_id()
-        started = time.perf_counter()
+        yield {"type": "listening", "turn_id": turn_id, "thread_id": thread_id}
+        transcript = await self.transcribe(audio, word_timestamps=word_timestamps)
+        heard = transcript.to_dict()
+        yield {"type": "transcript", "turn_id": turn_id, "transcript": heard}
+        async for event in self.stream(transcript.text, thread_id=thread_id, asr=heard, turn_id=turn_id):
+            yield event
+
+    async def stream(self, text: str, *, thread_id: str = "default", asr: dict[str, Any] | None = None,
+                     turn_id: str | None = None) -> AsyncIterator[dict[str, Any]]:
+        """Yield ``{"type": "step" | "tool_call" | "tool_result" | "speech_sentence" | "result", ...}`` while a turn runs."""
+        await self.start()
+        turn_id = turn_id or new_turn_id()
+        started = time.perf_counter() - float((asr or {}).get("seconds") or 0.0)     # a voice turn started when recognition did
         cost_before = get_ledger().total_usd
         config = self._config(thread_id)
         yield {"type": "start", "turn_id": turn_id, "thread_id": thread_id, "user_text": text}
