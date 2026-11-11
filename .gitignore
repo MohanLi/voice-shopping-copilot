@@ -1,0 +1,54 @@
+# --- secrets ---
+.env
+*.env
+!.env.example
+
+# --- data: raw downloads and built artifacts are reproducible (scripts/download_assets.py, `voiceshop ingest`, `voiceshop index`) ---
+data/raw/
+data/processed/
+data/index/
+data/enrichment/
+data/transfer/
+!data/sample/
+
+# --- local models (hundreds of MB; fetched by scripts/download_assets.py) ---
+models/
+
+# --- runtime output ---
+logs/
+!logs/.gitkeep
+.cache/
+audio_out/
+*.sqlite
+*.sqlite-journal
+
+# --- evaluation: reports are committed, raw transcripts with full tool payloads are not ---
+eval/results/**/raw/
+eval/results/**/audio/
+
+# --- python ---
+__pycache__/
+*.py[cod]
+.venv*/
+venv/
+*.egg-info/
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# --- frontend: sources and the prebuilt bundle are committed, dependencies are not ---
+frontend/node_modules/
+frontend/.vite/
+frontend/test-results/
+frontend/playwright-report/
+
+# --- sync helpers between the build workspace and the Mac ---
+_sync/
+
+# --- OS / editors ---
+.DS_Store
+.vscode/
+.idea/
