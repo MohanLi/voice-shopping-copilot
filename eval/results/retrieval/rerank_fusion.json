@@ -1,0 +1,304 @@
+{
+ "created": "2026-11-11T02:16:53",
+ "machine": "Linux x86_64, 2 CPUs, Python 3.12.13",
+ "queries": 150,
+ "candidates": 40,
+ "reranker": "Xenova/ms-marco-MiniLM-L-6-v2",
+ "orderings": {
+  "hybrid": {
+   "hit@1": 82.0,
+   "hit@3": 88.7,
+   "hit@5": 89.3,
+   "hit@10": 93.3,
+   "mrr@10": 0.857
+  },
+  "rerank (all 40)": {
+   "hit@1": 84.0,
+   "hit@3": 90.7,
+   "hit@5": 94.7,
+   "hit@10": 96.7,
+   "mrr@10": 0.88
+  },
+  "fused, re-ranker weight 0.5": {
+   "hit@1": 82.0,
+   "hit@3": 88.7,
+   "hit@5": 94.0,
+   "hit@10": 95.3,
+   "mrr@10": 0.865
+  },
+  "fused, re-ranker weight 1.0": {
+   "hit@1": 80.7,
+   "hit@3": 92.7,
+   "hit@5": 94.7,
+   "hit@10": 96.7,
+   "mrr@10": 0.865
+  },
+  "fused, re-ranker weight 2.0": {
+   "hit@1": 85.3,
+   "hit@3": 94.0,
+   "hit@5": 95.3,
+   "hit@10": 96.7,
+   "mrr@10": 0.892
+  },
+  "rerank top 10 only": {
+   "hit@1": 84.0,
+   "hit@3": 90.0,
+   "hit@5": 92.7,
+   "hit@10": 93.3,
+   "mrr@10": 0.873
+  },
+  "fused top 10, weight 1.0": {
+   "hit@1": 80.0,
+   "hit@3": 89.3,
+   "hit@5": 92.0,
+   "hit@10": 93.3,
+   "mrr@10": 0.851
+  },
+  "rerank top 20 only": {
+   "hit@1": 85.3,
+   "hit@3": 90.7,
+   "hit@5": 94.7,
+   "hit@10": 96.0,
+   "mrr@10": 0.887
+  },
+  "fused top 20, weight 1.0": {
+   "hit@1": 80.7,
+   "hit@3": 89.3,
+   "hit@5": 94.7,
+   "hit@10": 96.0,
+   "mrr@10": 0.861
+  }
+ },
+ "rerank_ms_p50": 5497.3,
+ "top_score": {
+  "in_catalog": {
+   "p05": -3.622,
+   "p25": 0.597,
+   "p50": 2.761
+  },
+  "gold_target": {
+   "p05": -4.502,
+   "p25": 0.037,
+   "p50": 2.75
+  },
+  "out_of_catalog": {
+   "p50": -8.417,
+   "p75": -6.362,
+   "p95": -0.063
+  }
+ },
+ "abstention_thresholds": {
+  "-6": {
+   "out_of_catalog_flagged_pct": 80.0,
+   "in_catalog_wrongly_flagged_pct": 0.7
+  },
+  "-5": {
+   "out_of_catalog_flagged_pct": 84.0,
+   "in_catalog_wrongly_flagged_pct": 2.0
+  },
+  "-4": {
+   "out_of_catalog_flagged_pct": 84.0,
+   "in_catalog_wrongly_flagged_pct": 3.3
+  },
+  "-3": {
+   "out_of_catalog_flagged_pct": 88.0,
+   "in_catalog_wrongly_flagged_pct": 7.3
+  },
+  "-2": {
+   "out_of_catalog_flagged_pct": 88.0,
+   "in_catalog_wrongly_flagged_pct": 11.3
+  },
+  "-1": {
+   "out_of_catalog_flagged_pct": 92.0,
+   "in_catalog_wrongly_flagged_pct": 14.0
+  },
+  "0": {
+   "out_of_catalog_flagged_pct": 96.0,
+   "in_catalog_wrongly_flagged_pct": 20.0
+  },
+  "1": {
+   "out_of_catalog_flagged_pct": 96.0,
+   "in_catalog_wrongly_flagged_pct": 26.7
+  },
+  "2": {
+   "out_of_catalog_flagged_pct": 100.0,
+   "in_catalog_wrongly_flagged_pct": 37.3
+  }
+ },
+ "out_of_catalog_examples": [
+  {
+   "query": "eco-friendly stainless steel cleaner spray",
+   "kind": "absent",
+   "top_score": -7.215,
+   "top_title": "Chase 499-0521 Snow Frost Aerosol Spray, 9-Ounce"
+  },
+  {
+   "query": "laundry detergent pods for sensitive skin",
+   "kind": "absent",
+   "top_score": -9.573,
+   "top_title": "LAB SERIES Max Ls Daily Renewing Cleanser, 5 Ounce"
+  },
+  {
+   "query": "dishwasher detergent tablets",
+   "kind": "absent",
+   "top_score": -1.816,
+   "top_title": "Lunchskins LS4-TOTE-STRIPE-NAV Reusable Tote, Navy Blue Stripe"
+  },
+  {
+   "query": "bleach free bathroom tile cleaner",
+   "kind": "absent",
+   "top_score": -9.846,
+   "top_title": "PATIFIX Window Film self Adhesive, Gray"
+  },
+  {
+   "query": "wireless noise cancelling headphones",
+   "kind": "absent",
+   "top_score": -5.51,
+   "top_title": "Trolls Poppy Kid Friendly Headphones with Built in Volume Limiting Feature for Kid Friendl"
+  },
+  {
+   "query": "15 inch laptop with 16 gigabytes of memory",
+   "kind": "absent",
+   "top_score": -9.706,
+   "top_title": "Buffalo Games - Days to Remember - Autumn Memories - 500 Piece Jigsaw Puzzle"
+  },
+  {
+   "query": "4k smart television 55 inch",
+   "kind": "absent",
+   "top_score": -9.141,
+   "top_title": "MZ GS1004 1/18 2.4G 4WD 390 Brushed Rc Car 55km/h High Speed Drift Buggy Off-Road Truck RT"
+  },
+  {
+   "query": "android smartphone with a good camera",
+   "kind": "absent",
+   "top_score": -0.063,
+   "top_title": "DJI Mavic Mini Combo - Drone FlyCam Quadcopter with 2.7K Camera 3-Axis Gimbal GPS 30min Fl"
+  },
+  {
+   "query": "espresso machine with milk frother",
+   "kind": "lookalike",
+   "top_score": -5.118,
+   "top_title": "Hey! Play! Coffee Maker Toy Set- Pretend Kitchen Appliance for Play Espresso or Cappuccino"
+  },
+  {
+   "query": "robot vacuum cleaner for pet hair",
+   "kind": "lookalike",
+   "top_score": -5.676,
+   "top_title": "Click N' Play Toy Realistic Vacuum Cleaner, and House Keeping 8 Piece Play Set with Access"
+  },
+  {
+   "query": "car engine oil 5w30 synthetic",
+   "kind": "absent",
+   "top_score": -6.362,
+   "top_title": "Redcat Racing Rampage XB Gas Buggy, Blue, 1/5 Scale"
+  },
+  {
+   "query": "windshield wiper blades 22 inch",
+   "kind": "absent",
+   "top_score": -8.313,
+   "top_title": "Excel Blades #19 Angled Wood Chisel Blade, 1 Inch, American Made Replacement Hobby Blades,"
+  },
+  {
+   "query": "whey protein powder chocolate",
+   "kind": "absent",
+   "top_score": -10.391,
+   "top_title": "Colorations CPTMA Powder Tempera, Magenta - 1 lb."
+  },
+  {
+   "query": "vitamin d3 supplement capsules",
+   "kind": "absent",
+   "top_score": -9.894,
+   "top_title": "Capsule Chix Ultimix 4 Pack, 4.5 inch Small Doll with Capsule Machine Unboxing and Mix and"
+  },
+  {
+   "query": "ibuprofen pain relief tablets",
+   "kind": "absent",
+   "top_score": -9.11,
+   "top_title": "Baby Wood Pacifier Clip and Silicon Owl Teether | 100% BPA Free, Anti-Bacterial, and Organ"
+  },
+  {
+   "query": "organic ground coffee dark roast",
+   "kind": "absent",
+   "top_score": -10.332,
+   "top_title": "Party Essentials N81004 8-Ounce Hard Plastic Coffee Cups, 10-Count, White"
+  },
+  {
+   "query": "gluten free pasta",
+   "kind": "absent",
+   "top_score": -7.513,
+   "top_title": "Kinetic Sand Beach Sand Kingdom Playset with 3lbs of Beach Sand, for Ages 3 and Up"
+  },
+  {
+   "query": "dry cat food for indoor cats",
+   "kind": "absent",
+   "top_score": -8.205,
+   "top_title": "GUND Pusheen Snackables Ice Cream Plush Stuffed Animal Cat, 9.5\""
+  },
+  {
+   "query": "cordless power drill 20 volt",
+   "kind": "lookalike",
+   "top_score": -3.531,
+   "top_title": "Maxx Action Power Tools Drill with Realistic Drilling Movement and Drill Bit Accessories"
+  },
+  {
+   "query": "lawn mower self propelled",
+   "kind": "absent",
+   "top_score": -3.279,
+   "top_title": "Academy Da Vinci Self Propelling Cart"
+  },
+  {
+   "query": "men's running shoes size 10",
+   "kind": "lookalike",
+   "top_score": -3.763,
+   "top_title": "Kokatat Men's Scout Boot Charcoal in Your Choice of Size"
+  },
+  {
+   "query": "shampoo for dry scalp",
+   "kind": "absent",
+   "top_score": -7.874,
+   "top_title": "Hauck FurReal Pet Grooming Mobile Salon and Spa Carrying Case with 11 Accessories"
+  },
+  {
+   "query": "electric toothbrush with replacement heads",
+   "kind": "absent",
+   "top_score": -8.417,
+   "top_title": "Luxo 18845LG Magnifier, 6.75x4.5In, LED, Gry, 1.88X Lighting, Gray"
+  },
+  {
+   "query": "printer ink cartridge black",
+   "kind": "absent",
+   "top_score": -6.044,
+   "top_title": "Great Papers! Scroll Letterhead, 8.5\"x11\", 80 Count (2014338)"
+  },
+  {
+   "query": "external hard drive 2 terabytes",
+   "kind": "absent",
+   "top_score": -10.752,
+   "top_title": "Premier Energizer HardCase iPhone Charger Lightning Cables MFi Fast Charging Cord Rugged/A"
+  },
+  {
+   "query": "air fryer 5 quart",
+   "kind": "absent",
+   "top_score": -8.619,
+   "top_title": "Hathaway Ranger 5' AIR Hockey Table, 60\" L x 30\" W x 31\" H, Black"
+  },
+  {
+   "query": "baby formula powder",
+   "kind": "absent",
+   "top_score": 1.512,
+   "top_title": "My First Baby Powder Pink - Madame Alexander"
+  },
+  {
+   "query": "sunscreen spf 50 lotion",
+   "kind": "absent",
+   "top_score": -9.557,
+   "top_title": "Sun-Staches Donuts Sunglasses, Pink Frame Doughnut Sprinkles Costume Party Favor Shades UV"
+  },
+  {
+   "query": "red wine cabernet sauvignon",
+   "kind": "absent",
+   "top_score": -10.863,
+   "top_title": "Party Essentials Hard Plastic Two Piece 5-Ounce Champagne Flutes, Neon Pink, 10 Count"
+  }
+ ]
+}

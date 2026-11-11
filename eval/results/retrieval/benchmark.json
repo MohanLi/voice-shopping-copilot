@@ -1,0 +1,855 @@
+{
+ "created": "2026-11-11T03:14:57",
+ "queries": 600,
+ "machine": "Darwin arm64, 12 CPUs, Python 3.12.14",
+ "query_types": [
+  "brand",
+  "descriptive",
+  "spoken"
+ ],
+ "queries_with_budget": 378,
+ "queries_with_age": 234,
+ "index": {
+  "created": "2026-11-11T03:06:01",
+  "n_docs": 9741,
+  "embedding_backend": "fastembed",
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "embedding_dim": 384,
+  "embedding_max_tokens": 256,
+  "vector_store": "qdrant (embedded)",
+  "lexical": "bm25s (lucene variant, English stemming)",
+  "products_sha256": "527e25147b4a236fb0c19d254284c0c6804b581ff3d04a5095be7490170dc3f0",
+  "categories": 1147,
+  "brands": 2204,
+  "build_seconds": 6.6
+ },
+ "reranker": "Xenova/ms-marco-MiniLM-L-6-v2",
+ "variants": {
+  "bm25": {
+   "n_queries": 600,
+   "hit@1": 81.0,
+   "hit@3": 91.0,
+   "hit@5": 93.2,
+   "hit@10": 96.2,
+   "mrr@10": 0.866,
+   "in_budget@3": 77.9,
+   "age_ok@3": 76.5,
+   "latency_ms_p50": 0.3,
+   "latency_ms_p95": 0.4,
+   "by_type": {
+    "brand": {
+     "hit@3": 99.0,
+     "mrr@10": 0.985
+    },
+    "descriptive": {
+     "hit@3": 87.0,
+     "mrr@10": 0.807
+    },
+    "spoken": {
+     "hit@3": 87.0,
+     "mrr@10": 0.804
+    }
+   },
+   "example_misses": [
+    {
+     "qid": "q002-descriptive",
+     "query": "I want a hand painted French-made fantasy figure of a magical white horse with a horn, a gift for a three year old to spark imagination.",
+     "target": "Papo Ice Unicorn Figure, Multicolor",
+     "top1": "Melissa & Doug Created by Me! Pet Figurines Craft Kit (Resin Dog, Cat, Horse, 12 Paints, 2"
+    },
+    {
+     "qid": "q002-spoken",
+     "query": "um i want like a hand painted fantasy figure of a magical white horse with a horn you know it's a gift for a three year old to spark their imagination",
+     "target": "Papo Ice Unicorn Figure, Multicolor",
+     "top1": "Melissa & Doug Created by Me! Pet Figurines Craft Kit (Resin Dog, Cat, Horse, 12 Paints, 2"
+    },
+    {
+     "qid": "q040-descriptive",
+     "query": "I'm looking for a big jigsaw puzzle with a cozy countryside scene, something with about a thousand pieces to keep me busy on a rainy weekend.",
+     "target": "Buffalo Games - Country Life - Country Delivery - 1000 Piece Jigsaw Puzzle",
+     "top1": "White Mountain Puzzles Friends in Winter - 1000 Piece Jigsaw Puzzle"
+    },
+    {
+     "qid": "q040-spoken",
+     "query": "um so I'm looking for like a big jigsaw puzzle with a cozy countryside scene you know something with about a thousand pieces to keep me busy on a rainy weekend",
+     "target": "Buffalo Games - Country Life - Country Delivery - 1000 Piece Jigsaw Puzzle",
+     "top1": "White Mountain Puzzles Friends in Winter - 1000 Piece Jigsaw Puzzle"
+    },
+    {
+     "qid": "q041-descriptive",
+     "query": "I need a small wooden wall sign for a kid's bedroom that says something about being on a great adventure together, ready to hang with no assembly.",
+     "target": "The Kids Room by Stupell You are Our Greatest Adventure Art Wall Plaque, Blue/Green, 11 x ",
+     "top1": "Worth Imports 23\" Wooden Noel Puzzle Sign, WhiteRedGreenCream"
+    },
+    {
+     "qid": "q048-descriptive",
+     "query": "I'm looking for a toy mask that makes a robot's voice sound when my kid talks, the yellow car robot one, under ten dollars, for a seven year old.",
+     "target": "Transformers: Bumblebee Autobot Sqweeks Voice Changer Mask",
+     "top1": "ICS CIS 1:32 Die Cast Transformable Car to Robot with Sound/Light Vehicle, Yellow"
+    },
+    {
+     "qid": "q049-descriptive",
+     "query": "I need a black camouflage vinyl sticker wrap for my drone's battery to protect it from scratches and dust, and it should peel off easily.",
+     "target": "MightySkins Skin Compatible with DJI Mavic Pro Battery - Black Camo | Protective, Durable,",
+     "top1": "MightySkins Skin Compatible with DJI Mavic Pro Battery - Green Camouflage | Protective, Du"
+    },
+    {
+     "qid": "q055-descriptive",
+     "query": "I need a collectible action figure of a fused warrior from a famous anime, something for a teenager, and I want to spend less than thirty dollars.",
+     "target": "Banpresto 39564 Dragon Ball Legends Collab Super Saiyan Gogeta Figure",
+     "top1": "Funko Pop! Movies: Warrior - Swan"
+    },
+    {
+     "qid": "q055-spoken",
+     "query": "um so I need like a collectible action figure of that fused warrior from the anime you know, it's for a thirteen year old and I want to keep it under thirty dollars",
+     "target": "Banpresto 39564 Dragon Ball Legends Collab Super Saiyan Gogeta Figure",
+     "top1": "McFarlane Toys DC Multiverse Batman: Batman The Animated Series Action Figure"
+    },
+    {
+     "qid": "q071-descriptive",
+     "query": "I'm looking for a collectible hero figure of the big green angry superhero, around eleven inches tall with lots of paint detail, and it's for a 15 year old.",
+     "target": "Diamond Select Toys Marvel Gallery Hulk PVC Figure",
+     "top1": "Assorted Super Hero Comic Book Design Super Hi High Bounce Rubber Balls (12)"
+    },
+    {
+     "qid": "q071-spoken",
+     "query": "um I'm looking for like a collectible figure of the big green angry superhero you know about eleven inches tall with lots of paint detail and it's for a fifteen year old",
+     "target": "Diamond Select Toys Marvel Gallery Hulk PVC Figure",
+     "top1": "Cleveland Browns Away Jersey NFL Action Figure Set"
+    },
+    {
+     "qid": "q079-spoken",
+     "query": "um so i'm looking for like a collectible mini figure of t dog from the zombie show you know it's for a fifteen year old",
+     "target": "Eaglemoss The Walking Dead Collector's Models: T-Dog Figurine",
+     "top1": "Forum Novelties Zombie Girl Costume, Child's Medium"
+    },
+    {
+     "qid": "q091-descriptive",
+     "query": "I want peel and stick wall stickers of a cartoon minion character set for my kid's bedroom, the kind I can take off later without leaving marks.",
+     "target": "RoomMates Despicable Me 2 Peel And Stick Wall Decals",
+     "top1": "Wallmonkeys Cute Baby Blue Cartoon Wall Decal Peel and Stick Graphic (36 in W x 26 in H) W"
+    },
+    {
+     "qid": "q091-spoken",
+     "query": "um so i want like peel and stick wall stickers of the minion characters for my kid's room, the kind i can take off later without leaving marks you know",
+     "target": "RoomMates Despicable Me 2 Peel And Stick Wall Decals",
+     "top1": "Wallmonkeys WM22946 Cute Baby Yellow and Brown Cartoon Tiger Peel and Stick Wall Decals (3"
+    },
+    {
+     "qid": "q117-descriptive",
+     "query": "I'm looking for large removable peel and stick wall decorations of a woodland scene, that I can move around, and my budget is under twenty five dollars.",
+     "target": "Borders Unlimited in The Woods Super Jumbo Applique, Multicolor",
+     "top1": "RoomMates My Little Pony Fluttershy Peel and Stick Giant Wall Decals"
+    }
+   ]
+  },
+  "dense": {
+   "n_queries": 600,
+   "hit@1": 69.0,
+   "hit@3": 82.2,
+   "hit@5": 85.3,
+   "hit@10": 91.0,
+   "mrr@10": 0.763,
+   "in_budget@3": 77.6,
+   "age_ok@3": 77.2,
+   "latency_ms_p50": 11.7,
+   "latency_ms_p95": 13.1,
+   "by_type": {
+    "brand": {
+     "hit@3": 99.5,
+     "mrr@10": 0.983
+    },
+    "descriptive": {
+     "hit@3": 73.0,
+     "mrr@10": 0.645
+    },
+    "spoken": {
+     "hit@3": 74.0,
+     "mrr@10": 0.662
+    }
+   },
+   "example_misses": [
+    {
+     "qid": "q002-descriptive",
+     "query": "I want a hand painted French-made fantasy figure of a magical white horse with a horn, a gift for a three year old to spark imagination.",
+     "target": "Papo Ice Unicorn Figure, Multicolor",
+     "top1": "AMAV Toys 3D Unicron & Pegasus Painting Kit - All Inclusive & Ready to Paint - Enhance Cre"
+    },
+    {
+     "qid": "q002-spoken",
+     "query": "um i want like a hand painted fantasy figure of a magical white horse with a horn you know it's a gift for a three year old to spark their imagination",
+     "target": "Papo Ice Unicorn Figure, Multicolor",
+     "top1": "AMAV Toys 3D Unicron & Pegasus Painting Kit - All Inclusive & Ready to Paint - Enhance Cre"
+    },
+    {
+     "qid": "q005-spoken",
+     "query": "um so I need like a small toy doll with a matching horse for my three year old you know something she can pose and play pretend with",
+     "target": "Spirit Riding Free Small Doll & Horse Set - Abigail & Boomerang",
+     "top1": "Mattel Barbie Hugs n Horses Dolls, Horses and Accessories"
+    },
+    {
+     "qid": "q009-spoken",
+     "query": "um so I'm looking for like a water slide sheet for my kid's backyard to cool off in summer you know under twenty five dollars it's for a 9 year old",
+     "target": "Wham-o Slip N Slide Wave Rider 16'",
+     "top1": "Constructive Playthings Sand and Water Table with Dry-Erase Top, Indoor and Outdoor Friend"
+    },
+    {
+     "qid": "q015-descriptive",
+     "query": "I need a quirky little good luck charm doll with a funny protective message, a keychain attached, something I can give a teenager for under fifteen dollars",
+     "target": "Watchover Voodoo Aka-Oni Voodoo Novelty",
+     "top1": "GUND Pusheen Fancy and Unicorn Magical Kitties Plush Deluxe Keychain Clip, Multicolor, 8.5"
+    },
+    {
+     "qid": "q016-descriptive",
+     "query": "I want a 260 piece jigsaw puzzle with a nice scenic seaside picture, something sturdy with thick pieces, it's for my six year old",
+     "target": "Anatolian Call of The Sea Jigsaw Puzzle (260 Piece)",
+     "top1": "Kodak 1500 Piece - Quaint Cottage by The Sea"
+    },
+    {
+     "qid": "q023-descriptive",
+     "query": "I'm trying to find a trading card box with booster packs, sleeves, dice and a collector's box for my 6 year old who loves Pokemon.",
+     "target": "Pokemon TCG: Sun and Moon Crimson Invasion Elite Trainer Box",
+     "top1": "Pokemon TCG: Pikachu-Gx & Eevee-Gx Special Collection | 4 Booster Pack | Pikachu-Gx Foil P"
+    },
+    {
+     "qid": "q023-spoken",
+     "query": "um so i'm trying to find like a trading card box with booster packs and sleeves and dice and a collector's box for my 6 year old who loves pokemon you know",
+     "target": "Pokemon TCG: Sun and Moon Crimson Invasion Elite Trainer Box",
+     "top1": "Pokemon TCG: Pikachu-Gx & Eevee-Gx Special Collection | 4 Booster Pack | Pikachu-Gx Foil P"
+    },
+    {
+     "qid": "q026-descriptive",
+     "query": "I'm looking for a small toy car for my kid that looks like a race car from the animated movie, something detailed and collectible, and I want to keep it under ten dollars.",
+     "target": "Disney Pixar Cars Die-cast Carla Veloso Vehicle",
+     "top1": "Bandai Tamashii Nations Chogokin Cars Lightning McQueen \"Cars\" Statue"
+    },
+    {
+     "qid": "q026-spoken",
+     "query": "um I need like a little toy race car for my kid from that cartoon movie, something detailed and collectible, and it has to be under ten dollars you know",
+     "target": "Disney Pixar Cars Die-cast Carla Veloso Vehicle",
+     "top1": "Bandai Tamashii Nations Chogokin Cars Lightning McQueen \"Cars\" Statue"
+    },
+    {
+     "qid": "q040-descriptive",
+     "query": "I'm looking for a big jigsaw puzzle with a cozy countryside scene, something with about a thousand pieces to keep me busy on a rainy weekend.",
+     "target": "Buffalo Games - Country Life - Country Delivery - 1000 Piece Jigsaw Puzzle",
+     "top1": "White Mountain Puzzles General Store - 1000 Piece Jigsaw Puzzle"
+    },
+    {
+     "qid": "q044-descriptive",
+     "query": "I need an easy-to-learn family strategy board game set in a royal court, with plastic rings and hand-shaped player screens, under sixty dollars, for my 15 year old.",
+     "target": "Tudor",
+     "top1": "Hey! Play! 7-in-1 Classic Wooden Board Game Set \u2013 Old Fashioned Family Game Night Cards, D"
+    },
+    {
+     "qid": "q055-descriptive",
+     "query": "I need a collectible action figure of a fused warrior from a famous anime, something for a teenager, and I want to spend less than thirty dollars.",
+     "target": "Banpresto 39564 Dragon Ball Legends Collab Super Saiyan Gogeta Figure",
+     "top1": "Bandai Hobby MG 1/100 Gunner Zaku Warrior (Lunamaria Hawke Custom) Gundam Seed Destiny"
+    },
+    {
+     "qid": "q055-spoken",
+     "query": "um so I need like a collectible action figure of that fused warrior from the anime you know, it's for a thirteen year old and I want to keep it under thirty dollars",
+     "target": "Banpresto 39564 Dragon Ball Legends Collab Super Saiyan Gogeta Figure",
+     "top1": "Banpresto 39191 My Hero Academia Age of Heroes All Might Figure"
+    },
+    {
+     "qid": "q065-descriptive",
+     "query": "I'm looking for a small squishy toy man that you can pull and twist in every direction and he snaps back to his shape, something fun to fidget with.",
+     "target": "World's Smallest Stretch Armstrong",
+     "top1": "Orb Morphimals Pink Twisticorn - Ultra-Sized Squeeze Toy"
+    }
+   ]
+  },
+  "hybrid (rrf)": {
+   "n_queries": 600,
+   "hit@1": 81.0,
+   "hit@3": 90.3,
+   "hit@5": 94.0,
+   "hit@10": 95.7,
+   "mrr@10": 0.861,
+   "in_budget@3": 78.2,
+   "age_ok@3": 79.6,
+   "latency_ms_p50": 11.9,
+   "latency_ms_p95": 13.2,
+   "by_type": {
+    "brand": {
+     "hit@3": 100.0,
+     "mrr@10": 0.994
+    },
+    "descriptive": {
+     "hit@3": 85.0,
+     "mrr@10": 0.783
+    },
+    "spoken": {
+     "hit@3": 86.0,
+     "mrr@10": 0.806
+    }
+   },
+   "example_misses": [
+    {
+     "qid": "q002-descriptive",
+     "query": "I want a hand painted French-made fantasy figure of a magical white horse with a horn, a gift for a three year old to spark imagination.",
+     "target": "Papo Ice Unicorn Figure, Multicolor",
+     "top1": "AMAV Toys 3D Unicron & Pegasus Painting Kit - All Inclusive & Ready to Paint - Enhance Cre"
+    },
+    {
+     "qid": "q002-spoken",
+     "query": "um i want like a hand painted fantasy figure of a magical white horse with a horn you know it's a gift for a three year old to spark their imagination",
+     "target": "Papo Ice Unicorn Figure, Multicolor",
+     "top1": "AMAV Toys 3D Unicron & Pegasus Painting Kit - All Inclusive & Ready to Paint - Enhance Cre"
+    },
+    {
+     "qid": "q023-spoken",
+     "query": "um so i'm trying to find like a trading card box with booster packs and sleeves and dice and a collector's box for my 6 year old who loves pokemon you know",
+     "target": "Pokemon TCG: Sun and Moon Crimson Invasion Elite Trainer Box",
+     "top1": "Pokemon TCG: Bewear Gx Box - 4 Booster Pack with A Foil Promo Card"
+    },
+    {
+     "qid": "q026-descriptive",
+     "query": "I'm looking for a small toy car for my kid that looks like a race car from the animated movie, something detailed and collectible, and I want to keep it under ten dollars.",
+     "target": "Disney Pixar Cars Die-cast Carla Veloso Vehicle",
+     "top1": "Disney Cars Pit Crew Launchers, #9 Nigel Gearsley"
+    },
+    {
+     "qid": "q026-spoken",
+     "query": "um I need like a little toy race car for my kid from that cartoon movie, something detailed and collectible, and it has to be under ten dollars you know",
+     "target": "Disney Pixar Cars Die-cast Carla Veloso Vehicle",
+     "top1": "Disney Pixar Cars Lightning McQueen with Racing Wheels"
+    },
+    {
+     "qid": "q040-descriptive",
+     "query": "I'm looking for a big jigsaw puzzle with a cozy countryside scene, something with about a thousand pieces to keep me busy on a rainy weekend.",
+     "target": "Buffalo Games - Country Life - Country Delivery - 1000 Piece Jigsaw Puzzle",
+     "top1": "White Mountain Puzzles Home Sweet Home - 1000Piece Jigsaw Puzzle"
+    },
+    {
+     "qid": "q040-spoken",
+     "query": "um so I'm looking for like a big jigsaw puzzle with a cozy countryside scene you know something with about a thousand pieces to keep me busy on a rainy weekend",
+     "target": "Buffalo Games - Country Life - Country Delivery - 1000 Piece Jigsaw Puzzle",
+     "top1": "White Mountain Puzzles Friends in Winter - 1000 Piece Jigsaw Puzzle"
+    },
+    {
+     "qid": "q049-descriptive",
+     "query": "I need a black camouflage vinyl sticker wrap for my drone's battery to protect it from scratches and dust, and it should peel off easily.",
+     "target": "MightySkins Skin Compatible with DJI Mavic Pro Battery - Black Camo | Protective, Durable,",
+     "top1": "MightySkins Skin Compatible with DJI Mavic Pro Battery - Green Camouflage | Protective, Du"
+    },
+    {
+     "qid": "q055-descriptive",
+     "query": "I need a collectible action figure of a fused warrior from a famous anime, something for a teenager, and I want to spend less than thirty dollars.",
+     "target": "Banpresto 39564 Dragon Ball Legends Collab Super Saiyan Gogeta Figure",
+     "top1": "Funko POP Anime: Naruto Sasuke Action Figure"
+    },
+    {
+     "qid": "q055-spoken",
+     "query": "um so I need like a collectible action figure of that fused warrior from the anime you know, it's for a thirteen year old and I want to keep it under thirty dollars",
+     "target": "Banpresto 39564 Dragon Ball Legends Collab Super Saiyan Gogeta Figure",
+     "top1": "Funko POP Anime: Naruto Sasuke Action Figure"
+    },
+    {
+     "qid": "q091-descriptive",
+     "query": "I want peel and stick wall stickers of a cartoon minion character set for my kid's bedroom, the kind I can take off later without leaving marks.",
+     "target": "RoomMates Despicable Me 2 Peel And Stick Wall Decals",
+     "top1": "Wallmonkeys Cute Baby Blue Cartoon Wall Decal Peel and Stick Graphic (36 in W x 26 in H) W"
+    },
+    {
+     "qid": "q091-spoken",
+     "query": "um so i want like peel and stick wall stickers of the minion characters for my kid's room, the kind i can take off later without leaving marks you know",
+     "target": "RoomMates Despicable Me 2 Peel And Stick Wall Decals",
+     "top1": "Wallmonkeys WM22946 Cute Baby Yellow and Brown Cartoon Tiger Peel and Stick Wall Decals (3"
+    },
+    {
+     "qid": "q097-descriptive",
+     "query": "I want a fast remote control monster truck that can handle rough off-road terrain, with a budget of under six hundred dollars, and it doesn't need to include the battery or charger.",
+     "target": "Losi 1/10 2.2 Rock Rey 4WD RC Rock Racer Brushless RTR with AVC and 2800Kv Brushless Power",
+     "top1": "Remote Control Monster Truck\u2013 1: 16 Scale, 2.4 Ghz Rc Off-Road Rugged Toy Vehicle with Spr"
+    },
+    {
+     "qid": "q097-spoken",
+     "query": "um so i want like a fast remote control monster truck that can handle rough terrain you know with a budget of under six hundred dollars and it doesn't need the battery or charger",
+     "target": "Losi 1/10 2.2 Rock Rey 4WD RC Rock Racer Brushless RTR with AVC and 2800Kv Brushless Power",
+     "top1": "Remote Control Monster Truck\u2013 1: 16 Scale, 2.4 Ghz Rc Off-Road Rugged Toy Vehicle with Spr"
+    },
+    {
+     "qid": "q107-descriptive",
+     "query": "I want a shoulder bag with a hidden back pocket that can hold a pistol, with an adjustable strap I can wear on either side, and it should cost under forty dollars.",
+     "target": "Red Rock Outdoor Gear - Rover Sling Pack",
+     "top1": "Under Armour Medium Fry Backpack"
+    }
+   ]
+  },
+  "dense + filters": {
+   "n_queries": 600,
+   "hit@1": 74.7,
+   "hit@3": 86.0,
+   "hit@5": 89.2,
+   "hit@10": 92.7,
+   "mrr@10": 0.807,
+   "in_budget@3": 100.0,
+   "age_ok@3": 100.0,
+   "latency_ms_p50": 57.6,
+   "latency_ms_p95": 133.0,
+   "by_type": {
+    "brand": {
+     "hit@3": 99.5,
+     "mrr@10": 0.985
+    },
+    "descriptive": {
+     "hit@3": 77.5,
+     "mrr@10": 0.712
+    },
+    "spoken": {
+     "hit@3": 81.0,
+     "mrr@10": 0.723
+    }
+   },
+   "example_misses": [
+    {
+     "qid": "q002-descriptive",
+     "query": "I want a hand painted French-made fantasy figure of a magical white horse with a horn, a gift for a three year old to spark imagination.",
+     "target": "Papo Ice Unicorn Figure, Multicolor",
+     "top1": "AMAV Toys 3D Unicron & Pegasus Painting Kit - All Inclusive & Ready to Paint - Enhance Cre"
+    },
+    {
+     "qid": "q002-spoken",
+     "query": "um i want like a hand painted fantasy figure of a magical white horse with a horn you know it's a gift for a three year old to spark their imagination",
+     "target": "Papo Ice Unicorn Figure, Multicolor",
+     "top1": "AMAV Toys 3D Unicron & Pegasus Painting Kit - All Inclusive & Ready to Paint - Enhance Cre"
+    },
+    {
+     "qid": "q016-descriptive",
+     "query": "I want a 260 piece jigsaw puzzle with a nice scenic seaside picture, something sturdy with thick pieces, it's for my six year old",
+     "target": "Anatolian Call of The Sea Jigsaw Puzzle (260 Piece)",
+     "top1": "MasterPieces The Right Fit Kids Jigsaw Puzzle, 101 Things to Spot in the Woods, Tillywig T"
+    },
+    {
+     "qid": "q023-descriptive",
+     "query": "I'm trying to find a trading card box with booster packs, sleeves, dice and a collector's box for my 6 year old who loves Pokemon.",
+     "target": "Pokemon TCG: Sun and Moon Crimson Invasion Elite Trainer Box",
+     "top1": "Pokemon TCG: Pikachu-Gx & Eevee-Gx Special Collection | 4 Booster Pack | Pikachu-Gx Foil P"
+    },
+    {
+     "qid": "q023-spoken",
+     "query": "um so i'm trying to find like a trading card box with booster packs and sleeves and dice and a collector's box for my 6 year old who loves pokemon you know",
+     "target": "Pokemon TCG: Sun and Moon Crimson Invasion Elite Trainer Box",
+     "top1": "Pokemon TCG: Pikachu-Gx & Eevee-Gx Special Collection | 4 Booster Pack | Pikachu-Gx Foil P"
+    },
+    {
+     "qid": "q026-descriptive",
+     "query": "I'm looking for a small toy car for my kid that looks like a race car from the animated movie, something detailed and collectible, and I want to keep it under ten dollars.",
+     "target": "Disney Pixar Cars Die-cast Carla Veloso Vehicle",
+     "top1": "PlayMonster Automoblox Mini X11 Rivet"
+    },
+    {
+     "qid": "q026-spoken",
+     "query": "um I need like a little toy race car for my kid from that cartoon movie, something detailed and collectible, and it has to be under ten dollars you know",
+     "target": "Disney Pixar Cars Die-cast Carla Veloso Vehicle",
+     "top1": "Far Out Toys Crash Racers Vehicle - Deke's Demolition"
+    },
+    {
+     "qid": "q040-descriptive",
+     "query": "I'm looking for a big jigsaw puzzle with a cozy countryside scene, something with about a thousand pieces to keep me busy on a rainy weekend.",
+     "target": "Buffalo Games - Country Life - Country Delivery - 1000 Piece Jigsaw Puzzle",
+     "top1": "White Mountain Puzzles General Store - 1000 Piece Jigsaw Puzzle"
+    },
+    {
+     "qid": "q044-descriptive",
+     "query": "I need an easy-to-learn family strategy board game set in a royal court, with plastic rings and hand-shaped player screens, under sixty dollars, for my 15 year old.",
+     "target": "Tudor",
+     "top1": "Hey! Play! 7-in-1 Classic Wooden Board Game Set \u2013 Old Fashioned Family Game Night Cards, D"
+    },
+    {
+     "qid": "q055-descriptive",
+     "query": "I need a collectible action figure of a fused warrior from a famous anime, something for a teenager, and I want to spend less than thirty dollars.",
+     "target": "Banpresto 39564 Dragon Ball Legends Collab Super Saiyan Gogeta Figure",
+     "top1": "Banpresto 35783 My Hero Academia Enter The Hero Izuku Midoriya Figure"
+    },
+    {
+     "qid": "q055-spoken",
+     "query": "um so I need like a collectible action figure of that fused warrior from the anime you know, it's for a thirteen year old and I want to keep it under thirty dollars",
+     "target": "Banpresto 39564 Dragon Ball Legends Collab Super Saiyan Gogeta Figure",
+     "top1": "Banpresto 39191 My Hero Academia Age of Heroes All Might Figure"
+    },
+    {
+     "qid": "q065-descriptive",
+     "query": "I'm looking for a small squishy toy man that you can pull and twist in every direction and he snaps back to his shape, something fun to fidget with.",
+     "target": "World's Smallest Stretch Armstrong",
+     "top1": "Orb Morphimals Pink Twisticorn - Ultra-Sized Squeeze Toy"
+    },
+    {
+     "qid": "q065-spoken",
+     "query": "um so like I need a little squishy toy man you can pull and twist in every direction and he snaps back to his shape you know something fun to fidget with",
+     "target": "World's Smallest Stretch Armstrong",
+     "top1": "Squishy Jumbo Toy, Wacky Squish-Dee-Lish Squishies - Slow Rising Poop, Soft Kids Squishy T"
+    },
+    {
+     "qid": "q089-descriptive",
+     "query": "I need a long blonde braided wig for a child dressing up as a snow queen character, and I want to spend under twenty five dollars.",
+     "target": "Disney Frozen Elsa Wig Child",
+     "top1": "Rubies Monster High Clawdeen Wolf Child Costume Wig"
+    },
+    {
+     "qid": "q089-spoken",
+     "query": "um I need like a long blonde braided wig for my kid dressing up as a snow queen you know and I want a budget of under twenty five dollars",
+     "target": "Disney Frozen Elsa Wig Child",
+     "top1": "Rubies Monster High Clawdeen Wolf Child Costume Wig"
+    }
+   ]
+  },
+  "hybrid + filters": {
+   "n_queries": 600,
+   "hit@1": 83.3,
+   "hit@3": 92.2,
+   "hit@5": 94.8,
+   "hit@10": 96.7,
+   "mrr@10": 0.881,
+   "in_budget@3": 100.0,
+   "age_ok@3": 100.0,
+   "latency_ms_p50": 58.0,
+   "latency_ms_p95": 134.0,
+   "by_type": {
+    "brand": {
+     "hit@3": 100.0,
+     "mrr@10": 0.994
+    },
+    "descriptive": {
+     "hit@3": 88.0,
+     "mrr@10": 0.816
+    },
+    "spoken": {
+     "hit@3": 88.5,
+     "mrr@10": 0.832
+    }
+   },
+   "example_misses": [
+    {
+     "qid": "q002-spoken",
+     "query": "um i want like a hand painted fantasy figure of a magical white horse with a horn you know it's a gift for a three year old to spark their imagination",
+     "target": "Papo Ice Unicorn Figure, Multicolor",
+     "top1": "AMAV Toys 3D Unicron & Pegasus Painting Kit - All Inclusive & Ready to Paint - Enhance Cre"
+    },
+    {
+     "qid": "q040-descriptive",
+     "query": "I'm looking for a big jigsaw puzzle with a cozy countryside scene, something with about a thousand pieces to keep me busy on a rainy weekend.",
+     "target": "Buffalo Games - Country Life - Country Delivery - 1000 Piece Jigsaw Puzzle",
+     "top1": "White Mountain Puzzles Home Sweet Home - 1000Piece Jigsaw Puzzle"
+    },
+    {
+     "qid": "q040-spoken",
+     "query": "um so I'm looking for like a big jigsaw puzzle with a cozy countryside scene you know something with about a thousand pieces to keep me busy on a rainy weekend",
+     "target": "Buffalo Games - Country Life - Country Delivery - 1000 Piece Jigsaw Puzzle",
+     "top1": "White Mountain Puzzles Friends in Winter - 1000 Piece Jigsaw Puzzle"
+    },
+    {
+     "qid": "q049-descriptive",
+     "query": "I need a black camouflage vinyl sticker wrap for my drone's battery to protect it from scratches and dust, and it should peel off easily.",
+     "target": "MightySkins Skin Compatible with DJI Mavic Pro Battery - Black Camo | Protective, Durable,",
+     "top1": "MightySkins Skin Compatible with DJI Mavic Pro Battery - Green Camouflage | Protective, Du"
+    },
+    {
+     "qid": "q055-descriptive",
+     "query": "I need a collectible action figure of a fused warrior from a famous anime, something for a teenager, and I want to spend less than thirty dollars.",
+     "target": "Banpresto 39564 Dragon Ball Legends Collab Super Saiyan Gogeta Figure",
+     "top1": "Funko Pop! Animation: My Hero Academia - Teacher All Might"
+    },
+    {
+     "qid": "q055-spoken",
+     "query": "um so I need like a collectible action figure of that fused warrior from the anime you know, it's for a thirteen year old and I want to keep it under thirty dollars",
+     "target": "Banpresto 39564 Dragon Ball Legends Collab Super Saiyan Gogeta Figure",
+     "top1": "Star Wars Vintage Figures Action Assortment"
+    },
+    {
+     "qid": "q091-descriptive",
+     "query": "I want peel and stick wall stickers of a cartoon minion character set for my kid's bedroom, the kind I can take off later without leaving marks.",
+     "target": "RoomMates Despicable Me 2 Peel And Stick Wall Decals",
+     "top1": "Wallmonkeys Cute Baby Blue Cartoon Wall Decal Peel and Stick Graphic (36 in W x 26 in H) W"
+    },
+    {
+     "qid": "q091-spoken",
+     "query": "um so i want like peel and stick wall stickers of the minion characters for my kid's room, the kind i can take off later without leaving marks you know",
+     "target": "RoomMates Despicable Me 2 Peel And Stick Wall Decals",
+     "top1": "Wallmonkeys WM22946 Cute Baby Yellow and Brown Cartoon Tiger Peel and Stick Wall Decals (3"
+    },
+    {
+     "qid": "q097-descriptive",
+     "query": "I want a fast remote control monster truck that can handle rough off-road terrain, with a budget of under six hundred dollars, and it doesn't need to include the battery or charger.",
+     "target": "Losi 1/10 2.2 Rock Rey 4WD RC Rock Racer Brushless RTR with AVC and 2800Kv Brushless Power",
+     "top1": "Remote Control Monster Truck\u2013 1: 16 Scale, 2.4 Ghz Rc Off-Road Rugged Toy Vehicle with Spr"
+    },
+    {
+     "qid": "q097-spoken",
+     "query": "um so i want like a fast remote control monster truck that can handle rough terrain you know with a budget of under six hundred dollars and it doesn't need the battery or charger",
+     "target": "Losi 1/10 2.2 Rock Rey 4WD RC Rock Racer Brushless RTR with AVC and 2800Kv Brushless Power",
+     "top1": "Remote Control Monster Truck\u2013 1: 16 Scale, 2.4 Ghz Rc Off-Road Rugged Toy Vehicle with Spr"
+    },
+    {
+     "qid": "q107-descriptive",
+     "query": "I want a shoulder bag with a hidden back pocket that can hold a pistol, with an adjustable strap I can wear on either side, and it should cost under forty dollars.",
+     "target": "Red Rock Outdoor Gear - Rover Sling Pack",
+     "top1": "Under Armour Medium Fry Backpack"
+    },
+    {
+     "qid": "q107-spoken",
+     "query": "um I want like a shoulder bag with a hidden back pocket that can hold a pistol with an adjustable strap I can wear on either side and it has to be under forty dollars you know",
+     "target": "Red Rock Outdoor Gear - Rover Sling Pack",
+     "top1": "Under Armour Medium Fry Backpack"
+    },
+    {
+     "qid": "q116-descriptive",
+     "query": "I want a 1000 piece jigsaw puzzle with a cozy countryside scene of a cat relaxing, and it needs to cost under twenty dollars.",
+     "target": "Buffalo Games - Charles Wysocki - Max in The Adirondacks - 1000 Piece Jigsaw Puzzle",
+     "top1": "White Mountain Puzzles Home Sweet Home - 1000Piece Jigsaw Puzzle"
+    },
+    {
+     "qid": "q116-spoken",
+     "query": "um so i want like a thousand piece jigsaw puzzle with a cozy countryside scene of a cat relaxing, and it needs to cost under twenty dollars you know",
+     "target": "Buffalo Games - Charles Wysocki - Max in The Adirondacks - 1000 Piece Jigsaw Puzzle",
+     "top1": "DR- Cat II AS 500pc Puzzle"
+    },
+    {
+     "qid": "q156-spoken",
+     "query": "um like i want a soft cuddly stuffed owl toy that's a good size and my budget is under forty dollars you know",
+     "target": "National Geographic Plush Snowy Owl Stuffed Animal Plush Toy Medium",
+     "top1": "School Zone - Owl Stuffed Animal Plush Toy \"Socrates\" - Ages 1 Month+, Ultra Soft, Creativ"
+    }
+   ]
+  },
+  "hybrid + filters + re-rank all 40 (replace)": {
+   "n_queries": 600,
+   "hit@1": 83.3,
+   "hit@3": 90.7,
+   "hit@5": 94.7,
+   "hit@10": 96.7,
+   "mrr@10": 0.876,
+   "in_budget@3": 100.0,
+   "age_ok@3": 100.0,
+   "latency_ms_p50": 543.7,
+   "latency_ms_p95": 658.2,
+   "by_type": {
+    "brand": {
+     "hit@3": 99.0,
+     "mrr@10": 0.985
+    },
+    "descriptive": {
+     "hit@3": 86.5,
+     "mrr@10": 0.826
+    },
+    "spoken": {
+     "hit@3": 86.5,
+     "mrr@10": 0.817
+    }
+   },
+   "example_misses": [
+    {
+     "qid": "q026-descriptive",
+     "query": "I'm looking for a small toy car for my kid that looks like a race car from the animated movie, something detailed and collectible, and I want to keep it under ten dollars.",
+     "target": "Disney Pixar Cars Die-cast Carla Veloso Vehicle",
+     "top1": "Far Out Toys Crash Racers Vehicle - Deke's Demolition"
+    },
+    {
+     "qid": "q026-spoken",
+     "query": "um I need like a little toy race car for my kid from that cartoon movie, something detailed and collectible, and it has to be under ten dollars you know",
+     "target": "Disney Pixar Cars Die-cast Carla Veloso Vehicle",
+     "top1": "Far Out Toys Crash Racers Vehicle - Deke's Demolition"
+    },
+    {
+     "qid": "q040-descriptive",
+     "query": "I'm looking for a big jigsaw puzzle with a cozy countryside scene, something with about a thousand pieces to keep me busy on a rainy weekend.",
+     "target": "Buffalo Games - Country Life - Country Delivery - 1000 Piece Jigsaw Puzzle",
+     "top1": "White Mountain Puzzles Friends in Winter - 1000 Piece Jigsaw Puzzle"
+    },
+    {
+     "qid": "q040-spoken",
+     "query": "um so I'm looking for like a big jigsaw puzzle with a cozy countryside scene you know something with about a thousand pieces to keep me busy on a rainy weekend",
+     "target": "Buffalo Games - Country Life - Country Delivery - 1000 Piece Jigsaw Puzzle",
+     "top1": "White Mountain Puzzles Friends in Winter - 1000 Piece Jigsaw Puzzle"
+    },
+    {
+     "qid": "q055-descriptive",
+     "query": "I need a collectible action figure of a fused warrior from a famous anime, something for a teenager, and I want to spend less than thirty dollars.",
+     "target": "Banpresto 39564 Dragon Ball Legends Collab Super Saiyan Gogeta Figure",
+     "top1": "Transformers Robots in Disguise Combiner Force Warriors Class Autobot Twinferno"
+    },
+    {
+     "qid": "q055-spoken",
+     "query": "um so I need like a collectible action figure of that fused warrior from the anime you know, it's for a thirteen year old and I want to keep it under thirty dollars",
+     "target": "Banpresto 39564 Dragon Ball Legends Collab Super Saiyan Gogeta Figure",
+     "top1": "Transformers Robots in Disguise Combiner Force Warriors Class Autobot Twinferno"
+    },
+    {
+     "qid": "q063-descriptive",
+     "query": "I'm looking for a posable collectible toy of the monster from the Upside Down in a popular sci-fi horror show, about ten inches tall, with a clear stand to display it.",
+     "target": "McFarlane Toys Stranger Things Demogorgon Deluxe Action Figure",
+     "top1": "Monster Hunter - Zinogre Collectible Figure"
+    },
+    {
+     "qid": "q063-spoken",
+     "query": "um so i need like a posable toy of that monster from the upside down in the sci fi show, you know, about ten inches tall with a clear stand",
+     "target": "McFarlane Toys Stranger Things Demogorgon Deluxe Action Figure",
+     "top1": "Sunny Days Entertainment Bendems Collectible Posable Figures - Bob's Burgers: Bob"
+    },
+    {
+     "qid": "q091-descriptive",
+     "query": "I want peel and stick wall stickers of a cartoon minion character set for my kid's bedroom, the kind I can take off later without leaving marks.",
+     "target": "RoomMates Despicable Me 2 Peel And Stick Wall Decals",
+     "top1": "Wallmonkeys WM19400 Cute Baby Grey and Black Cartoon Zebra Peel and Stick Wall Decals (30 "
+    },
+    {
+     "qid": "q098-descriptive",
+     "query": "I'm looking for a cuddly stuffed toy of a anime character with spiky dark hair, sitting down, it's for a 13 year old who's a big fan of the show.",
+     "target": "GE Animation Great Eastern GE-52997 Attack On Titan Eren Sitting Pose Stuffed Plush",
+     "top1": "GUND Cozys Collection Frog Stuffed Animal Plush, Pale Olive, 8\""
+    },
+    {
+     "qid": "q098-spoken",
+     "query": "um i need like a cuddly stuffed toy of an anime character with spiky dark hair sitting down you know it's for a thirteen year old who's a big fan",
+     "target": "GE Animation Great Eastern GE-52997 Attack On Titan Eren Sitting Pose Stuffed Plush",
+     "top1": "GUND Cozys Collection Frog Stuffed Animal Plush, Pale Olive, 8\""
+    },
+    {
+     "qid": "q110-descriptive",
+     "query": "I need a tiny but really powerful servo motor for a micro radio controlled model, something that is strong for its small size and works well with a hobby project.",
+     "target": "HiTec RCD 55013 HS-65HB Mighty Karbonite Feather Servo",
+     "top1": "E-flite 7.6-Gram DS76 Digital Sub-Micro Servo"
+    },
+    {
+     "qid": "q112-descriptive",
+     "query": "I want a set of calming, intricate coloring pages to relax with, something for a 4 year old, and my budget is under ten dollars.",
+     "target": "Coloring Books Allison Drawing Book",
+     "top1": "Crayola Epic Book of Awesome, All-in-One Coloring Book Set, 288 Animal Coloring Pages, Gif"
+    },
+    {
+     "qid": "q116-descriptive",
+     "query": "I want a 1000 piece jigsaw puzzle with a cozy countryside scene of a cat relaxing, and it needs to cost under twenty dollars.",
+     "target": "Buffalo Games - Charles Wysocki - Max in The Adirondacks - 1000 Piece Jigsaw Puzzle",
+     "top1": "White Mountain Puzzles Readers Paradise - 1000 Piece Jigsaw Puzzle"
+    },
+    {
+     "qid": "q116-spoken",
+     "query": "um so i want like a thousand piece jigsaw puzzle with a cozy countryside scene of a cat relaxing, and it needs to cost under twenty dollars you know",
+     "target": "Buffalo Games - Charles Wysocki - Max in The Adirondacks - 1000 Piece Jigsaw Puzzle",
+     "top1": "White Mountain Puzzles Readers Paradise - 1000 Piece Jigsaw Puzzle"
+    }
+   ]
+  },
+  "hybrid + filters + re-rank top 10 (fused) = default": {
+   "n_queries": 600,
+   "hit@1": 84.5,
+   "hit@3": 93.3,
+   "hit@5": 95.5,
+   "hit@10": 96.7,
+   "mrr@10": 0.889,
+   "in_budget@3": 100.0,
+   "age_ok@3": 100.0,
+   "latency_ms_p50": 165.5,
+   "latency_ms_p95": 255.1,
+   "by_type": {
+    "brand": {
+     "hit@3": 100.0,
+     "mrr@10": 0.995
+    },
+    "descriptive": {
+     "hit@3": 88.5,
+     "mrr@10": 0.83
+    },
+    "spoken": {
+     "hit@3": 91.5,
+     "mrr@10": 0.842
+    }
+   },
+   "example_misses": [
+    {
+     "qid": "q002-spoken",
+     "query": "um i want like a hand painted fantasy figure of a magical white horse with a horn you know it's a gift for a three year old to spark their imagination",
+     "target": "Papo Ice Unicorn Figure, Multicolor",
+     "top1": "AMAV Toys 3D Unicron & Pegasus Painting Kit - All Inclusive & Ready to Paint - Enhance Cre"
+    },
+    {
+     "qid": "q040-descriptive",
+     "query": "I'm looking for a big jigsaw puzzle with a cozy countryside scene, something with about a thousand pieces to keep me busy on a rainy weekend.",
+     "target": "Buffalo Games - Country Life - Country Delivery - 1000 Piece Jigsaw Puzzle",
+     "top1": "White Mountain Puzzles Friends in Winter - 1000 Piece Jigsaw Puzzle"
+    },
+    {
+     "qid": "q040-spoken",
+     "query": "um so I'm looking for like a big jigsaw puzzle with a cozy countryside scene you know something with about a thousand pieces to keep me busy on a rainy weekend",
+     "target": "Buffalo Games - Country Life - Country Delivery - 1000 Piece Jigsaw Puzzle",
+     "top1": "White Mountain Puzzles Friends in Winter - 1000 Piece Jigsaw Puzzle"
+    },
+    {
+     "qid": "q049-descriptive",
+     "query": "I need a black camouflage vinyl sticker wrap for my drone's battery to protect it from scratches and dust, and it should peel off easily.",
+     "target": "MightySkins Skin Compatible with DJI Mavic Pro Battery - Black Camo | Protective, Durable,",
+     "top1": "MightySkins Skin Compatible with DJI Mavic Pro Battery - Green Camouflage | Protective, Du"
+    },
+    {
+     "qid": "q055-descriptive",
+     "query": "I need a collectible action figure of a fused warrior from a famous anime, something for a teenager, and I want to spend less than thirty dollars.",
+     "target": "Banpresto 39564 Dragon Ball Legends Collab Super Saiyan Gogeta Figure",
+     "top1": "Transformers Robots in Disguise Combiner Force Warriors Class Autobot Twinferno"
+    },
+    {
+     "qid": "q055-spoken",
+     "query": "um so I need like a collectible action figure of that fused warrior from the anime you know, it's for a thirteen year old and I want to keep it under thirty dollars",
+     "target": "Banpresto 39564 Dragon Ball Legends Collab Super Saiyan Gogeta Figure",
+     "top1": "Star Wars Vintage Figures Action Assortment"
+    },
+    {
+     "qid": "q091-descriptive",
+     "query": "I want peel and stick wall stickers of a cartoon minion character set for my kid's bedroom, the kind I can take off later without leaving marks.",
+     "target": "RoomMates Despicable Me 2 Peel And Stick Wall Decals",
+     "top1": "Wallmonkeys Cute Baby Blue Cartoon Wall Decal Peel and Stick Graphic (36 in W x 26 in H) W"
+    },
+    {
+     "qid": "q091-spoken",
+     "query": "um so i want like peel and stick wall stickers of the minion characters for my kid's room, the kind i can take off later without leaving marks you know",
+     "target": "RoomMates Despicable Me 2 Peel And Stick Wall Decals",
+     "top1": "RoomMates Despicable Me 2 Minions Giant Peel And Stick Giant Wall Decals"
+    },
+    {
+     "qid": "q097-descriptive",
+     "query": "I want a fast remote control monster truck that can handle rough off-road terrain, with a budget of under six hundred dollars, and it doesn't need to include the battery or charger.",
+     "target": "Losi 1/10 2.2 Rock Rey 4WD RC Rock Racer Brushless RTR with AVC and 2800Kv Brushless Power",
+     "top1": "Remote Control Monster Truck\u2013 1: 16 Scale, 2.4 Ghz Rc Off-Road Rugged Toy Vehicle with Spr"
+    },
+    {
+     "qid": "q097-spoken",
+     "query": "um so i want like a fast remote control monster truck that can handle rough terrain you know with a budget of under six hundred dollars and it doesn't need the battery or charger",
+     "target": "Losi 1/10 2.2 Rock Rey 4WD RC Rock Racer Brushless RTR with AVC and 2800Kv Brushless Power",
+     "top1": "Remote Control Monster Truck\u2013 1: 16 Scale, 2.4 Ghz Rc Off-Road Rugged Toy Vehicle with Spr"
+    },
+    {
+     "qid": "q107-descriptive",
+     "query": "I want a shoulder bag with a hidden back pocket that can hold a pistol, with an adjustable strap I can wear on either side, and it should cost under forty dollars.",
+     "target": "Red Rock Outdoor Gear - Rover Sling Pack",
+     "top1": "Dakine Essentials Mini 7L Backpack"
+    },
+    {
+     "qid": "q107-spoken",
+     "query": "um I want like a shoulder bag with a hidden back pocket that can hold a pistol with an adjustable strap I can wear on either side and it has to be under forty dollars you know",
+     "target": "Red Rock Outdoor Gear - Rover Sling Pack",
+     "top1": "PUMA Evercat The All Star Carrysack"
+    },
+    {
+     "qid": "q116-descriptive",
+     "query": "I want a 1000 piece jigsaw puzzle with a cozy countryside scene of a cat relaxing, and it needs to cost under twenty dollars.",
+     "target": "Buffalo Games - Charles Wysocki - Max in The Adirondacks - 1000 Piece Jigsaw Puzzle",
+     "top1": "White Mountain Puzzles Readers Paradise - 1000 Piece Jigsaw Puzzle"
+    },
+    {
+     "qid": "q116-spoken",
+     "query": "um so i want like a thousand piece jigsaw puzzle with a cozy countryside scene of a cat relaxing, and it needs to cost under twenty dollars you know",
+     "target": "Buffalo Games - Charles Wysocki - Max in The Adirondacks - 1000 Piece Jigsaw Puzzle",
+     "top1": "DR- Cat II AS 500pc Puzzle"
+    },
+    {
+     "qid": "q156-spoken",
+     "query": "um like i want a soft cuddly stuffed owl toy that's a good size and my budget is under forty dollars you know",
+     "target": "National Geographic Plush Snowy Owl Stuffed Animal Plush Toy Medium",
+     "top1": "School Zone - Owl Stuffed Animal Plush Toy \"Socrates\" - Ages 1 Month+, Ultra Soft, Creativ"
+    }
+   ]
+  }
+ }
+}
