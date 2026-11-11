@@ -63,6 +63,7 @@ code { font-size: 0.9em; }
   padding: 1.1rem 0 1rem; border-bottom: 1px solid var(--rule);
 }
 .bar h1 { font-size: var(--step-0); font-weight: 750; font-stretch: 92%; letter-spacing: -0.005em; }
+.bar__kind { font-size: var(--step--1); font-weight: 650; padding: 0.05rem 0.5rem; background: var(--tag); border-radius: 2px; margin-left: -0.9rem; }
 .bar__status { display: flex; flex-wrap: wrap; font-size: var(--step--1); color: var(--ink-soft); }
 .bar__status span + span { margin-left: 0.7rem; padding-left: 0.7rem; border-left: 1px solid var(--rule); }
 .bar__nav { display: flex; gap: 1.25rem; margin-left: auto; font-size: var(--step--1); }
@@ -87,6 +88,7 @@ blockquote.heard--doubt { background: none; color: var(--ink-soft); }
 .heard-edit textarea { flex: 1 1 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--ink); border-radius: 6px; background: var(--sheet); font-size: var(--step-1); line-height: 1.3; resize: vertical; }
 
 .welcome__sub { margin-top: 1rem; max-width: 52ch; color: var(--ink-soft); font-size: 1.06rem; }
+.welcome__note { margin-top: 0.6rem; max-width: 52ch; color: var(--ink-soft); font-size: var(--step--1); }
 
 /* ------------------------------------------------------------------ asking */
 .ask { display: flex; gap: 1.5rem; align-items: center; margin-top: 2rem; }

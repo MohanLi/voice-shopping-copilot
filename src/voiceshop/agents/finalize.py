@@ -39,7 +39,9 @@ SPOKEN_SAFETY: dict[str, str] = {
     "flammable": "The listing carries a flammability warning.",
 }
 SPOKEN_CHEMICAL = "Follow the label and never mix cleaning products."
+SPOKEN_RECALL = "A source says it was recalled, so I do not recommend it."
 SPOKEN_UNDER_3 = "Please check the age label on the packaging."
+SPOKEN_UNDER_3_ONLY = "For a child under three I only suggest products labelled for that age."
 
 
 def _money(value: float | None) -> str:
@@ -128,10 +130,13 @@ def safety_notes(items: list[CatalogItem | WebItem], constraints: Constraints, r
             screen.append(policy.FLAG_NOTES[flag])
         if flag in SPOKEN_SAFETY and not spoken:
             spoken.append(SPOKEN_SAFETY[flag])
-    if constraints.age_years is not None and constraints.age_years < 3 and items:
-        screen.insert(0, policy.UNDER_3_NOTE)
-        if not spoken:
+    if constraints.age_years is not None and constraints.age_years < 3:
+        screen.insert(0, policy.UNDER_3_NOTE)               # also when nothing is recommended: it is why nothing was
+        if not spoken and items:
             spoken.append(SPOKEN_UNDER_3)
+    if any(c in policy.WITHDRAWN for i in items if isinstance(i, WebItem) for c in (*i.cautions, *(c for cs in i.cautions_elsewhere.values() for c in cs))):
+        screen.insert(0, policy.RECALL_NOTE)
+        spoken = [SPOKEN_RECALL]
     titles = [i.title for i in items] + [i.product_type for i in items if isinstance(i, CatalogItem)]
     if items and _is_chemical(constraints.product, *titles):
         screen.append(policy.CHEMICAL_NOTE)
@@ -151,8 +156,106 @@ def spoken_tail(others: int) -> str:
     return f"{_COUNT_WORDS.get(others, str(others))} more option{'s' if others != 1 else ''} and the sources are on screen."
 
 
+def _after_lead(lead: list[str], spoken_notes: list[str], n_rows: int, about_screen: bool) -> list[str]:
+    """The sentences code adds after the model's lead: a safety sentence when one applies (never dropped for length), then the pointer to the screen."""
+    said = " ".join(lead).lower()
+    safety = [note for note in spoken_notes[:1] if note.lower() not in said and not (note == SPOKEN_RECALL and "recall" in said)]
+    return [*safety, spoken_tail(0 if about_screen else n_rows - 1)]
+
+
+def spoken_around_lead(draft: AnswerDraft, evidence: Evidence, constraints: Constraints, route: RouteDecision | None,
+                       preface: list[str] | None = None) -> tuple[list[str], list[str]]:
+    """What will be said before and after the Answerer's sentence for this draft, exactly as ``build_answer`` will assemble it.
+
+    The length check on a draft uses this, so a lead is sent back only when the reply that would
+    really be spoken cannot fit the limit: a fixed sentence for a declined part of the message
+    first, then the lead, a safety sentence if one applies to the chosen products, and the pointer
+    to the screen. Reserving time for a safety sentence that is then not said cost a revision,
+    about two seconds, on two of four turns of the second live run. Only what is certain to be
+    said is returned: the pointer to the screen ("Two more options and the sources are on
+    screen.") is said when there is room for it and dropped when there is not, so it is left out.
+    """
+    before = [policy.said_before_answer(preface)] if preface else []
+    items = [item for rec in draft.recommendations[:3] if (item := evidence.get(rec.ref)) is not None]
+    if draft.abstain or not items:
+        return before, []
+    about_screen = route is not None and route.intent in ("follow_up", "compare")
+    _, spoken_notes = safety_notes(items, constraints, route)
+    after = _after_lead(split_sentences(draft.spoken)[:1], spoken_notes, len(items), about_screen)
+    return before, after[:-1]                                # the pointer to the screen gives way first, so it is not counted
+
+
+def spoken_after_lead(draft: AnswerDraft, evidence: Evidence, constraints: Constraints, route: RouteDecision | None) -> list[str]:
+    return spoken_around_lead(draft, evidence, constraints, route)[1]
+
+
+def whole_sentences(text: str, around: list[str], max_seconds: float, max_words: int) -> list[str]:
+    """The sentences of ``text``, from the first, that can be said together with ``around`` inside the time limit.
+
+    Trailing sentences give way one at a time; the first is always kept, and kept whole. Only a first sentence that
+    could not be said in the limit even on its own is cut, at ``max_words`` (the checks before this make that a last resort).
+    """
+    kept = split_sentences(" ".join((text or "").split()))
+    while len(kept) > 1 and not fits(" ".join([*around, *kept]), max_seconds, MAX_SPEED):
+        kept.pop()
+    if kept and not fits(kept[0], max_seconds, MAX_SPEED):
+        kept = [trim_spoken(kept[0], max_words)]
+    return kept
+
+
+def with_preface(answer: FinalAnswer, preface: list[str] | None, *, max_seconds: float = 15.0) -> FinalAnswer:
+    """Put the fixed sentences for the declined parts of a message in front of an answer that was built without them."""
+    ids = [i for i in dict.fromkeys(preface or []) if i in policy.SAY]
+    if not ids:
+        return answer
+    on_screen = policy.say(ids, offer=False)
+    short = policy.said_before_answer(ids)
+    spoken = f"{short} {answer.spoken}".strip()
+    if not fits(spoken, max_seconds, MAX_SPEED):              # keep the decline and as many whole sentences of the answer as fit
+        kept = split_sentences(answer.spoken)
+        while len(kept) > 1 and not fits(" ".join([short, *kept]), max_seconds, MAX_SPEED):
+            kept.pop()
+        spoken = " ".join([short, *kept])
+    return answer.model_copy(update={"spoken": spoken, "text": f"{on_screen}\n\n{answer.text}".strip(), "declined": [*ids, *answer.declined]})
+
+
+ORDINALS = ("first", "second", "third", "fourth", "fifth")
+
+
+def position_word(position: int) -> str:
+    """How a product on screen is called by its place in the list: 1 -> "the first one"."""
+    return f"the {ORDINALS[position - 1]} one" if 0 < position <= len(ORDINALS) else f"number {position}"
+
+
+def screen_rows(picked: list[tuple[CatalogItem | WebItem, str, str | None]], evidence: Evidence, shown: list[dict[str, Any]] | None,
+                on_screen: Evidence | None) -> tuple[list[TableRow], dict[str, int]] | None:
+    """The table for an answer about products already on screen: the same list in the same order, or None if that does not apply.
+
+    A follow-up ("compare the first and the third") used to replace the table with the products it
+    was about, while the assistant went on remembering the earlier list: "the second one" then
+    meant one thing on screen and another in memory (first ProofAgent run, turn 9). The list now
+    stays as it is until a new search replaces it; the answer text is about the rows it concerns.
+    """
+    if not shown or not picked:
+        return None
+    positions = {str(entry.get("ref")): int(entry.get("position") or i) for i, entry in enumerate(shown, 1)}
+    if any(item.ref not in positions for item, _, _ in picked):
+        return None                                           # the answer brings in something new: it is a new list
+    about = {item.ref: (why, caveat) for item, why, caveat in picked}
+    rows: list[TableRow] = []
+    for entry in sorted(shown, key=lambda e: positions[str(e.get("ref"))]):
+        ref = str(entry.get("ref"))
+        item = evidence.get(ref) or (on_screen.get(ref) if on_screen is not None else None)
+        if item is None:
+            return None                                       # the evidence behind a row is gone: fall back to a fresh table
+        why, caveat = about.get(ref, ("", None))
+        rows.append(table_row(positions[ref], item, why, caveat, evidence if evidence.get(ref) is not None else on_screen))
+    return rows, positions
+
+
 def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraints, route: RouteDecision | None, *,
-                 max_words: int, grounded_by: str | None, revisions: int, max_seconds: float = 15.0) -> FinalAnswer:
+                 max_words: int, grounded_by: str | None, revisions: int, max_seconds: float = 15.0, preface: list[str] | None = None,
+                 shown: list[dict[str, Any]] | None = None, on_screen: Evidence | None = None) -> FinalAnswer:
     about_screen = route is not None and route.intent in ("follow_up", "compare")     # not a fresh list of picks
     picked: list[tuple[CatalogItem | WebItem, str, str | None]] = []
     for rec in draft.recommendations[:3]:
@@ -160,7 +263,12 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
         if item is not None:
             picked.append((item, rec.why.strip(), (rec.caveat or "").strip() or None))
     items = [p[0] for p in picked]
-    rows = [table_row(i, item, why, caveat, evidence) for i, (item, why, caveat) in enumerate(picked, 1)]
+    kept = screen_rows(picked, evidence, shown, on_screen) if about_screen else None
+    positions: dict[str, int] = {}
+    if kept is not None:
+        rows, positions = kept
+    else:
+        rows = [table_row(i, item, why, caveat, evidence) for i, (item, why, caveat) in enumerate(picked, 1)]
     screen_notes, spoken_notes = safety_notes(items, constraints, route)
 
     notes: list[str] = list(screen_notes)
@@ -172,6 +280,7 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
         notes.append("No product met every constraint, so the search loosened: " + ", ".join(evidence.relaxed).replace("_", " ") + ".")
     for key, value in evidence.unmatched_filters.items():
         notes.append(f"The catalog has no {key.split(':')[0]} named '{value}'.")
+    notes.extend(policy.TOOL_FAILED_SCREEN[tool] for tool in evidence.failed_tools if tool in policy.TOOL_FAILED_SCREEN)
     if any(isinstance(i, CatalogItem) and i.live is None for i in items):
         notes.append(policy.CATALOG_PRICE_NOTE)
     if items and all(i.rating is None for i in items):
@@ -180,15 +289,27 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
     # ---- spoken, most important first: the model's lead, a safety sentence, the pointer to the screen (the count is
     #      written by code), the question. Speech is held to ``max_seconds``; whatever has to give way is at the end.
     question = (draft.follow_up_question or "").strip() or None
-    spoken = trim_spoken(draft.spoken, max_words)
+    if question and (draft.abstain or not rows) and draft.spoken.strip().endswith("?"):
+        question = None                                      # the statement already ends by asking; a second question would only repeat it
+    before = [policy.said_before_answer(preface)] if preface else []                      # what was declined is said first
+    # The model's sentences are kept whole or not at all. (They used to be cut at a word count as well, which left
+    # "... at a catalog price." and "... no live listing was found, so I." in the spoken reply of a live check.)
+    spoken = " ".join(whole_sentences(draft.spoken, before, max_seconds, max_words))
+    under_three = constraints.age_years is not None and constraints.age_years < 3
+    if (draft.abstain or not rows) and under_three and "under three" not in spoken.lower() \
+            and fits(" ".join([*before, spoken, SPOKEN_UNDER_3_ONLY]), max_seconds, MAX_SPEED):
+        spoken = f"{spoken} {SPOKEN_UNDER_3_ONLY}"           # the reason nothing was suggested, said in fixed words
     if rows and not draft.abstain:
-        lead = split_sentences(trim_spoken(draft.spoken, max(16, max_words - 16)))
-        safety = [note for note in spoken_notes[:1] if note.lower() not in " ".join(lead).lower()]      # never dropped for length
-        tail = spoken_tail(0 if about_screen else len(rows) - 1)
-        while len(lead) > 1 and not fits(" ".join([*lead, *safety, tail]), max_seconds, MAX_SPEED):
-            lead.pop()                                       # a second lead sentence gives way before the safety sentence does
-        parts = [*lead, *safety, tail]
-        if question and question.lower() not in " ".join(parts).lower() and fits(" ".join([*parts, question]), max_seconds, COMFORT_SPEED):
+        first = split_sentences(draft.spoken)[:1]
+        *safety, tail = _after_lead(first, spoken_notes, len(rows), about_screen)
+        # In order of importance: what the answer says, the safety sentence, the pointer to the screen, the question.
+        # (The pointer used to come before the answer's second sentence: "I can't confirm that. Details and sources are
+        # on screen." was all that was said of an answer whose second sentence gave the catalog price and the reason.)
+        lead = whole_sentences(draft.spoken, [*before, *safety], max_seconds, max_words)
+        parts = [*lead, *safety]
+        if fits(" ".join([*before, *parts, tail]), max_seconds, MAX_SPEED):
+            parts.append(tail)
+        if question and question.lower() not in " ".join(parts).lower() and fits(" ".join([*before, *parts, question]), max_seconds, COMFORT_SPEED):
             parts.append(question)
         spoken = " ".join(parts)
 
@@ -197,8 +318,13 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
     if draft.abstain or not rows:
         lines.append(draft.spoken.strip())
     else:
-        for row, (item, why, caveat) in zip(rows, picked, strict=True):
-            label = "" if about_screen else ("Top pick: " if row.rank == 1 else f"Option {row.rank}: ")
+        by_ref = {row.ref: row for row in rows}
+        for item, why, caveat in picked:
+            row = by_ref[item.ref]
+            if positions:                                     # an answer about the list on screen names each product by its place in it
+                label = position_word(positions[item.ref]).capitalize() + ": "
+            else:
+                label = "" if about_screen else ("Top pick: " if row.rank == 1 else f"Option {row.rank}: ")
             lines.append(f"**{label}{short_name(item)}** - {row.price}. {why}" + (f" _Caveat: {caveat}_" if caveat else "") + f" [{row.citation}]")
     if notes:
         lines.append("")
@@ -206,8 +332,17 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
     if question:
         lines.extend(["", question])
     kind = "abstain" if (draft.abstain or not rows) else "recommendation"
-    return FinalAnswer(spoken=spoken.strip(), text="\n".join(lines).strip(), table=rows, citations=citations_for(items, evidence), notes=notes,
-                       follow_up_question=question, kind=kind, grounded_by=grounded_by, revisions=revisions)  # type: ignore[arg-type]
+    cited = items
+    if kind == "abstain" and draft.sources:                   # an abstention still shows where its statement comes from (a recall notice, a listing)
+        cited = [found for ref in dict.fromkeys(draft.sources) if (found := evidence.get(ref)) is not None]
+    if positions:                                             # every row that stays on screen keeps its source
+        merged = Evidence(catalog=[*evidence.catalog, *(c for c in (on_screen.catalog if on_screen else []) if evidence.get(c.ref) is None)],
+                          web=[*evidence.web, *(w for w in (on_screen.web if on_screen else []) if evidence.get(w.ref) is None)])
+        cited = [found for row in rows if (found := merged.get(row.ref)) is not None]
+        evidence = merged
+    answer = FinalAnswer(spoken=spoken.strip(), text="\n".join(lines).strip(), table=rows, citations=citations_for(cited, evidence), notes=notes,
+                         follow_up_question=question, kind=kind, grounded_by=grounded_by, revisions=revisions)  # type: ignore[arg-type]
+    return with_preface(answer, preface, max_seconds=max_seconds)
 
 
 def shown_from(answer: FinalAnswer) -> list[dict[str, Any]]:
@@ -265,8 +400,12 @@ def make_finalize_node(deps: Any):  # type: ignore[no-untyped-def]
         critique: Critique | None = state.get("critique")
         draft: AnswerDraft = state["draft"]  # type: ignore[assignment]
         grounded_by = "template" if state.get("draft_source") == "template" else "llm+critic"
+        from voiceshop.agents.router import said_ids
+
         answer = build_answer(draft, evidence, constraints, state.get("route"), max_words=max_words, grounded_by=grounded_by,
-                              revisions=state.get("revisions") or 0, max_seconds=deps.settings.tts_max_seconds)
+                              revisions=state.get("revisions") or 0, max_seconds=deps.settings.tts_max_seconds,
+                              preface=said_ids(state.get("preface"), state.get("route")),
+                              shown=state.get("shown"), on_screen=state.get("last_evidence"))
         by = {"llm+critic": "the model's answer, passed by the critic", "template": "the template answer, built from the evidence",
               "llm": "the model's answer"}.get(grounded_by or "", grounded_by or "a fixed reply")
         n_rows, n_cites = len(answer.table), len(answer.citations)
@@ -275,22 +414,28 @@ def make_finalize_node(deps: Any):  # type: ignore[no-untyped-def]
         return {
             "answer": answer,
             **remember(state, answer),
-            "trace": [step("finalize", summary, started=started, kind=answer.kind, citations=[c.id for c in answer.citations],
-                           notes=answer.notes or None, critic_verdict=critique.verdict if critique else None)],
+            "trace": [step("finalize", summary + (f"; said first: {', '.join(answer.declined)}" if answer.declined else ""), started=started,
+                           kind=answer.kind, citations=[c.id for c in answer.citations], notes=answer.notes or None,
+                           declined=answer.declined or None, critic_verdict=critique.verdict if critique else None)],
         }
 
     return finalize_node
 
 
 def respond_node(state: TurnState) -> dict[str, Any]:
-    """Turns that end without retrieval: guard blocks, refusals, chitchat, out of scope, clarifying questions."""
-    from voiceshop.agents.router import direct_answer
+    """Turns that end without retrieval: guard blocks, declined requests, small talk, out of scope, clarifying questions."""
+    from voiceshop.agents.router import direct_answer, said_ids
 
     started = time.perf_counter()
     answer: FinalAnswer | None = state.get("answer")
     route: RouteDecision | None = state.get("route")
+    history = state.get("history") or []
+    previous = str(history[-1].get("assistant") or "") if history else None
     if answer is None:
-        answer = direct_answer(route) if route is not None else FinalAnswer(spoken=policy.OUT_OF_SCOPE, text=policy.OUT_OF_SCOPE, kind="out_of_scope")
+        answer = direct_answer(route, state.get("preface"), previous) if route is not None else FinalAnswer(spoken=policy.OUT_OF_SCOPE, text=policy.OUT_OF_SCOPE, kind="out_of_scope")
+    elif answer.kind == "clarify" and route is not None:      # the Planner's question, after whatever part of the message was declined
+        answer = with_preface(answer, said_ids(state.get("preface"), route))
     answer = answer.model_copy(update={"spoken": trim_spoken(answer.spoken, 60)})
     return {"answer": answer, **remember(state, answer),
-            "trace": [step("respond", f"Direct reply ({answer.kind})", started=started, kind=answer.kind)]}
+            "trace": [step("respond", f"Direct reply ({answer.kind})" + (f": {', '.join(answer.declined)}" if answer.declined else ""), started=started,
+                           kind=answer.kind, declined=answer.declined or None)]}

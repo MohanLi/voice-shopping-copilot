@@ -270,9 +270,17 @@ class Assistant:
             await delete(thread_id)
 
     def _log_turn(self, result: TurnResult) -> None:
+        from voiceshop.guardrails.input import redact_personal_details
+
         try:
+            row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), **result.to_dict(include_evidence=False)}
+            if row.get("asr") and row["asr"].get("text"):        # the transcript is logged the way the agents saw it: personal details replaced
+                heard = dict(row["asr"])
+                heard["text"] = redact_personal_details(str(heard["text"]))[0]
+                heard.pop("segments", None)
+                row["asr"] = heard
             self.settings.logs_dir.mkdir(parents=True, exist_ok=True)
             with (self.settings.logs_dir / TURN_LOG).open("a", encoding="utf-8") as f:
-                f.write(json.dumps(redact({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), **result.to_dict(include_evidence=False)}), ensure_ascii=False, default=str) + "\n")
+                f.write(json.dumps(redact(row), ensure_ascii=False, default=str) + "\n")
         except OSError as exc:  # pragma: no cover
             log.debug("could not write %s: %s", TURN_LOG, exc)

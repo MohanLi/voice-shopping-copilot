@@ -144,9 +144,9 @@ def _vocab_hint(settings: Settings) -> tuple[str, str]:
         if manifest.get("n_docs"):
             size = f"; {int(manifest['n_docs']):,} products"
         vocab = json.loads((index_dir / "vocab.json").read_text())
-        top = sorted(vocab.get("categories", {}).items(), key=lambda kv: -kv[1])[:14]
-        if top:
-            categories = "\n\nLargest categories: " + ", ".join(name for name, _ in top) + "."
+        top = sorted(vocab.get("categories", {}).items(), key=lambda kv: -kv[1])[:6]
+        if top:                                              # a hint, not the list: the resource catalog://categories has every category
+            categories = "\n\nLargest categories: " + ", ".join(name for name, _ in top) + " (all of them: resource catalog://categories)."
     except (OSError, ValueError, TypeError):
         pass
     return size, categories

@@ -11,16 +11,126 @@ from typing import Any
 
 ASSISTANT_SCOPE = "I can help you find and compare products, check prices, and answer questions about items in the catalog."
 
+# ------------------------------------------------- replies that are chosen, never written
+# Everything the assistant says that is not grounded in tool results is one of these sentences. The input screen
+# or the Router picks ids; code puts the sentences together. No model words a refusal, a greeting or a statement
+# about itself, so none of them can be talked into saying something else.
+SAY: dict[str, str] = {
+    "greeting": "Hi! I'm an AI shopping assistant. " + ASSISTANT_SCOPE + " What are you shopping for?",
+    "thanks": "You're welcome.",
+    "identity": "I'm an AI assistant, not a person.",
+    "capabilities": "I search a product catalog and the live web, compare what I find, and show the source of every fact.",
+    "limits": "I only search and compare products. I can't place orders, take payments, apply discounts, send messages, or remember you "
+              "between conversations.",
+    "no_actions": "I can't place orders, take payments, apply discounts or send messages. To buy, or for returns and other problems with a "
+                  "purchase, use the store named with each product.",
+    "no_instructions": "I can't change how I work or share my instructions or configuration.",
+    "no_harm": "I can't help with anything meant to hurt a person or an animal.",
+    "no_chemistry": "I can't help with mixing cleaning products. Mixing them, such as bleach with ammonia or acids, can release toxic gas. "
+                    "Use one product at a time and follow its label.",
+    "no_restricted": "I can't help with shopping for that kind of product.",
+    "no_fabrication": "I can't write reviews, quotes, endorsements or citations.",
+    "no_unconfirmed": "I can only confirm what my sources state.",
+    "no_personal_data": "I can't look up, store or share personal information, and I hold no account or payment details.",
+    "no_advice": "I can't give medical, legal or financial advice. A qualified professional is the right person to ask.",
+    "off_topic": "That is outside what I can help with.",
+    "calm": "I'd like to keep this about your shopping.",
+    "pii_note": "I left out the personal details in your message; I don't need them to help you shop.",
+}
+# Shorter spoken forms, used when one of these comes before a product answer and has to share its 15 seconds.
+SAY_SPOKEN: dict[str, str] = {
+    "identity": "I'm an AI assistant.",
+    "limits": "I only search and compare products.",
+    "no_actions": "I can't place orders or take payments.",
+    "no_instructions": "I can't change or share my instructions.",
+    "no_harm": "I can't help with anything meant to hurt someone.",
+    "no_chemistry": "I can't help with mixing cleaning products; it can release toxic gas.",
+    "no_personal_data": "I can't look up or store personal information.",
+    "no_advice": "I can't give medical, legal or financial advice.",
+    "off_topic": "Part of that is outside what I can help with.",
+    "pii_note": "I left out the personal details you mentioned.",
+}
+SAY_IDS: tuple[str, ...] = tuple(SAY)
+_OFFER_INCLUDED = ("greeting",)                    # sentences that already say what the assistant can do
+_REPEAT_OFFER = "Tell me what you are shopping for and I will search right away."
+# A sentence that already says what another one says: the second is left out when both are chosen. (A live check
+# before the second ProofAgent run produced "I can't place orders, take payments ..." twice in one reply.)
+_COVERS: dict[str, tuple[str, ...]] = {"no_actions": ("limits",), "no_personal_data": ("pii_note",)}
+# Which sentences are kept when there are more than a reply has room for: what protects someone first, then what was
+# declined, then what the assistant is, then courtesies. (A live check produced four of them in a row, 17 seconds of speech.)
+SAY_PRIORITY: tuple[str, ...] = ("no_harm", "no_chemistry", "no_restricted", "no_actions", "no_personal_data", "no_fabrication", "no_unconfirmed",
+                                 "no_advice", "no_instructions", "identity", "capabilities", "limits", "pii_note", "calm", "off_topic", "thanks", "greeting")
+MAX_SAID = 3                     # fixed sentences in one reply
+MAX_SAID_BEFORE_ANSWER = 2       # ... said aloud before a product answer, which has to share the 15 seconds (all of them are on screen)
+# What a declined part of a message was about, in words for the agents that plan and run searches: they are told
+# so that no search is made for it.
+DECLINED_TOPICS: dict[str, str] = {
+    "no_actions": "placing an order, paying, discounts, sending messages",
+    "no_instructions": "instructions about how to behave or what to write",
+    "no_harm": "hurting a person or an animal",
+    "no_chemistry": "mixing or misusing chemicals and cleaning products",
+    "no_restricted": "weapons, tobacco, alcohol, prescription medicines, adult content",
+    "no_fabrication": "writing something no source states (a review, a quote, an endorsement, a citation)",
+    "no_unconfirmed": "confirming a fact no source states",
+    "no_personal_data": "personal or payment details",
+    "no_advice": "medical, legal or financial advice",
+    "off_topic": "a question that is not about shopping for products",
+    "identity": "a question about the assistant itself",
+    "capabilities": "a question about the assistant itself",
+    "limits": "a question about the assistant itself",
+}
+
+
+def without_covered(ids: list[str] | tuple[str, ...], limit: int | None = MAX_SAID) -> list[str]:
+    """``ids`` in order, without repeats and without a sentence that another chosen sentence already covers.
+
+    At most ``limit`` are kept: the ones highest in ``SAY_PRIORITY``, still in the order given.
+    """
+    known = [i for i in dict.fromkeys(ids) if i in SAY]
+    covered = {c for i in known for c in _COVERS.get(i, ())}
+    known = [i for i in known if i not in covered]
+    if limit is not None and len(known) > limit:
+        keep = set(sorted(known, key=SAY_PRIORITY.index)[:limit])
+        known = [i for i in known if i in keep]
+    return known
+
+
+def declined_topics(ids: list[str] | tuple[str, ...]) -> list[str]:
+    """What the fixed sentences for ``ids`` declined, in words (for the Planner and the Retriever)."""
+    return list(dict.fromkeys(DECLINED_TOPICS[i] for i in ids if i in DECLINED_TOPICS))
+
+
+def say(ids: list[str] | tuple[str, ...], *, offer: bool = True, spoken: bool = False, previous: str | None = None, limit: int | None = MAX_SAID) -> str:
+    """The fixed sentences for ``ids``, in order, without repeats.
+
+    ``offer`` adds what the assistant can do (for a reply that is nothing but these sentences);
+    ``spoken`` uses the short forms; ``previous`` is the last thing the assistant said, so that
+    a second identical reply ends differently instead of sounding like a recording; ``limit``
+    keeps only the most important ones.
+    """
+    known = without_covered(ids, limit)
+    parts = [(SAY_SPOKEN.get(i, SAY[i]) if spoken else SAY[i]) for i in known]
+    if offer and not any(i in _OFFER_INCLUDED for i in known):
+        parts.append(ASSISTANT_SCOPE)
+    text = " ".join(parts)
+    if previous and offer and text.strip() == previous.strip():
+        text = " ".join([*parts[:-1], _REPEAT_OFFER]) if len(parts) > 1 else f"{text} {_REPEAT_OFFER}"
+    return text
+
+
+def said_before_answer(ids: list[str] | tuple[str, ...]) -> str:
+    """What is said aloud before a product answer for the declined parts of a message: the short forms of the most important ones."""
+    return say(ids, offer=False, spoken=True, limit=MAX_SAID_BEFORE_ANSWER)
+
+
 # --------------------------------------------------------------- fixed replies
+# Whole-message replies of the input screen (the message goes no further) and of the speech-recognition stage.
 REFUSALS: dict[str, str] = {
-    "prompt_injection": "I can't change how I work or share my instructions. " + ASSISTANT_SCOPE,
+    "prompt_injection": say(["no_instructions"]),
     "secrets": "I can't share keys, passwords, or internal configuration. " + ASSISTANT_SCOPE,
-    "harmful": "I can't help with that. " + ASSISTANT_SCOPE,
-    "dangerous_chemistry": (
-        "I can't help with that. Mixing cleaning products, such as bleach with ammonia or acids, can release toxic gas. "
-        "Use one product at a time and follow its label. I can help you find a suitable cleaner instead."
-    ),
-    "restricted_product": "I can't help with shopping for that kind of product. " + ASSISTANT_SCOPE,
+    "harmful": say(["no_harm"]),
+    "dangerous_chemistry": SAY["no_chemistry"] + " I can help you find a suitable cleaner instead.",
+    "restricted_product": say(["no_restricted"]),
     "empty": "Sorry, I didn't catch that. Could you say it again?",
     "too_long": "That was a lot to take in. Could you tell me in a sentence or two what you are looking for?",
 }
@@ -32,7 +142,7 @@ SELF_HARM = (
     "I'm really sorry you're feeling this way. I can't help with that, but you don't have to face it alone. "
     "In the United States you can call or text 988 to reach the Suicide and Crisis Lifeline at any time."
 )
-OUT_OF_SCOPE = "That is outside what I can help with. " + ASSISTANT_SCOPE
+OUT_OF_SCOPE = say(["off_topic"])
 
 # What is said aloud when the on-screen wording is too long to say comfortably in 15 seconds.
 # The phone number is the point of an emergency reply, so it must never be the part that is cut.
@@ -46,7 +156,7 @@ SPOKEN: dict[str, str] = {
         "You can call or text 988 to reach the Suicide and Crisis Lifeline at any time."
     ),
     REFUSALS["dangerous_chemistry"]: (
-        "I can't help with that. Mixing cleaning products, such as bleach with ammonia, can release toxic gas. "
+        "I can't help with mixing cleaning products. Mixing them, such as bleach with ammonia, can release toxic gas. "
         "Use one product at a time and follow its label."
     ),
 }
@@ -85,7 +195,19 @@ UNDER_3_NOTE = (
     "Always check the age label on the packaging."
 )
 CHEMICAL_NOTE = "Cleaning products: follow the label directions, ventilate the room, and never mix products."
+RECALL_NOTE = "A source states that this product was recalled or discontinued. It is shown so that you know, not as a recommendation."
+WITHDRAWN = ("recalled", "discontinued")       # stated cautions (agents.claims) that mean a product should not be bought
 CATALOG_PRICE_NOTE = "Catalog prices are from a January 2020 snapshot and may have changed."
+# A tool that failed is reported as failed, to the Answerer (so it does not say "nothing was found") and on screen.
+TOOL_FAILED_NOTE: dict[str, str] = {
+    "web.search": "The live web search failed just now (the search service returned an error), so nothing could be checked on the web. "
+                  "Say that the live check did not work; do not say that nothing was found.",
+    "rag.search": "The catalog search failed just now, so the catalog could not be checked. Say that it did not work; do not say that nothing was found.",
+}
+TOOL_FAILED_SCREEN: dict[str, str] = {
+    "web.search": "The live web search did not work just now, so current prices and stock could not be checked. Please try again in a moment.",
+    "rag.search": "The catalog search did not work just now. Please try again in a moment.",
+}
 NO_RATING_NOTE = "The catalog has no customer ratings, so none are shown."
 
 CHEMICAL_WORDS = (

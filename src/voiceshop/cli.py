@@ -483,7 +483,7 @@ def eval_proofagent(
                           assess_context=not no_context, assess_compliance=not no_compliance, verbose=not quiet)
     card = asyncio.run(pa.run(config))
     console.print(pa.scorecard_markdown(card), markup=False, highlight=False)
-    console.print(f"[dim]Written to eval/results/proofagent/{label}/ (report.json, report.md, report.per.json, scorecard.md, turns.jsonl)[/dim]")
+    console.print(f"[dim]Written to eval/results/proofagent/{label}/ (report.json, report.md, report.per.json, scorecard.md, turns.jsonl.gz)[/dim]")
 
 
 if __name__ == "__main__":

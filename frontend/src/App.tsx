@@ -127,6 +127,7 @@ export function App() {
     <div className="page">
       <header className="bar">
         <h1>Voice Shopping Copilot</h1>
+        <p className="bar__kind">AI assistant</p>
         <p className="bar__status">
           {offline ? "The server is not answering." : health ? statusLine(health).map((part, index) => <span key={index}>{part}</span>) : "Connecting"}
         </p>
@@ -143,6 +144,7 @@ export function App() {
             <div className="welcome">
               <p className="heard heard--prompt">What are you shopping for?</p>
               <p className="welcome__sub">Say what it is, who it is for and what you want to spend. You get three options with their sources, and the answer read aloud.</p>
+              <p className="welcome__note">You are talking to an AI assistant, not a person. It only searches and compares: to buy, follow the store link beside a product.</p>
             </div>
           )}
           {current && <Heard turn={current} busy={busy} onCorrect={askText} />}

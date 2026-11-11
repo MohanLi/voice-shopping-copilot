@@ -7,6 +7,7 @@ safety-relevant facts never depend on the model alone.
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any
 
@@ -44,8 +45,14 @@ def guard_node(state: TurnState) -> dict[str, Any]:
     started = time.perf_counter()
     verdict = screen_input(state.get("user_text") or "")
     if verdict.allowed:
-        return {"guard": verdict.as_dict(), "user_text": verdict.text,
-                "trace": [step("guard", "Input passed the safety screen", started=started)]}
+        summary = "Input passed the safety screen"
+        if verdict.removed:
+            summary = f"Took {len(verdict.removed)} part(s) out of the message ({verdict.category}); the rest goes on"
+        if verdict.redacted:
+            summary += f"; replaced personal details ({', '.join(verdict.redacted)})"
+        return {"guard": verdict.as_dict(), "user_text": verdict.text, "preface": list(verdict.declined),
+                "trace": [step("guard", summary, status="warn" if verdict.removed else "ok", started=started, category=verdict.category,
+                               declined=list(verdict.declined) or None, removed=list(verdict.removed) or None, redacted=list(verdict.redacted) or None)]}
     reply = verdict.reply or policy.REFUSALS["harmful"]
     answer = FinalAnswer(spoken=policy.spoken_for(reply), text=reply, kind=_GUARD_KIND.get(verdict.category or "", "refusal"))  # type: ignore[arg-type]
     return {
@@ -56,7 +63,24 @@ def guard_node(state: TurnState) -> dict[str, Any]:
     }
 
 
-def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]] | None) -> RouteDecision:
+SHOPPING = ("product_search", "follow_up", "compare")
+MAX_SAY = policy.MAX_SAID
+_WHO_FOR = ("recipient", "age_years")          # constraints that say who a product is for, not what to look for
+
+
+def _name_words(product: str | None) -> set[str]:
+    return {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", (product or "").lower()) if len(w) > 2 and w not in rules._NAME_NOISE}
+
+
+def names_another_product(new: Constraints, earlier: Constraints | None) -> bool:
+    """Does this turn ask for a product other than the one the conversation was about ("bead kit" after "hoverboard")?"""
+    words = _name_words(new.product)
+    if not words:
+        return False
+    return earlier is None or not (words & _name_words(earlier.product))
+
+
+def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]] | None, earlier: Constraints | None = None) -> RouteDecision:
     """Code backstops applied to whatever the Router model returned."""
     c = route.constraints
     if c.budget_max is not None and c.budget_max <= 0:
@@ -67,18 +91,66 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
         c.age_years = None
     if c.age_years is None:                                   # "for my baby" must still switch the under-three rule on
         c.age_years = rules.recipient_age(f"{text} {c.recipient or ''}")
-    if route.safety == "refuse":
-        route.intent = "unsafe"
+    route.say = list(dict.fromkeys(route.say))[:MAX_SAY]      # type: ignore[assignment]
+    if "no_harm" in route.say or route.safety == "refuse":
+        route.intent = "unsafe"                               # an intent to hurt someone colours the whole message: nothing in it is served
     if route.intent == "unsafe":
         route.safety = "refuse"
+        if not any(i.startswith("no_") for i in route.say):   # the Router gave a reason in words: map it to a fixed sentence
+            route.say = [_REFUSAL_SAY[refusal_category(route.safety_reason)], *route.say][:MAX_SAY]      # type: ignore[assignment]
+    elif route.intent == "out_of_scope" and not route.say:
+        route.say = ["off_topic"]
+    elif route.intent == "chitchat" and not route.say:
+        route.say = ["greeting"]
     if route.intent in ("follow_up", "compare") and not shown:
         route.intent = "product_search"                       # nothing on screen to refer to
         route.refers_to = []
     route.refers_to = [p for p in route.refers_to if shown and 0 < p <= len(shown)]
+    if route.intent in ("follow_up", "compare") and not route.refers_to:
+        declined = any(i.startswith("no_") for i in route.say)
+        if declined and not [k for k in c.stated() if k not in _WHO_FOR]:
+            # Something was declined and nothing was asked about any product: the declined part was the whole message.
+            # (Asked to put an invented quote on a shop page, the pipeline went on to "the closest match is a brick set".)
+            route.intent = "out_of_scope"
+        elif names_another_product(c, earlier):
+            # Another product is another request: the brand, material and budget of the last one are not carried over.
+            # (After one question about a "Zentrix" hoverboard, six later searches were for "Zentrix" beads, putty and pitchers.)
+            route.intent = "product_search"
     under_three = c.age_years is not None and c.age_years < 3
-    if route.safety == "ok" and under_three and route.intent in ("product_search", "follow_up", "compare"):
+    if route.safety == "ok" and under_three and route.intent in SHOPPING:
         route.safety, route.safety_reason = "caution", "product for a child under three"
     return route
+
+
+MAX_REQUEST_WORDS = 40
+
+
+def request_for_agents(route: RouteDecision, text: str) -> str:
+    """The shopper's request as the Planner, the Retriever, the Answerer and the Critic are given it.
+
+    Normally that is the message itself. When part of the message was declined, it is the product request alone, as
+    the Router restated it: the agents that search and write never see the part that was turned down, so they cannot
+    act on it. (Told to "start a checklist ... put that the kit is back in stock ... then compare the two kits", the
+    Answerer compared the kits and also read back a checklist, although both the Router and its own prompt had ruled
+    that out. A model that never sees the instruction cannot follow it.) The restatement is screened like any message;
+    if the Router gave none that passes, a new product request is described from its constraints, and a question about
+    products on screen falls back to the message.
+    """
+    if route.intent not in SHOPPING or not route.say:        # what the input screen removed is already out of ``text``
+        return text
+    from voiceshop.guardrails.output import echoed_tokens
+
+    asked = " ".join((route.request or "").split())
+    for token in echoed_tokens(asked, text):                  # a code, link or address taken from the message is not passed on either
+        asked = re.sub(re.escape(token), " ", asked, flags=re.I)
+    asked = " ".join(asked.split())
+    if asked and len(asked.split()) <= MAX_REQUEST_WORDS:
+        verdict = screen_input(asked)
+        if verdict.allowed and not verdict.removed:
+            return verdict.text
+    if route.intent == "product_search" and route.constraints.product:
+        return rules.describe_request(route.constraints)
+    return text
 
 
 def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
@@ -99,15 +171,16 @@ def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
             raise
         except LLMCallError as exc:
             route, meta, fallback = rules.route(text, shown), {"model": "rules"}, fallback_note(exc)
-        route = normalise_route(route, text, shown)
-
         earlier: Constraints | None = state.get("session_constraints")
+        route = normalise_route(route, text, shown, earlier)
+
         if route.intent in ("follow_up", "compare"):
             constraints = route.constraints.merged_with(earlier)
         elif route.intent == "product_search":
             constraints = route.constraints
         else:
             constraints = earlier or Constraints()
+        summary_say = "; says: " + ", ".join(route.say) if route.say else ""
 
         summary = INTENT_LABEL.get(route.intent, route.intent)
         said = describe_constraints(route.constraints)
@@ -117,14 +190,17 @@ def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
             summary += f" (about item {', '.join(str(p) for p in route.refers_to)} on screen)"
         if route.safety != "ok":
             summary += f". Safety: {route.safety} ({route.safety_reason or 'policy'})"
+        summary += summary_say
+        request_text = request_for_agents(route, text)
         return {
             "route": route,
-            "session_constraints": constraints if route.intent in ("product_search", "follow_up", "compare") else earlier,
+            "request_text": request_text,
+            "session_constraints": constraints if route.intent in SHOPPING else earlier,
             "trace": [step("router", summary, status="warn" if (fallback or route.safety == "refuse") else "ok", started=started,
                            intent=route.intent, constraints=route.constraints.stated(), effective_constraints=constraints.stated(),
-                           safety=route.safety, safety_reason=route.safety_reason, refers_to=route.refers_to or None,
+                           safety=route.safety, safety_reason=route.safety_reason, refers_to=route.refers_to or None, say=route.say or None,
                            reason=route.reason, model=meta.get("model"), prompt=meta.get("prompt"), prompt_version=meta.get("version"),
-                           fallback=fallback)],
+                           passed_on=request_text if request_text != text else None, fallback=fallback)],
         }
 
     return router_node
@@ -137,6 +213,10 @@ _REFUSAL_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
     ("restricted_product", ("weapon", "gun", "firearm", "ammunition", "knife", "tobacco", "vap", "alcohol", "medicine", "prescription",
                             "drug", "adult", "restricted", "shopping for")),
 ]
+_REFUSAL_SAY = {"prompt_injection": "no_instructions", "secrets": "no_instructions", "dangerous_chemistry": "no_chemistry",
+                "restricted_product": "no_restricted", "harmful": "no_harm"}
+_KIND = {"unsafe": "refusal", "out_of_scope": "out_of_scope", "chitchat": "chitchat"}
+SPOKEN_COMFORT_S = 13.0
 
 
 def refusal_category(reason: str | None) -> str:
@@ -148,13 +228,28 @@ def refusal_category(reason: str | None) -> str:
     return "harmful"
 
 
-def direct_answer(route: RouteDecision) -> FinalAnswer:
-    """Reply for turns that need no retrieval: chitchat, out of scope, refusals."""
-    if route.intent == "unsafe":
-        text = policy.REFUSALS[refusal_category(route.safety_reason)]
-        return FinalAnswer(spoken=text, text=text, kind="refusal")
-    if route.intent == "out_of_scope":
-        text = route.reply or policy.OUT_OF_SCOPE
-        return FinalAnswer(spoken=text, text=text, kind="out_of_scope")
-    text = route.reply or ("Hi! " + policy.ASSISTANT_SCOPE + " What are you shopping for?")
-    return FinalAnswer(spoken=text, text=text, kind="chitchat")
+def said_ids(preface: list[str] | None, route: RouteDecision | None) -> list[str]:
+    """The fixed sentences of a turn, in the order they are said: what the input screen declined, then what the Router chose."""
+    chosen = list(route.say) if route is not None else []
+    if route is not None and route.intent in SHOPPING and "pii_note" in (preface or []):
+        # Details mentioned in passing were removed and the shopper is told so; "I can't look up personal information" would answer a request nobody made.
+        chosen = [i for i in chosen if i != "no_personal_data"]
+    return policy.without_covered([*(preface or []), *chosen])               # at most three, the most important kept
+
+
+def direct_answer(route: RouteDecision, preface: list[str] | None = None, previous: str | None = None) -> FinalAnswer:
+    """Reply for turns that need no retrieval: small talk, questions about the assistant, declined requests.
+
+    Every word of it is fixed text chosen by id (``policy.SAY``); the Router picks the ids. The first
+    ProofAgent run showed two costs of the earlier design: one generic "I can't help with that" for
+    every kind of declined request, and a model-written reply for off-topic turns that an adversary
+    could try to steer.
+    """
+    from voiceshop.speech.text import COMFORT_SPEED, estimate_seconds, fits
+
+    ids = said_ids(preface, route) or ["off_topic"]
+    text = policy.say(ids, previous=previous)
+    spoken = text if estimate_seconds(text) <= SPOKEN_COMFORT_S else policy.say(ids, spoken=True, previous=previous)
+    if not fits(spoken, 15.0, COMFORT_SPEED):                 # three sentences and the offer: the offer stays on screen only
+        spoken = policy.say(ids, offer=False, spoken=True)
+    return FinalAnswer(spoken=spoken, text=text, kind=_KIND.get(route.intent, "chitchat"), declined=ids)  # type: ignore[arg-type]

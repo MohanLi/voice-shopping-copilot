@@ -96,7 +96,7 @@ async def test_bad_uploads_are_refused_before_any_work(client: httpx.AsyncClient
     assert huge.status_code == 413
     assert (await client.post("/api/voice", data={"thread_id": "x"})).status_code == 422   # no file at all
     assert client.bot.transcriber.heard == []                                              # type: ignore[attr-defined]
-    for body in ({"text": ""}, {"text": "x" * 501}, {"text": "hi", "thread_id": "../etc"}, {}):
+    for body in ({"text": ""}, {"text": "x" * 2001}, {"text": "hi", "thread_id": "../etc"}, {}):
         assert (await client.post("/api/turn", json=body)).status_code == 422
 
 

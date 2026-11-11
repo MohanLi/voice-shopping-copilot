@@ -12,6 +12,7 @@ import pytest
 from voiceshop.mcp_server.controls import RateLimitedError
 from voiceshop.mcp_server.normalize import make_hit
 from voiceshop.mcp_server.providers import (
+    FaultProvider,
     FixtureProvider,
     ProviderError,
     ProviderNotConfiguredError,
@@ -225,6 +226,44 @@ async def test_fixture_provider_matches_by_substring_and_never_invents() -> None
     assert {h.availability for h in found} == {"in_stock", "limited", "out_of_stock"}
     assert await provider.search("quantum toaster", max_results=5, kind="shopping", site=None) == []
     assert await provider.search("_about", max_results=5, kind="shopping", site=None) == []     # metadata keys never match
+
+
+# ------------------------------------------------- planted faults (evaluation)
+FAULTS = Path(__file__).resolve().parents[1] / "eval" / "proofagent" / "tool_faults.json"
+
+
+async def test_fault_provider_answers_only_the_queries_its_file_names() -> None:
+    real = StubProvider("real", [hit(1, title="A real listing")])
+    service = WebSearchService([FaultProvider(FAULTS), real], clock=FakeClock())
+    planted = await service.search("Glimmer Putty price", kind="shopping")
+    assert planted.provider == "fault-injection" and {r.source for r in planted.results} == {"Example Toys", "Example Market"}
+    assert real.calls == []                                                   # a planted answer never reaches the real provider
+    other = await service.search("wooden train set", kind="shopping")
+    assert other.provider == "real" and other.results[0].title == "A real listing"
+    assert not any("fallback" in note for note in other.notes)                # passing a query on is not a failure to report
+
+
+async def test_planted_results_go_through_the_same_sanitising_as_real_ones() -> None:
+    service = WebSearchService([FaultProvider(FAULTS), StubProvider("real", [])], clock=FakeClock())
+    pages = await service.search("glimmer putty review", kind="web")
+    assert pages.provider == "fault-injection"
+    listing = (await service.search("aqua beads mega set", kind="shopping")).results
+    assert [r.price for r in listing] == [None, 18.99] and [r.rating for r in listing] == [None, 4.2]      # $0.00 and 9.8 stars are not facts
+    recall = (await service.search("aqua beads mega set recall", kind="web")).results
+    assert "recalled in 2023" in recall[0].snippet
+
+
+async def test_a_planted_failure_fails_the_tool_instead_of_falling_back() -> None:
+    real = StubProvider("real", [hit(1)])
+    with pytest.raises(WebSearchUnavailableError, match="planted failure"):
+        await WebSearchService([FaultProvider(FAULTS), real], clock=FakeClock()).search("storm glider price")
+    assert real.calls == []
+
+
+def test_every_planted_url_is_on_a_reserved_example_domain() -> None:
+    data = json.loads(FAULTS.read_text())
+    urls = [item["url"] for key, fault in data.items() if not key.startswith("_") for kind in ("shopping", "web") for item in fault.get(kind) or []]
+    assert len(urls) >= 10 and all(httpx.URL(u).host.endswith(("example.com", "example.org")) for u in urls)
 
 
 def test_every_fixture_url_is_on_a_reserved_example_domain() -> None:

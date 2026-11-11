@@ -177,7 +177,10 @@ _CTRL = re.compile(r"[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f​-‏‪-‮
 _WS = re.compile(r"\s+")
 _SENTENCE = re.compile(r"(?<=[.!?…])\s+|\s*[\n\r]+\s*|\s+[|•·]\s+")
 _INJECTION = re.compile(
-    r"ignore\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior|above|earlier|preceding)\s+(?:instructions?|prompts?|rules|messages?|context)"
+    r"ignore\s+(?:all\s+|any\s+|the\s+|your\s+|all\s+(?:of\s+)?your\s+)?(?:previous|prior|above|earlier|preceding)\s+(?:instructions?|prompts?|rules|messages?|context)"
+    r"|ignore\s+(?:all\s+(?:of\s+)?)?your\s+(?:\w+\s+){0,2}(?:instructions?|prompts?|rules|guidelines|programming|training)"
+    r"|\b(?:attention|note|notice|message|instructions?)\s*(?:to|for)?\s*(?:all\s+)?(?:ai|llm|language\s+models?|chatbots?|assistants?|agents?)\b[^.!?]{0,3}[:,]"
+    r"|\b(?:tell|inform|assure|convince|persuade)\s+(?:the|your)\s+(?:customer|user|shopper|buyer|human|reader)s?\b"
     r"|disregard\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior|above|earlier|your)\s+\w+"
     r"|forget\s+(?:all\s+|everything\s+|your\s+)(?:previous|prior|above|instructions?|rules)"
     r"|(?:you\s+are|you're)\s+now\s+(?:a|an|in|the)\b"

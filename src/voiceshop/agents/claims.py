@@ -33,6 +33,9 @@ _CAUTION_RULES: list[tuple[str, re.Pattern[str]]] = [
     ("contains solvents", re.compile(r"\bcontains?\s+solvents?\b", re.I)),
     ("flammable", re.compile(r"\b(?:extremely\s+|highly\s+)?flammable\b", re.I)),
     ("corrosive", re.compile(r"\bcorrosive\b", re.I)),
+    # Safety notices: said plainly whoever asks, and such a product is not recommended (safety policy).
+    ("recalled", re.compile(r"\b(?:was|were|been|is|are)\s+recalled\b|\brecall(?:ed)?\s+(?:notice|in|over|because|due|for)\b|\bsafety\s+recall\b", re.I)),
+    ("discontinued", re.compile(r"\bdiscontinued\b|\bno\s+longer\s+(?:made|sold|produced)\b", re.I)),
 ]
 
 # Which stated claims count as support when a shopper asks for a broader quality.

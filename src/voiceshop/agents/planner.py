@@ -7,6 +7,7 @@ configuration (no web step when no web provider is available).
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any
 
@@ -14,17 +15,49 @@ from voiceshop.agents import rules
 from voiceshop.agents.context import render_constraints, render_history, render_shown, render_tools
 from voiceshop.agents.deps import Deps
 from voiceshop.agents.llm_utils import LLMCallError, call_structured, compact_json, fallback_note
+from voiceshop.agents.router import said_ids
 from voiceshop.agents.state import Constraints, FinalAnswer, Plan, PlanStep, RouteDecision, TurnState, step
+from voiceshop.guardrails import policy
+from voiceshop.guardrails.input import unsafe_query
 from voiceshop.llm.ledger import BudgetExceededError
 
 MAX_STEPS = 3
 RAG_TOP_K = 5
 DEFAULT_QUESTION = "Sure. What kind of product are you looking for, and who is it for?"
+
+
+def safe_question(question: str | None, user_text: str) -> str:
+    """The Planner's clarifying question, or the default one if it is missing, long, or repeats a code or link from the shopper's message."""
+    from voiceshop.guardrails.output import echoed_tokens
+
+    asked = " ".join((question or "").split())
+    if not asked or len(asked.split()) > 22 or asked.count("?") > 1 or echoed_tokens(asked, user_text):
+        return DEFAULT_QUESTION
+    return asked
+
+
 WEB_POLICY = {
     "auto": "Otherwise prefer catalog_only.",
     "always": "In this deployment, also use it for every ordinary product request, so the answer can give today's price next to the catalog price.",
     "never": "Live web search is switched off in this deployment: never plan web.search.",
 }
+
+
+_SAFETY_ASK = re.compile(r"\b(?:safe|safety|recall(?:ed|s)?|dangerous|hazard(?:ous|s)?)\b", re.I)
+
+
+def safety_lookup(constraints: Constraints, user_text: str, strategy: str, steps: list[PlanStep]) -> PlanStep | None:
+    """A search for recall and safety notices, when the shopper asks whether a named product is safe and the web is being consulted anyway.
+
+    Merchant listings do not mention recalls. Asked "is it safe and worth buying?", the pipeline once looked up the price,
+    found two listings and answered from them; the recall notice was one search away and was never fetched.
+    """
+    if strategy not in ("catalog_then_web", "web_only") or not constraints.product or not _SAFETY_ASK.search(user_text):
+        return None
+    if any(s.tool == "web.search" and s.kind == "web" and re.search(r"recall|safety", s.query, re.I) for s in steps):
+        return None
+    return PlanStep(tool="web.search", purpose="recall and safety notices for the product", query=f"{constraints.product} recall safety notice"[:200],
+                    kind="web", top_k=5)
 
 
 def enforce_constraints(step_: PlanStep, constraints: Constraints) -> PlanStep:
@@ -52,7 +85,16 @@ def normalise_plan(plan: Plan, route: RouteDecision, constraints: Constraints, u
     """Apply configuration and consistency rules. Returns the plan and notes about what was changed."""
     notes: list[str] = []
     web_ok, mode = deps.web_available, deps.settings.web_price_check
-    steps = [enforce_constraints(s, constraints) for s in plan.steps if s.query.strip()][:MAX_STEPS]
+    steps = []
+    for planned in plan.steps:
+        if not planned.query.strip():
+            continue
+        refused = unsafe_query(planned.query)
+        if refused:                                           # a search about a declined part of the message is not run, whoever planned it
+            notes.append(f"dropped a planned search the safety policy does not allow ({refused.replace('_', ' ')})")
+            continue
+        steps.append(enforce_constraints(planned, constraints))
+    steps = steps[:MAX_STEPS]
     strategy, verify = plan.strategy, plan.verify_current_price
 
     if strategy == "from_memory" and not shown:
@@ -107,7 +149,12 @@ def normalise_plan(plan: Plan, route: RouteDecision, constraints: Constraints, u
             notes.append("added a search for pages that state the requested quality (listings alone do not)")
     if not deps.rag_available:
         steps = [s for s in steps if s.tool != "rag.search"]
-    return plan.model_copy(update={"strategy": strategy, "steps": steps[:MAX_STEPS], "verify_current_price": verify}), notes
+    steps = steps[:MAX_STEPS]
+    safety_step = safety_lookup(constraints, user_text, strategy, steps) if route.intent == "product_search" else None
+    if safety_step is not None:
+        steps.append(safety_step)
+        notes.append("added a search for recall and safety notices, because the shopper asked whether the product is safe")
+    return plan.model_copy(update={"strategy": strategy, "steps": steps, "verify_current_price": verify}), notes
 
 
 STRATEGY_LABEL = {
@@ -135,14 +182,18 @@ def make_planner_node(deps: Deps):  # type: ignore[no-untyped-def]
         route: RouteDecision = state["route"]  # type: ignore[assignment]
         constraints: Constraints = state.get("session_constraints") or route.constraints
         shown, text = state.get("shown") or [], state["user_text"]
+        asked = state.get("request_text") or text             # without any part of the message that was declined
         fallback = None
-        request = {
-            "user_request": text,
+        request: dict[str, Any] = {
+            "user_request": asked,
             "intent": route.intent,
             "constraints": constraints.stated(),
             "refers_to_on_screen_positions": route.refers_to,
             "safety": route.safety,
         }
+        declined = policy.declined_topics(said_ids(state.get("preface"), route))
+        if declined:                                          # already answered with a fixed sentence: nothing is searched for these
+            request["already_declined"] = declined
         try:
             plan, meta = await call_structured(
                 "planner", "planner", Plan, user=compact_json(request), turn_id=state.get("turn_id", ""),
@@ -156,7 +207,7 @@ def make_planner_node(deps: Deps):  # type: ignore[no-untyped-def]
         except BudgetExceededError:
             raise
         except LLMCallError as exc:
-            plan, meta, fallback = rules.plan(route, constraints, text, shown, web_available=deps.web_available), {"model": "rules"}, fallback_note(exc)
+            plan, meta, fallback = rules.plan(route, constraints, asked, shown, web_available=deps.web_available), {"model": "rules"}, fallback_note(exc)
         plan, notes = normalise_plan(plan, route, constraints, text, shown, deps)
 
         summary = STRATEGY_LABEL.get(plan.strategy, plan.strategy)
@@ -175,7 +226,7 @@ def make_planner_node(deps: Deps):  # type: ignore[no-untyped-def]
                            model=meta.get("model"), prompt=meta.get("prompt"), prompt_version=meta.get("version"), fallback=fallback)],
         }
         if plan.strategy == "clarify":
-            question = plan.clarifying_question or DEFAULT_QUESTION
+            question = safe_question(plan.clarifying_question, text)
             update["answer"] = FinalAnswer(spoken=question, text=question, kind="clarify", follow_up_question=question)
         return update
 

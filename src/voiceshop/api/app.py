@@ -50,7 +50,7 @@ ROLES = ("router", "planner", "retriever", "answerer", "critic")
 
 
 class TurnRequest(BaseModel):
-    text: str = Field(min_length=1, max_length=500)
+    text: str = Field(min_length=1, max_length=2000)
     thread_id: str = Field(default="default", pattern=THREAD_ID)
     stream: bool = True
 
@@ -204,7 +204,7 @@ def create_app(assistant: Assistant | None = None, settings: Settings | None = N
             },
             "mcp": {"transport": assistant_.mcp.transport, "tools": [spec.name for spec in assistant_.mcp.tools]},
             "catalog": catalog,
-            "limits": {"audio_bytes": MAX_AUDIO_BYTES, "asr_seconds": s.asr_max_seconds, "text_chars": 500},
+            "limits": {"audio_bytes": MAX_AUDIO_BYTES, "asr_seconds": s.asr_max_seconds, "text_chars": 2000},
         }
 
     @app.get("/api/tools")

@@ -210,13 +210,19 @@ def route(text: str, shown: list[dict[str, Any]] | None = None) -> RouteDecision
     """Keyword routing. Safety refusals are handled before this by the input guard."""
     low = text.lower()
     if _GREETING.match(low):
-        return RouteDecision(intent="chitchat", reply="Hi! " + policy.ASSISTANT_SCOPE + " What are you shopping for?", reason="greeting (rule-based router)")
+        kind = "thanks" if re.match(r"\s*(?:thanks?|thank\s+you|bye|goodbye)", low) else ("identity" if "who are you" in low else "greeting")
+        return RouteDecision(intent="chitchat", say=[kind] if kind != "identity" else ["identity", "capabilities"], reason="small talk (rule-based router)")
     constraints = extract_constraints(text)
     refers = [(_ORDINALS[m.group(1).lower()] if _ORDINALS[m.group(1).lower()] > 0 else len(shown or [])) for m in _REFERS.finditer(low)]
     safety = "caution" if (constraints.age_years is not None and constraints.age_years < 3) or any(w in low for w in policy.CHEMICAL_WORDS) else "ok"
     reason = "under three" if constraints.age_years is not None and constraints.age_years < 3 else ("chemical product" if safety == "caution" else None)
     if shown and refers and constraints.product and len(constraints.product.split()) <= 2:
         constraints.product = None                    # "is the second one in stock": the product is the one on screen
+    if shown and constraints.product:
+        # "anything cheaper" names no product: what is left after the follow-up words is the product, if anything is
+        left = re.sub(r"\b(?:anything|something|one|ones|options?|any|some|what|about|how|is|are|there|do|you|have|a|an|the|and|or|but|please)\b", " ",
+                      _COMPARE.sub(" ", _FOLLOW_UP.sub(" ", constraints.product)))
+        constraints.product = constraints.product if left.strip() else None
     if shown and (refers or _FOLLOW_UP.search(low)) and not _COMPARE.search(low):
         return RouteDecision(intent="follow_up", constraints=constraints, refers_to=[r for r in refers if r > 0], safety=safety, safety_reason=reason,
                              reason="refers to products on screen (rule-based router)")
@@ -302,10 +308,14 @@ def web_steps(constraints: Constraints, query: str) -> list[PlanStep]:
 
 # --------------------------------------------------------------------- answerer
 def short_name(item: CatalogItem | WebItem, max_words: int = 8) -> str:
-    """A name fit for speech: the stored spoken name, or the title up to its first separator."""
+    """A name fit for speech: the stored spoken name, or the title up to its first separator.
+
+    Sentence punctuation inside a name ("Created By Me! Heart Bead Set") is removed: the spoken reply is assembled and
+    trimmed sentence by sentence, and a name must not end one.
+    """
     if isinstance(item, CatalogItem) and item.spoken_name:
-        return item.spoken_name
-    title = re.split(r"\s[-–—|:]\s|[,(|]", item.title, maxsplit=1)[0].strip()
+        return re.sub(r"\s*[!?]+\s*", " ", item.spoken_name).strip()
+    title = re.split(r"\s[-–—|:]\s|[,(|]", re.sub(r"\s*[!?]+\s*", " ", item.title), maxsplit=1)[0].strip()
     words = title.split()
     return " ".join(words[:max_words]) if words else item.title[:60]
 
@@ -393,7 +403,8 @@ def pick(evidence: Evidence, constraints: Constraints, weak_score: float | None 
     catalog = [c for c in evidence.catalog if weak_score is None or c.rerank_score is None or c.rerank_score >= weak_score]
     fitting = [c for c in catalog if _fits(c, constraints)]
     missing = [c for c in catalog if not _fits(c, constraints)]
-    web = [w for w in evidence.web if w.matched_ref is None and w.price is not None and not w.flagged and w.availability != "out_of_stock"]
+    web = [w for w in evidence.web if w.matched_ref is None and w.price is not None and not w.flagged and w.availability != "out_of_stock"
+           and not any(c in policy.WITHDRAWN for c in all_cautions(w))]              # a recalled product is never the template's pick
     web_fitting = [w for w in web if _fits(w, constraints)]
     if constraints.must_have:                                # products whose sources state the asked-for quality come first (stable)
         web_fitting.sort(key=lambda w: (not wish_support(w, constraints), bool(all_cautions(w))))
@@ -401,8 +412,85 @@ def pick(evidence: Evidence, constraints: Constraints, weak_score: float | None 
     if constraints.sort == "cheapest":
         fitting.sort(key=lambda c: _best_price(c) or 1e9)
         web_fitting.sort(key=lambda w: w.price or 1e9)
-    ordered: list[CatalogItem | WebItem] = [*fitting, *web_fitting, *missing]
+    suitable: list[CatalogItem | WebItem] = [*fitting, *web_fitting]
+    named_web = [w for w in web_fitting if names_product(w, constraints)]
+    if named_web and fitting and not any(names_product(c, constraints) for c in fitting):
+        # The shopper named a product the catalog only has lookalikes of ("Glimmer Putty" against other putties): the live
+        # results that carry the name come first. The order within the catalog and within the web results is not touched.
+        suitable = [*named_web, *fitting, *(w for w in web_fitting if w not in named_web)]
+    ordered: list[CatalogItem | WebItem] = [*suitable, *missing]
     return ordered[:limit]
+
+
+_NAME_NOISE = frozenset("the a an for of and with set kit pack toy toys game games new best good kids kid".split())
+
+
+def names_product(item: CatalogItem | WebItem, constraints: Constraints) -> bool:
+    """Does the item's title carry every distinctive word of the product the shopper named ("Glimmer Putty")?"""
+    wanted = {w for w in re.findall(r"[a-z0-9]+", (constraints.product or "").lower()) if len(w) > 2 and w not in _NAME_NOISE}
+    if not wanted:
+        return False
+    return wanted <= set(re.findall(r"[a-z0-9]+", item.title.lower()))
+
+
+def withdrawn_match(evidence: Evidence, constraints: Constraints) -> tuple[WebItem, str] | None:
+    """A web result for the product the shopper named whose sources state it was recalled or discontinued."""
+    for item in evidence.web:
+        stated = [c for c in all_cautions(item) if c in policy.WITHDRAWN]
+        if stated and names_product(item, constraints):
+            return item, stated[0]
+    return None
+
+
+def template_comparison(items: list[CatalogItem | WebItem], labels: dict[str, str]) -> str:
+    """One sentence that puts the prices of the on-screen products a follow-up is about side by side.
+
+    "Is the second one cheaper than the first?" used to get the template's sentence about one product, which answers
+    nothing. Two prices next to each other, each product called by its place on screen, do answer it.
+    """
+    said: list[str] = []
+    for item in items:
+        price = _best_price(item)
+        live = isinstance(item, CatalogItem) and item.live is not None and item.live.price is not None
+        where = (f" now at {item.live.source}" if live and item.live is not None else "") if isinstance(item, CatalogItem) else f" at {item.source}"
+        label = labels.get(item.ref)
+        who = f"{label}, {short_name(item, 6)}," if label else short_name(item, 6)
+        said.append(f"{who} is ${price:.2f}{where}" if price is not None else f"{who} has no listed price")
+    catalog_only = all(isinstance(i, CatalogItem) and not (i.live is not None and i.live.price is not None) for i in items)
+    text = "; ".join(said) + ((", both catalog prices." if len(items) == 2 else ", all catalog prices.") if catalog_only else ".")
+    return text[0].upper() + text[1:]
+
+
+def spoken_from_evidence(items: list[CatalogItem | WebItem], constraints: Constraints, *, labels: dict[str, str] | None = None,
+                         focused: bool = False, caveat: str | None = None) -> str:
+    """The spoken sentence built by code: a comparison when a follow-up is about several products, otherwise the lead about the first."""
+    if focused and len(items) > 1:
+        return template_comparison(items[:3], labels or {})
+    return template_lead(items[0], constraints, caveat=caveat, focused=focused, label=(labels or {}).get(items[0].ref))
+
+
+def template_lead(top: CatalogItem | WebItem, constraints: Constraints, *, caveat: str | None = None, focused: bool = False,
+                  label: str | None = None) -> str:
+    """The spoken sentence about one product, built from its evidence: name, price, where the price comes from."""
+    price = _best_price(top)
+    live = isinstance(top, CatalogItem) and top.live is not None and top.live.price is not None
+    if isinstance(top, CatalogItem):
+        where = f"now at {top.live.source}" if live and top.live is not None else "in the catalog"
+    else:
+        where = f"at {top.source}"
+    opener = "" if focused else "My top pick is "
+    if focused and label:                                     # a follow-up: the product is called by its place on screen
+        opener = f"{label[0].upper()}{label[1:]}, "
+    lead = f"{opener}{short_name(top)}, ${price:.2f} {where}." if price is not None else f"{opener}{short_name(top)}."
+    if focused and constraints.wants_current_info:
+        stock = top.live.availability if isinstance(top, CatalogItem) and top.live is not None else (top.availability if isinstance(top, WebItem) else None)
+        lead += f" It is listed as {stock.replace('_', ' ')}." if stock else " I could not confirm whether it is in stock right now."
+    backing = wish_support(top, constraints) if constraints.must_have else []
+    if backing:
+        lead = lead[:-1] + f", stated to be {' and '.join(backing[:2])}."
+    if caveat:
+        lead += f" Note: {caveat}."
+    return lead
 
 
 def describe_request(constraints: Constraints) -> str:
@@ -415,12 +503,22 @@ def describe_request(constraints: Constraints) -> str:
     return " ".join(parts)
 
 
-def answer(evidence: Evidence, constraints: Constraints, weak_score: float | None = None, focus: list[str] | None = None) -> AnswerDraft:
+def answer(evidence: Evidence, constraints: Constraints, weak_score: float | None = None, focus: list[str] | None = None,
+           labels: dict[str, str] | None = None) -> AnswerDraft:
     """The grounded template answer: every value is copied from the evidence.
 
-    ``focus`` lists the handles of on-screen products a follow-up is about; the answer is then about those.
+    ``focus`` lists the handles of on-screen products a follow-up is about; the answer is then about those, and
+    ``labels`` gives each its place on screen in words ("the second one").
     """
     focused = [item for ref in (focus or []) if (item := evidence.get(ref)) is not None]
+    withdrawn = None if focused else withdrawn_match(evidence, constraints)
+    if withdrawn is not None:                                # the product asked for by name was recalled: say so, recommend nothing in its place
+        item, stated = withdrawn
+        return AnswerDraft(
+            recommendations=[], abstain=True, abstain_reason=f"a source states the product was {stated}", sources=[item.ref],
+            spoken=f"A source says {short_name(item)} was {stated}, so I do not recommend it.",
+            follow_up_question="Would you like me to look for a similar product instead?",
+        )
     chosen = focused[:3] if focused else pick(evidence, constraints, weak_score)
     if not chosen:
         wanted = describe_request(constraints)
@@ -432,23 +530,7 @@ def answer(evidence: Evidence, constraints: Constraints, weak_score: float | Non
         )
     recs = [Recommendation(ref=item.ref, why=_why(item, constraints), caveat=_caveat(item, constraints)) for item in chosen]
     top = chosen[0]
-    price = _best_price(top)
-    live = isinstance(top, CatalogItem) and top.live is not None and top.live.price is not None
-    if isinstance(top, CatalogItem):
-        where = f"now at {top.live.source}" if live and top.live is not None else "in the catalog"
-    else:
-        where = f"at {top.source}"
-    opener = "" if focused else "My top pick is "
-    lead = f"{opener}{short_name(top)}, ${price:.2f} {where}." if price is not None else f"{opener}{short_name(top)}."
-    if focused and constraints.wants_current_info:
-        stock = top.live.availability if isinstance(top, CatalogItem) and top.live is not None else (top.availability if isinstance(top, WebItem) else None)
-        lead += f" It is listed as {stock.replace('_', ' ')}." if stock else " I could not confirm whether it is in stock right now."
-    backing = wish_support(top, constraints) if constraints.must_have else []
-    if backing:
-        lead = lead[:-1] + f", stated to be {' and '.join(backing[:2])}."
-    caveat = recs[0].caveat
-    if caveat:
-        lead += f" Note: {caveat}."
+    lead = spoken_from_evidence(chosen, constraints, labels=labels, focused=bool(focused), caveat=recs[0].caveat)
     conflict = next((c for c in evidence.conflicts if c.startswith(f"{top.ref} ")), None)      # only about the product spoken of
     return AnswerDraft(recommendations=recs, spoken=lead, conflict_note=conflict,
                        follow_up_question="Would you like the cheapest option, or more detail on one?")

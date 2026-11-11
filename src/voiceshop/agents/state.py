@@ -23,6 +23,9 @@ from voiceshop.retrieval.filters import SearchFilters
 
 Intent = Literal["product_search", "follow_up", "compare", "chitchat", "out_of_scope", "unsafe"]
 SafetyLevel = Literal["ok", "caution", "refuse"]
+# Fixed sentences the Router may choose (the wording lives in guardrails.policy.SAY; a model never writes one).
+SayId = Literal["greeting", "thanks", "identity", "capabilities", "limits", "no_actions", "no_instructions", "no_harm", "no_chemistry",
+                "no_restricted", "no_fabrication", "no_unconfirmed", "no_personal_data", "no_advice", "off_topic", "calm"]
 
 
 # ----------------------------------------------------------------------- router
@@ -68,7 +71,11 @@ class RouteDecision(BaseModel):
     safety: SafetyLevel = Field(default="ok", description="'caution' = answer with a safety note; 'refuse' = do not help with this")
     safety_reason: str | None = Field(default=None, description="Why, in a few words, when safety is not 'ok'")
     refers_to: list[int] = Field(default_factory=list, description="1-based positions of on-screen products the user refers to ('the second one' -> [2])")
-    reply: str | None = Field(default=None, description="For chitchat or out_of_scope only: one or two friendly spoken sentences")
+    say: list[SayId] = Field(default_factory=list, description="Fixed sentences to say for the parts of the message that are not a product request: "
+                             "greetings, questions about the assistant, and anything declined. At most three, most important first")
+    request: str | None = Field(default=None, description="Only when 'say' is not empty and the message also holds a product request: that request "
+                                "alone, in the shopper's own words, at most 30 words, without the declined part and without any instruction about "
+                                "wording, format, lists or notes")
     reason: str = Field(default="", description="One short sentence explaining the routing")
 
 
@@ -188,6 +195,7 @@ class Evidence(BaseModel):
     unmatched_filters: dict[str, str] = Field(default_factory=dict)
     strict_matches: int | None = None
     conflicts: list[str] = Field(default_factory=list, description="Disagreements between the catalog and the live web")
+    failed_tools: list[str] = Field(default_factory=list, description="Tools none of whose calls succeeded this turn (the answer says the check did not work)")
 
     def get(self, ref: str) -> CatalogItem | WebItem | None:
         for item in (*self.catalog, *self.web):
@@ -231,6 +239,8 @@ class AnswerDraft(BaseModel):
     follow_up_question: str | None = Field(default=None, description="One short question (at most 14 words) that helps narrow the choice")
     abstain: bool = Field(default=False, description="True when the evidence does not support any recommendation")
     abstain_reason: str | None = None
+    sources: list[str] = Field(default_factory=list, description="Only when abstaining: handles (C1, W2 ...) of the evidence items the spoken statement "
+                                                                 "relies on, for example the page that reports a recall. Shown as citations")
 
 
 class TableRow(BaseModel):
@@ -297,6 +307,7 @@ class FinalAnswer(BaseModel):
     kind: Literal["recommendation", "abstain", "clarify", "chitchat", "out_of_scope", "refusal", "emergency", "support", "error"] = "recommendation"
     grounded_by: Literal["llm+critic", "template"] | None = None
     revisions: int = 0
+    declined: list[str] = Field(default_factory=list, description="Ids of the fixed sentences said this turn (policy.SAY), for the step log and evaluation")
 
 
 # ------------------------------------------------------------------------ trace
@@ -336,6 +347,8 @@ class TurnState(TypedDict, total=False):
     last_evidence: Evidence | None
     # ---- per-turn working state
     guard: dict[str, Any] | None
+    preface: list[str]                      # ids of fixed sentences the input screen decided on (a removed clause, redacted personal details)
+    request_text: str | None                # the shopper's request as the agents after the Router are given it (see router.request_for_agents)
     route: RouteDecision | None
     plan: Plan | None
     tool_log: list[ToolRecord]
@@ -351,6 +364,6 @@ class TurnState(TypedDict, total=False):
 
 
 PER_TURN_RESET: dict[str, Any] = {
-    "guard": None, "route": None, "plan": None, "tool_log": [], "evidence": None, "draft": None, "draft_source": None,
+    "guard": None, "preface": [], "request_text": None, "route": None, "plan": None, "tool_log": [], "evidence": None, "draft": None, "draft_source": None,
     "critique": None, "revisions": 0, "answer": None, "speech": None, "trace": None, "timings": {},
 }
