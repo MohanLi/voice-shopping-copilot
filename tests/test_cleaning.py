@@ -99,6 +99,97 @@ def test_parse_age(raw: str, expected: tuple[int | None, int | None, str | None]
     assert cl.parse_age(raw) == expected
 
 
+# ------------------------------------------------------- ages stated in the listing text
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("K’NEX Turbo Jet – 402 Pieces – Ages 7+ – Engineering Toy", (84, None)),
+        ("Board Game for Adults & Kids Age 12 and Up", (144, None)),
+        ("Stacking cups for Ages 12M+", (12, None)),
+        ("Peg puzzle Ages 18 mos+", (18, None)),
+        ("Rattle, Ages 3-12 Months", (3, 12)),
+        ("Brown Bear Puzzle, Ages 1-4", (12, 48)),
+        ("Family Puzzle – Perfect for Ages 8-99+", (96, None)),            # "to 99" is not an upper bound
+        ("Strategy game, ages 8 to adult", (96, None)),
+        ("Sassy Infant Gift Set 0+ Months - 5 Piece Set", (0, None)),
+        ("swing accessory for ages 9-36 months", (9, 36)),
+        ("Recommended age 9+ months", (9, None)),
+        ("Wooden blocks, 3 Years and Up", (36, None)),
+        ("Great Gift - Best for 2, 3, and 4 Year Olds", (24, 48)),
+        ("Best for 3, 4, 5, and 6 Year Olds and Up", (36, None)),
+        ("Toys for 3 Year Old Boys", (36, None)),
+        ("Pack of 12, 7 Year Olds", (84, None)),                           # a count before the age is not part of it
+        ("Robot Wonder Pack for Kids 6+", (72, None)),
+        ("ideal for toddlers, ages 3", (36, None)),
+        ("Supports 2 to 4 players, ages 10 and up", (120, None)),
+        ("Party game for ages 21 and older", (252, None)),
+    ],
+)
+def test_parse_text_age(text: str, expected: tuple[int, int | None]) -> None:
+    found = cl.parse_text_age(text)
+    assert found is not None and found[:2] == expected
+    assert found[2] in text                                                 # the evidence is quoted from the listing
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Ice Age 2 DVD", "Stone Age 3D puzzle", "My Hero Academia Age of Heroes Figure", "1000 Piece Puzzle", "Set of 12 for 3+ players",
+     "$8+ shipping", "LEGO 10696 Classic 484 Pieces", "Costume Size 6-12 Months", "100 years old oak", ""],
+)
+def test_parse_text_age_ignores_numbers_that_are_not_ages(text: str) -> None:
+    assert cl.parse_text_age(text) is None
+
+
+def test_title_age_corrects_a_field_that_says_months_for_years() -> None:
+    age = cl.reconcile_age(cl.parse_age("7months-15years"), "K’NEX – Turbo Jet – 402 Pieces – Ages 7+", [])
+    assert (age["age_min_months"], age["age_label"], age["age_conflict"]) == (84, "7 years and up", True)
+    assert age["age_source"] == 'listing title: "Ages 7+"'
+
+
+def test_bullet_point_age_can_raise_the_minimum_but_never_lower_it() -> None:
+    raised = cl.reconcile_age(cl.parse_age("21months-3years"), "Shoot The Shot Table Top Game", ["Drinking game for ages 21 and older"])
+    assert raised["age_min_months"] == 252 and raised["age_max_months"] is None and raised["age_conflict"]
+    assert "stricter than the manufacturer field" in raised["age_source"]
+    kept = cl.reconcile_age(cl.parse_age("5yearsandup"), "Doll", ["Ideal for ages 3+"])
+    assert (kept["age_min_months"], kept["age_source"]) == (60, "manufacturer field")
+
+
+def test_title_never_moves_a_product_below_three_against_the_field() -> None:
+    age = cl.reconcile_age(cl.parse_age("3-5years"), "Storybook Projector Gift Pack, Ages 1 & Up", [])
+    assert age["age_min_months"] == 36 and age["age_conflict"]
+    assert age["age_source"] == 'manufacturer field (the title says "Ages 1 & Up")'
+    assert not cl.explicitly_for_under_3(age["age_min_months"], age["stated_min_months"], "Storybook Projector", [], [])
+
+
+def test_listing_text_supplies_an_age_when_the_field_is_empty() -> None:
+    age = cl.reconcile_age((None, None, None), "Light-Up Cloud Rattle for Babies 3 Months+", [])
+    assert (age["age_min_months"], age["age_label"]) == (3, "3 months and up")
+    assert cl.reconcile_age((None, None, None), "Plain title", [])["age_label"] is None
+
+
+def test_matching_title_and_field_keep_the_fields_upper_bound() -> None:
+    age = cl.reconcile_age(cl.parse_age("6-10years"), "Magic Set, Ages 6 & Up", [])
+    assert (age["age_min_months"], age["age_max_months"], age["age_conflict"]) == (72, 120, False)
+
+
+@pytest.mark.parametrize(
+    ("age_min", "stated", "title", "features", "categories", "expected"),
+    [
+        (6, 6, "Drum, Ages 6 months and up", [], ["Toys & Games"], True),            # an under-3 age is stated
+        (12, None, "Pull Along Dachshund for Your Toddler", [], ["Toys & Games"], True),
+        (6, None, "Soft blocks", ["Perfect for babies and toddlers"], ["Toys & Games"], True),
+        (0, None, "Activity toy", [], ["Toys & Games", "Baby & Toddler Toys"], True),
+        (9, None, "1000-Piece Puzzle", ["Made in the USA"], ["Toys & Games", "Puzzles"], False),   # the age field alone
+        (6, None, "Soft blocks", ["Not suitable for toddlers without supervision"], [], False),     # negated
+        (3, 36, "Care Cart", ["Ages 3+"], ["Toys & Games"], False),                                 # states three or older
+        (36, None, "Toddler bed rail", [], [], False),                                             # not under three at all
+        (None, None, "Baby rattle for infants", [], [], False),                                    # no age at all
+    ],
+)
+def test_explicitly_for_under_3(age_min: int | None, stated: int | None, title: str, features: list[str], categories: list[str], expected: bool) -> None:
+    assert cl.explicitly_for_under_3(age_min, stated, title, features, categories) is expected
+
+
 def test_asin_and_images() -> None:
     url = "https://www.amazon.com/DB-Longboards-CoreFlex-Crossbow/dp/B07KMVJJK7"
     assert cl.asin_from_url(url) == "B07KMVJJK7"

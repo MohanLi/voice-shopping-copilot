@@ -111,6 +111,8 @@ def payload(p: dict[str, Any]) -> dict[str, Any]:
         "age_min_months": int(age_min) if has_age else 0,
         "age_max_months": int(age_max) if age_max is not None else OPEN_ENDED_AGE,
         "age_label": p.get("age_label"),
+        "age_source": p.get("age_source"),
+        "for_under_3": bool(p.get("for_under_3")),
         "safety_flags": p.get("safety_flags") or [],
         "claims": p.get("claims") or [],
         "claims_norm": [norm(c) for c in (p.get("claims") or [])],
@@ -154,6 +156,7 @@ class SearchHit(BaseModel):
     pack_count: int | None = None
     piece_count: int | None = None
     age_label: str | None = None
+    age_source: str | None = None
     safety_flags: list[str] = Field(default_factory=list)
     claims: list[str] = Field(default_factory=list)
     batteries: str | None = None

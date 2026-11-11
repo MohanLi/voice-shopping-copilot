@@ -81,6 +81,8 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------ retrieval
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_backend: Literal["fastembed", "hashing"] = "fastembed"
+    # Product text is truncated to this many tokens before embedding (title and features come first).
+    embedding_max_tokens: int = Field(default=256, ge=32, le=512)
     reranker_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
     reranker_enabled: bool = True
     qdrant_url: str = ""  # empty = embedded local mode under data/index/qdrant

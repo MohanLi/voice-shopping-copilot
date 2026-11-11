@@ -72,12 +72,17 @@ def local_model_dir(models_dir: Path, kind: str, model_name: str) -> Path | None
 
 
 class FastEmbedEmbedder:
-    """ONNX sentence encoder via fastembed (queries get the model's query prefix)."""
+    """ONNX sentence encoder via fastembed (queries get the model's query prefix).
 
-    def __init__(self, model_name: str, models_dir: Path, threads: int | None = None) -> None:
+    Documents are truncated to ``max_tokens`` and embedded in length-sorted batches: padding every
+    batch to its longest text is what makes mixed-length batches slow on CPU.
+    """
+
+    def __init__(self, model_name: str, models_dir: Path, max_tokens: int = 256, threads: int | None = None) -> None:
         from fastembed import TextEmbedding
 
         self.name = model_name
+        self.max_tokens = max_tokens
         local = local_model_dir(models_dir, "embeddings", model_name)
         kwargs: dict[str, object] = {"threads": threads} if threads else {}
         if local is not None:
@@ -86,12 +91,20 @@ class FastEmbedEmbedder:
             kwargs["cache_dir"] = str(models_dir / "fastembed_cache")
             log.info("embedding model %s not found under models/embeddings; fastembed will download it", model_name)
         self._model = TextEmbedding(model_name=model_name, **kwargs)
-        self.dim = int(len(next(iter(self._model.embed(["dimension probe"])))))
+        self.dim = len(next(iter(self._model.embed(["dimension probe"]))))
+        try:
+            self._model.model.tokenizer.enable_truncation(max_length=max_tokens)
+        except AttributeError:  # a fastembed version that hides the tokenizer: keep the model default (512)
+            log.warning("could not set the embedding truncation length; using the model default")
 
-    def embed_documents(self, texts: Sequence[str], batch_size: int = 64) -> np.ndarray:
+    def embed_documents(self, texts: Sequence[str], batch_size: int = 32) -> np.ndarray:
         if not texts:
             return np.zeros((0, self.dim), dtype=np.float32)
-        return np.vstack(list(self._model.passage_embed(list(texts), batch_size=batch_size))).astype(np.float32)
+        order = sorted(range(len(texts)), key=lambda i: len(texts[i]))
+        vectors = np.vstack(list(self._model.passage_embed([texts[i] for i in order], batch_size=batch_size)))
+        out = np.empty_like(vectors, dtype=np.float32)
+        out[order] = vectors
+        return out
 
     def embed_query(self, text: str) -> np.ndarray:
         return np.asarray(next(iter(self._model.query_embed(text))), dtype=np.float32)
@@ -102,7 +115,7 @@ def build_embedder(settings: Settings | None = None, backend: str | None = None)
     chosen = backend or s.embedding_backend
     if chosen == "hashing":
         return HashingEmbedder()
-    return FastEmbedEmbedder(s.embedding_model, s.models_dir)
+    return FastEmbedEmbedder(s.embedding_model, s.models_dir, max_tokens=s.embedding_max_tokens)
 
 
 def batched(items: Sequence[str], size: int) -> Iterable[Sequence[str]]:

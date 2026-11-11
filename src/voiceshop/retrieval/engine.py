@@ -63,6 +63,7 @@ class SearchResponse(BaseModel):
     applied_filters: dict[str, Any] = Field(default_factory=dict)
     unmatched_filters: dict[str, str] = Field(default_factory=dict)
     relaxed: list[str] = Field(default_factory=list, description="Constraints loosened to find enough results, in order")
+    safety_rules: list[str] = Field(default_factory=list, description="Rules applied automatically for safety; never relaxed")
     strict_matches: int = Field(default=0, description="Products satisfying every original constraint")
     candidates: int = 0
     variants_collapsed: int = 0
@@ -233,6 +234,7 @@ class SearchEngine:
             applied_filters={k: v for k, v in active.model_dump().items() if v not in (None, [], False, {}) and k != "unmatched"},
             unmatched_filters=original.unmatched,
             relaxed=relaxed,
+            safety_rules=original.safety_rules,
             strict_matches=strict_matches,
             candidates=len(fused),
             variants_collapsed=collapsed,
@@ -279,6 +281,48 @@ class SearchEngine:
 
 
 # ------------------------------------------------------------------- building
+def embed_with_cache(
+    embedder: Embedder, texts: Sequence[str], cache_path: Path, batch_size: int = 32, chunk: int = 256, started: float | None = None
+) -> np.ndarray:
+    """Embed ``texts``, reusing vectors from a previous build for texts that did not change.
+
+    The cache maps sha1(model, truncation, text) to a vector and is saved after every chunk, so an
+    interrupted build resumes and a rebuild after a small catalog change only embeds what changed.
+    """
+    tag = f"{embedder.name}|{getattr(embedder, 'max_tokens', '')}|"
+    keys = [hashlib.sha1((tag + t).encode("utf-8")).hexdigest() for t in texts]
+    cache: dict[str, np.ndarray] = {}
+    if cache_path.exists():
+        try:
+            data = np.load(cache_path, allow_pickle=False)
+            cache = dict(zip(data["keys"].tolist(), data["vectors"], strict=True))
+        except (OSError, ValueError, KeyError):
+            cache = {}
+    missing = [i for i, k in enumerate(keys) if k not in cache]
+    seen: set[str] = set()
+    missing = [i for i in missing if not (keys[i] in seen or seen.add(keys[i]))]  # type: ignore[func-returns-value]
+    started = started or time.time()
+    if missing:
+        log.info("embedding %d products (%d reused from cache)", len(missing), len(texts) - len(missing))
+
+    def save() -> None:
+        ks = list(cache)
+        tmp = cache_path.with_suffix(".tmp.npz")
+        np.savez(tmp, keys=np.array(ks), vectors=np.vstack([cache[k] for k in ks]).astype(np.float32))
+        tmp.replace(cache_path)
+
+    for n, i in enumerate(range(0, len(missing), chunk), start=1):
+        part = missing[i: i + chunk]
+        vectors = embedder.embed_documents([texts[j] for j in part], batch_size=batch_size)
+        for j, vec in zip(part, vectors, strict=True):
+            cache[keys[j]] = vec
+        done = min(i + chunk, len(missing))
+        log.info("embedded %d / %d products (%.0f s)", done, len(missing), time.time() - started)
+        if n % 4 == 0 or done == len(missing):
+            save()
+    return np.vstack([cache[k] for k in keys]).astype(np.float32) if keys else np.zeros((0, embedder.dim), dtype=np.float32)
+
+
 def file_sha256(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -287,7 +331,7 @@ def file_sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def build_index(settings: Settings | None = None, embedder: Embedder | None = None, batch_size: int = 64) -> dict[str, Any]:
+def build_index(settings: Settings | None = None, embedder: Embedder | None = None, batch_size: int = 32) -> dict[str, Any]:
     """Embed every product, write the Qdrant collection, the BM25 index, the vocabulary and the manifest."""
     from voiceshop.data.ingest import load_products
 
@@ -304,16 +348,11 @@ def build_index(settings: Settings | None = None, embedder: Embedder | None = No
     texts = [docs.embedding_text(r) for r in rows]
     embedder = embedder or build_embedder(s)
 
+    vectors = embed_with_cache(embedder, texts, index_dir / "embedding_cache.npz", batch_size=batch_size, started=started)
     store = VectorStore.open(s.qdrant_path, s.qdrant_collection, s.qdrant_url)
     try:
         store.recreate(embedder.dim)
-        done = 0
-        chunk = batch_size * 8
-        for i in range(0, len(texts), chunk):
-            vectors = embedder.embed_documents(texts[i: i + chunk], batch_size=batch_size)
-            store.upsert(vectors, payloads[i: i + chunk], start_id=i)
-            done += len(vectors)
-            log.info("embedded %d / %d products (%.0f s)", done, len(texts), time.time() - started)
+        store.upsert(vectors, payloads)
         stored = store.count()
     finally:
         store.close()
@@ -327,6 +366,7 @@ def build_index(settings: Settings | None = None, embedder: Embedder | None = No
         "embedding_backend": s.embedding_backend if embedder.name != "hashing-384" else "hashing",
         "embedding_model": embedder.name,
         "embedding_dim": embedder.dim,
+        "embedding_max_tokens": getattr(embedder, "max_tokens", None),
         "vector_store": "qdrant (server)" if s.qdrant_url else "qdrant (embedded)",
         "lexical": "bm25s (lucene variant, English stemming)",
         "products_sha256": file_sha256(products_path),

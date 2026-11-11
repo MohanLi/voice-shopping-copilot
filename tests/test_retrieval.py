@@ -9,10 +9,18 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from voiceshop.data.schema import UNDER_3_EXCLUDED_FLAGS
 from voiceshop.retrieval import documents as docs
 from voiceshop.retrieval.embedder import HashingEmbedder
 from voiceshop.retrieval.engine import SearchEngine
-from voiceshop.retrieval.filters import ResolvedFilters, SearchFilters, relaxation_ladder, resolve, to_qdrant
+from voiceshop.retrieval.filters import (
+    UNDER_3_RULE,
+    ResolvedFilters,
+    SearchFilters,
+    relaxation_ladder,
+    resolve,
+    to_qdrant,
+)
 from voiceshop.retrieval.fusion import reciprocal_rank_fusion
 from voiceshop.retrieval.lexical import LexicalIndex, tokenize
 
@@ -58,6 +66,8 @@ FILTER_CASES = [
     SearchFilters(age_years=5),
     SearchFilters(age_years=5, allow_unknown_age=True),
     SearchFilters(age_years=1.5, price_max=30),
+    SearchFilters(age_years=1),
+    SearchFilters(age_years=2, allow_unknown_age=True),           # under three: unknown ages are never admitted
     SearchFilters(materials=["wood", "plastic"]),
     SearchFilters(claims=["non-toxic"]),
     SearchFilters(exclude_safety_flags=["batteries_required", "choking_hazard"]),
@@ -99,6 +109,50 @@ def test_age_filter_keeps_only_products_recommended_for_that_age(engine: SearchE
     for hit in res.results:
         pl = engine.get(hit.doc_id)
         assert pl is not None and pl["has_age"] and pl["age_min_months"] <= 48 <= pl["age_max_months"]
+
+
+# -------------------------------------------------------------- under-three rule
+def test_under_three_rule_is_switched_on_by_the_age(engine: SearchEngine) -> None:
+    toddler = resolve(SearchFilters(age_years=2, allow_unknown_age=True), engine.vocab)
+    assert toddler.under_3 and not toddler.allow_unknown_age and toddler.safety_rules == [UNDER_3_RULE]
+    assert set(UNDER_3_EXCLUDED_FLAGS) <= set(toddler.exclude_safety_flags)
+    preschooler = resolve(SearchFilters(age_years=3), engine.vocab)
+    assert not preschooler.under_3 and preschooler.exclude_safety_flags == [] and preschooler.safety_rules == []
+
+
+def test_the_age_field_alone_never_qualifies_a_product_for_a_baby(engine: SearchEngine) -> None:
+    """The sample holds a 1000-piece puzzle whose age field says "9 months to 8 years"."""
+    puzzle = next(pl for pl in engine.payloads if "1000-Piece Puzzle" in pl["title"])
+    assert puzzle["age_min_months"] <= 12 <= puzzle["age_max_months"] and not puzzle["for_under_3"]
+    res = engine.search("puzzle", SearchFilters(age_years=1), top_k=10)
+    assert puzzle["doc_id"] not in [h.doc_id for h in res.results]
+    assert res.safety_rules == [UNDER_3_RULE]
+    for hit in res.results:
+        pl = engine.get(hit.doc_id)
+        assert pl is not None and pl["for_under_3"] and pl["age_min_months"] <= 12 <= pl["age_max_months"]
+        assert not set(pl["safety_flags"]) & set(UNDER_3_EXCLUDED_FLAGS)
+
+
+def test_under_three_rule_survives_relaxation(engine: SearchEngine) -> None:
+    res = engine.search("building set with small pieces", SearchFilters(age_years=1, price_max=0.5, brand="LEGO"), top_k=5)
+    assert res.relaxed and "age_unknown_allowed" not in res.relaxed
+    for hit in res.results:
+        pl = engine.get(hit.doc_id)
+        assert pl is not None and pl["for_under_3"] and pl["has_age"]
+    labels = [label for label, _ in relaxation_ladder(resolve(SearchFilters(age_years=1, price_max=10, materials=["wood"]), engine.vocab))]
+    assert labels == ["materials", "budget_stretched", "budget_removed"]
+    assert all(step.under_3 for _, step in relaxation_ladder(resolve(SearchFilters(age_years=1, price_max=10), engine.vocab)))
+
+
+def test_listing_text_overrides_a_months_for_years_age_field(engine: SearchEngine) -> None:
+    """Real rows in the sample: a 402-piece set ("7 months - 15 years", title "Ages 7+") and a drinking game ("21 months - 3 years")."""
+    knex = next(pl for pl in engine.payloads if "Turbo Jet" in pl["title"])
+    assert knex["age_min_months"] == 84 and knex["age_source"] == 'listing title: "Ages 7+"' and not knex["for_under_3"]
+    game = next(pl for pl in engine.payloads if "Shoot The Shot" in pl["title"])
+    assert game["age_min_months"] == 252 and not game["for_under_3"]
+    for age in (1, 2, 5):
+        found = [h.doc_id for h in engine.search("game", SearchFilters(age_years=age), top_k=10, relax=False).results]
+        assert game["doc_id"] not in found and (age >= 7 or knex["doc_id"] not in found)
 
 
 # ----------------------------------------------------------------- relaxation

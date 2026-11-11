@@ -30,6 +30,7 @@ _PAYLOAD_INDEXES: dict[str, qm.PayloadSchemaType] = {
     "category_norm": qm.PayloadSchemaType.KEYWORD,
     "brand_norm": qm.PayloadSchemaType.KEYWORD,
     "has_age": qm.PayloadSchemaType.BOOL,
+    "for_under_3": qm.PayloadSchemaType.BOOL,
     "age_min_months": qm.PayloadSchemaType.INTEGER,
     "age_max_months": qm.PayloadSchemaType.INTEGER,
     "ingredients_norm": qm.PayloadSchemaType.KEYWORD,

@@ -22,8 +22,22 @@ import pandas as pd
 from voiceshop.data import attributes as attr
 from voiceshop.data import cleaning as cl
 from voiceshop.data import units
-from voiceshop.data.derived import DERIVED_FILE, fallback_spoken_name, load_attributes, validate_brand, validate_materials, validate_spoken_name
-from voiceshop.data.schema import PARQUET_COLUMNS, REQUIRED_COLUMNS, SNAPSHOT_DATE, Product, doc_id_for
+from voiceshop.data.derived import (
+    DERIVED_FILE,
+    fallback_spoken_name,
+    load_attributes,
+    validate_brand,
+    validate_materials,
+    validate_spoken_name,
+)
+from voiceshop.data.schema import (
+    PARQUET_COLUMNS,
+    REQUIRED_COLUMNS,
+    SNAPSHOT_DATE,
+    UNDER_3_EXCLUDED_FLAGS,
+    Product,
+    doc_id_for,
+)
 
 RAW_CSV_NAME = "amazon_product_dataset_2020.csv"
 MIN_TEXT_CHARS = 20
@@ -59,8 +73,13 @@ def build_product(row: dict[str, Any], resolver: attr.BrandResolver | None) -> t
     cat_path = cl.split_category(row.get("Category"))
     brand, brand_source = attr.derive_brand(title, spec, [text], resolver)
     ingredients, ingredients_source = attr.derive_ingredients(title, features, description)
-    age_min, age_max, age_label = cl.parse_age(spec.get("manufacturerrecommendedage"))
+    age = cl.reconcile_age(cl.parse_age(spec.get("manufacturerrecommendedage")), title, features)
     everything = f"{title} . {text}"
+    safety_flags = attr.derive_safety_flags(everything, spec)
+    for_under_3 = (
+        cl.explicitly_for_under_3(age["age_min_months"], age["stated_min_months"], title, features, cat_path)
+        and not set(safety_flags) & set(UNDER_3_EXCLUDED_FLAGS)
+    )
 
     weight_from_dims = None
     dims_raw = spec.get("productdimensions") or row.get("Product Dimensions")
@@ -104,10 +123,13 @@ def build_product(row: dict[str, Any], resolver: attr.BrandResolver | None) -> t
         item_weight_oz=item_weight,
         shipping_weight_oz=ship_weight,
         dimensions_in=cl.parse_dimensions_in(dims_raw),
-        age_min_months=age_min,
-        age_max_months=age_max,
-        age_label=age_label,
-        safety_flags=attr.derive_safety_flags(everything, spec),
+        age_min_months=age["age_min_months"],
+        age_max_months=age["age_max_months"],
+        age_label=age["age_label"],
+        age_source=age["age_source"],
+        age_conflict=age["age_conflict"],
+        for_under_3=for_under_3,
+        safety_flags=safety_flags,
         claims=attr.derive_claims(everything),
         batteries=attr.describe_batteries(spec.get("batteries")),
         brand_source=brand_source,
@@ -228,6 +250,13 @@ def build_report(raw: pd.DataFrame, frame: pd.DataFrame, dropped: Counter[str]) 
             "item_weight_oz", "dimensions_in", "image_url", "model_number", "pack_count", "price_per_oz",
             "safety_flags", "claims", "bestseller_rank", "product_type", "piece_count",
         ]},
+        "age": {
+            "source": frame["age_source"].fillna("(none)").map(lambda v: v.split(":")[0].split(" (the")[0]).value_counts().to_dict(),
+            "listing_text_stricter_than_field": int(frame["age_source"].fillna("").str.contains("stricter").sum()),
+            "field_contradicted_by_listing_text": int(frame["age_conflict"].sum()),
+            "min_age_under_3": int((frame["age_min_months"] < 36).sum()),
+            "explicitly_for_under_3": int(frame["for_under_3"].sum()),
+        },
         "brand_source": frame["brand_source"].fillna("(none)").value_counts().to_dict(),
         "ingredients_source": frame["ingredients_source"].fillna("(none)").value_counts().to_dict(),
         "categories": {k: int(v) for k, v in cats.items()},

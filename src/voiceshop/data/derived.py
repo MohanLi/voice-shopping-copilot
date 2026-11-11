@@ -66,7 +66,9 @@ def validate_materials(materials: Iterable[str] | None, listing_text: str, max_i
     A phrase the material lexicon does not know is kept only when it is short and concrete
     ("teflon"), and dropped when it is vague ("heavy-duty material").
     """
-    from voiceshop.data.attributes import materials_in  # local import: attributes has no dependencies on this module
+    from voiceshop.data.attributes import (
+        materials_in,  # local import: attributes has no dependencies on this module
+    )
 
     low = (listing_text or "").lower()
     out: list[str] = []

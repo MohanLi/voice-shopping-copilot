@@ -19,6 +19,9 @@ DOC_ID_PREFIX = "AMZ-"
 SNAPSHOT_DATE = "2020-01"  # the dataset is a January 2020 crawl; catalog prices are of that date
 DATASET_NAME = "Amazon Product Dataset 2020 (PromptCloud, Kaggle)"
 
+# Warnings that rule a product out for a child under three, whatever its age field says.
+UNDER_3_EXCLUDED_FLAGS = ("choking_hazard", "not_for_under_3", "contains_magnets", "latex_balloons", "sharp_parts")
+
 # The assignment's target schema for products.parquet, in its order.
 REQUIRED_COLUMNS = ["id", "title", "brand", "category", "price", "rating", "features", "ingredients"]
 
@@ -89,6 +92,9 @@ class Product(BaseModel):
     age_min_months: int | None = None
     age_max_months: int | None = None
     age_label: str | None = None
+    age_source: str | None = Field(default=None, description="'manufacturer field', 'listing title' or 'listing text …'")
+    age_conflict: bool = Field(default=False, description="The age field and the listing text disagree by two years or more")
+    for_under_3: bool = Field(default=False, description="The listing itself says the product suits babies or toddlers")
     safety_flags: list[str] = Field(default_factory=list)
     claims: list[str] = Field(default_factory=list, description="Listing claims such as 'BPA-free' (unverified)")
     batteries: str | None = None

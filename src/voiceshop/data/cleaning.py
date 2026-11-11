@@ -258,6 +258,184 @@ def _age_text(months: int) -> str:
     return f"{months} month{'s' if months != 1 else ''}"
 
 
+def age_label(lo: int, hi: int | None) -> str:
+    """ "3 years and up", "6 months to 3 years"."""
+    return f"{_age_text(lo)} to {_age_text(hi)}" if hi is not None else f"{_age_text(lo)} and up"
+
+
+# --- ages stated in the listing's own words --------------------------------------------------------
+# The dataset's "Manufacturer recommended age" field is unreliable: sellers often pick *months* where
+# years are meant ("7 months - 15 years" on a 402-piece set whose title says "Ages 7+"). The listing's
+# own text is the cross-check.
+_MONTH_UNIT = r"(?:months?|mos?\b|m\b)"
+_YEAR_UNIT = r"(?:years?|yrs?\b|y\b)"
+_UNIT = rf"(?:{_MONTH_UNIT}|{_YEAR_UNIT})"
+_UP = r"(?:\+|plus\b|(?:and|&|or)\s*(?:up|older|above|over)\b)"
+_SEP = r"(?:-|–|—|to)"
+_TEXT_AGE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    # "Ages 3-12 Months", "ages 9-36 months", "Ages 1-4", "ages 3-8 years", "Ages 8-99+", "ages 8 to adult"
+    ("range", re.compile(rf"\bage[sd]?\s*:?\s*(?P<lo>\d{{1,2}})\s*(?P<lo_unit>{_UNIT})?\s*{_SEP}\s*(?:(?P<hi>\d{{1,3}})\s*(?P<hi_unit>{_UNIT})?|(?P<adult>adults?))", re.I)),
+    # "Ages 7+", "Age 12 and Up", "Ages 12M+", "Ages 18 mos+", "Ages 6 Months +", "Ages 3 Years & Up", "Age 2+ years"
+    ("min", re.compile(rf"\bage[sd]?\s*:?\s*(?P<lo>\d{{1,2}})\s*(?P<lo_unit>{_UNIT})?\s*(?:old\s*)?{_UP}\s*(?P<late_unit>{_UNIT})?", re.I)),
+    # "9+ months", "0+ Months", "18 months and up", "6 months+"
+    ("min", re.compile(rf"(?<![\d.$-])(?P<lo>\d{{1,2}})\s*(?:\+\s*)?(?P<lo_unit>{_MONTH_UNIT})\s*(?:old\s*)?(?:{_UP})", re.I)),
+    ("min", re.compile(rf"(?<![\d.$-])(?P<lo>\d{{1,2}})\s*\+\s*(?P<lo_unit>{_MONTH_UNIT})", re.I)),
+    # "2- 6 Year Old", "1 and 2 Year Olds", "Best for 4, 5, 6, 7 and 8 Year Olds", "18 Month Olds", "for 3 Year Old Boys"
+    ("list", re.compile(
+        rf"(?<![\d.$])(?P<list>(?:\d{{1,2}}\s*(?:,\s*(?:and|&)?|and|&|{_SEP})\s*)*\d{{1,2}})\s*[- ]?(?P<hi_unit>years?|yrs?\b|months?)[- ]?olds?\b(?P<up>\s*{_UP})?",
+        re.I)),
+    # "3 Years and Up", "8 Year Olds and Up", "3 years +"
+    ("min", re.compile(rf"(?<![\d.$-])(?P<lo>\d{{1,2}})\s*[- ]?(?P<lo_unit>years?|yrs?\b)[- ]?(?:olds?\s*)?\s*{_UP}", re.I)),
+    # "Kids 6+", "Children 2+"
+    ("min", re.compile(r"\b(?:kids?|child(?:ren)?|boys?|girls?|toddlers?)\s+(?P<lo>\d{1,2})\s*\+(?!\s*(?:pc|pcs|pieces?|pack|players?))", re.I)),
+    # "ages 6", "aged 4", "for kids age 3" with nothing after it: read as a minimum.
+    # A bare singular "Age 3" is not accepted: it is usually a title ("Ice Age 2", "Stone Age 3D").
+    ("min", re.compile(
+        rf"\b(?:age[sd]|(?:kids?|child(?:ren)?|boys?|girls?|toddlers?|recommended|for)\s+age)\s*:?\s*(?P<lo>\d{{1,2}})\s*(?P<lo_unit>{_UNIT})?(?![\d.]|\s*(?:{_SEP}|of\b|%))",
+        re.I)),
+]
+MAX_STATED_YEARS, MAX_STATED_MONTHS = 21, 48
+
+
+def _stated_months(number: str, unit: str | None, default_years: bool = True) -> int | None:
+    value = int(number)
+    low = (unit or "").lower()
+    in_months = low.startswith("m") if low else not default_years
+    if in_months:
+        return value if value <= MAX_STATED_MONTHS else None
+    return value * 12 if value <= MAX_STATED_YEARS else None
+
+
+def parse_text_age(text: Any) -> tuple[int, int | None, str] | None:
+    """An age the listing states in words -> ``(min_months, max_months or None, matched phrase)``.
+
+    The first pattern that matches wins (ranges before minimums); among several matches of that pattern
+    the strictest (highest) minimum is kept. Returns None when the text states no age.
+    """
+    blob = normalize_text(text)
+    if not blob:
+        return None
+    for kind, pattern in _TEXT_AGE_PATTERNS:
+        best: tuple[int, int | None, str] | None = None
+        for m in pattern.finditer(blob):
+            groups = m.groupdict()
+            lo_unit = groups.get("lo_unit") or groups.get("late_unit")
+            hi_unit = groups.get("hi_unit")
+            hi: int | None = None
+            if kind == "list":
+                numbers = [int(n) for n in re.findall(r"\d{1,2}", groups["list"])]
+                while len(numbers) > 1 and numbers[-2] >= numbers[-1]:
+                    numbers.pop(-2)          # "Pack of 12, 7 Year Olds": only an ascending run is an age list
+                run = [numbers[-1]]
+                for n in reversed(numbers[:-1]):
+                    if n >= run[0]:
+                        break
+                    run.insert(0, n)
+                numbers = run
+                lo = _stated_months(str(min(numbers)), hi_unit)
+                if lo is None:
+                    continue
+                if not groups.get("up") and len(numbers) > 1:
+                    hi = _stated_months(str(max(numbers)), hi_unit)
+            elif kind == "range":
+                lo = _stated_months(groups["lo"], lo_unit or hi_unit)
+                if groups.get("hi") and not groups.get("adult"):
+                    hi_value = int(groups["hi"])
+                    unit_is_months = (hi_unit or lo_unit or "").lower().startswith("m")
+                    if unit_is_months:
+                        hi = hi_value if hi_value <= 144 else None
+                    else:
+                        hi = hi_value * 12 if hi_value < 18 else None     # "8-99": no real upper bound
+                if lo is None or (hi is not None and hi < lo):
+                    continue
+            else:
+                lo = _stated_months(groups["lo"], lo_unit)
+                if lo is None:
+                    continue
+            if best is None or lo > best[0]:
+                best = (lo, hi, m.group(0).strip())
+        if best is not None:
+            return best
+    return None
+
+
+_INFANT_WORDS = re.compile(r"\b(?:toddlers?|infants?|newborns?|babies|baby's)\b", re.I)
+_NEGATED = re.compile(r"\b(?:not|never|no|unsuitable|away\s+from|except)\b[^.;!?]{0,40}$", re.I)
+_INFANT_CATEGORIES = ("baby & toddler toys", "baby products", "baby")
+
+
+def says_for_babies_or_toddlers(text: str) -> bool:
+    """A baby/toddler word that is not negated ("not suitable for toddlers" does not count)."""
+    return any(not _NEGATED.search(text[max(0, m.start() - 60): m.start()]) for m in _INFANT_WORDS.finditer(text or ""))
+
+
+def reconcile_age(
+    field: tuple[int | None, int | None, str | None], title: str, features: list[str]
+) -> dict[str, Any]:
+    """Combine the age field with ages stated in the title and bullet points.
+
+    * a **title** age wins (it is what the seller prints on the listing; the field is a form slider),
+      except that it never moves a product below three years against a field that says three or older;
+    * an age stated only in the **bullet points** can raise the field's minimum, never lower it;
+    * with no field at all, a stated age is used as it is.
+
+    Returns ``age_min_months, age_max_months, age_label, age_source, age_conflict, stated_min_months``.
+    """
+    f_min, f_max, _ = field
+    in_title = parse_text_age(title)
+    in_features = None if in_title else parse_text_age(" . ".join(features))
+    stated = in_title or in_features
+    lo, hi, source = f_min, f_max, ("manufacturer field" if f_min is not None else None)
+    conflict = False
+    if in_title is not None and f_min is not None and in_title[0] < 36 <= f_min:
+        # The one case where the title does not win: it would move a product into the under-three range
+        # against a field that says three or older. The stricter reading is kept.
+        source = f'manufacturer field (the title says "{in_title[2]}")'
+        conflict = True
+    elif in_title is not None:
+        lo, hi = in_title[0], in_title[1]
+        if hi is None and f_max is not None and f_max > lo and f_min is not None and abs(f_min - lo) < 24:
+            hi = f_max                                   # same starting age: keep the field's upper bound
+        source = f'listing title: "{in_title[2]}"'
+        conflict = f_min is not None and abs(f_min - lo) >= 24
+    elif in_features is not None:
+        if f_min is None:
+            lo, hi, source = in_features[0], in_features[1], f'listing text: "{in_features[2]}"'
+        elif in_features[0] > f_min:
+            conflict = in_features[0] - f_min >= 24
+            lo = in_features[0]
+            hi = f_max if (f_max is not None and f_max > lo) else in_features[1]
+            source = f'listing text: "{in_features[2]}" (stricter than the manufacturer field)'
+    if lo is not None and hi is not None and hi < lo:
+        hi = None
+    return {
+        "age_min_months": lo,
+        "age_max_months": hi,
+        "age_label": age_label(lo, hi) if lo is not None else None,
+        "age_source": source,
+        "age_conflict": conflict,
+        "stated_min_months": max(stated[0], lo) if (stated and lo is not None) else None,
+    }
+
+
+def explicitly_for_under_3(
+    age_min_months: int | None, stated_min_months: int | None, title: str, features: list[str], category_path: list[str]
+) -> bool:
+    """True only when the listing itself says the product suits babies or toddlers.
+
+    The age field alone is not enough (see above). Evidence accepted: an age under three years stated
+    in the title or bullet points; the words toddler / infant / newborn / babies in the title or bullet
+    points (not negated); or a baby/toddler category. An age of three or more stated anywhere rules it out.
+    """
+    if age_min_months is None or age_min_months >= 36:
+        return False
+    if stated_min_months is not None:
+        return stated_min_months < 36
+    if says_for_babies_or_toddlers(title) or any(says_for_babies_or_toddlers(f) for f in features or []):
+        return True
+    return any(c.strip().lower() in _INFANT_CATEGORIES for c in category_path or [])
+
+
 # ------------------------------------------------------------- urls and images
 _ASIN = re.compile(r"/dp/([A-Z0-9]{10})(?:[/?]|$)")
 

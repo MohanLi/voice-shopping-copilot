@@ -13,6 +13,12 @@ reported instead of silently returning nothing.
 When too few products satisfy every constraint, :func:`relaxation_ladder`
 loosens them one at a time in a fixed order, cheapest concession first and the
 budget last, and every result that breaks an original constraint says so.
+
+**Under-three rule.** When the product is for a child younger than three, the
+age field alone is not trusted (the dataset often says months where years are
+meant). Only products whose listing explicitly says they suit babies or toddlers
+are kept, and anything carrying a small-parts, magnet, balloon or sharp-parts
+warning is excluded. None of this is ever relaxed.
 """
 
 from __future__ import annotations
@@ -25,7 +31,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from qdrant_client import models as qm
 from rapidfuzz import fuzz, process
 
+from voiceshop.data.schema import UNDER_3_EXCLUDED_FLAGS
 from voiceshop.retrieval.documents import OPEN_ENDED_AGE, norm
+
+UNDER_3_MONTHS = 36
+UNDER_3_RULE = (
+    "For a child under three, only products whose listing explicitly says they suit babies or toddlers are "
+    "returned, and anything with a small-parts, magnet, balloon or sharp-parts warning is excluded."
+)
 
 SAFETY_FLAGS = [
     "choking_hazard", "not_for_under_3", "contains_magnets", "adult_supervision", "sharp_parts",
@@ -145,6 +158,7 @@ class ResolvedFilters(BaseModel):
     materials: list[str] = Field(default_factory=list)
     claims: list[str] = Field(default_factory=list)
     exclude_safety_flags: list[str] = Field(default_factory=list)
+    under_3: bool = Field(default=False, description="The under-three rule is in force (set automatically from the age)")
     unmatched: dict[str, str] = Field(default_factory=dict, description="Values that are not in the catalog vocabulary")
 
     def is_empty(self) -> bool:
@@ -152,6 +166,11 @@ class ResolvedFilters(BaseModel):
             self.price_min is not None, self.price_max is not None, self.category, self.brand,
             self.age_months is not None, self.materials, self.claims, self.exclude_safety_flags,
         ])
+
+    @property
+    def safety_rules(self) -> list[str]:
+        """Rules applied automatically for safety, in plain language (they are never relaxed)."""
+        return [UNDER_3_RULE] if self.under_3 else []
 
 
 def resolve(filters: SearchFilters, vocab: Vocabulary) -> ResolvedFilters:
@@ -162,6 +181,10 @@ def resolve(filters: SearchFilters, vocab: Vocabulary) -> ResolvedFilters:
         allow_unknown_age=filters.allow_unknown_age,
         exclude_safety_flags=[f for f in filters.exclude_safety_flags if f in SAFETY_FLAGS],
     )
+    if out.age_months is not None and out.age_months < UNDER_3_MONTHS:
+        out.under_3 = True
+        out.allow_unknown_age = False
+        out.exclude_safety_flags = list(dict.fromkeys([*out.exclude_safety_flags, *UNDER_3_EXCLUDED_FLAGS]))
     if filters.category:
         out.category = vocab.resolve_category(filters.category)
         if out.category is None:
@@ -204,10 +227,12 @@ def to_qdrant(f: ResolvedFilters) -> qm.Filter | None:
             qm.FieldCondition(key="age_min_months", range=qm.Range(lte=f.age_months)),
             qm.FieldCondition(key="age_max_months", range=qm.Range(gte=f.age_months)),
         ])
-        if f.allow_unknown_age:
+        if f.allow_unknown_age and not f.under_3:
             must.append(qm.Filter(should=[in_range, qm.FieldCondition(key="has_age", match=qm.MatchValue(value=False))]))
         else:
             must.append(in_range)
+    if f.under_3:
+        must.append(qm.FieldCondition(key="for_under_3", match=qm.MatchValue(value=True)))
     if f.materials:
         must.append(qm.FieldCondition(key="ingredients_norm", match=qm.MatchAny(any=f.materials)))
     for claim in f.claims:
@@ -226,6 +251,7 @@ class FilterIndex:
         self.n = n
         self.price = np.array([pl["price"] for pl in payloads], dtype=np.float64)
         self.has_age = np.array([bool(pl["has_age"]) for pl in payloads], dtype=bool)
+        self.for_under_3 = np.array([bool(pl.get("for_under_3")) for pl in payloads], dtype=bool)
         self.age_min = np.array([pl["age_min_months"] for pl in payloads], dtype=np.int64)
         self.age_max = np.array([pl["age_max_months"] for pl in payloads], dtype=np.int64)
         self._inverted: dict[str, dict[str, np.ndarray]] = {}
@@ -260,7 +286,9 @@ class FilterIndex:
             m &= self._members("brand_norm", f.brand)
         if f.age_months is not None:
             in_range = self.has_age & (self.age_min <= f.age_months) & (self.age_max >= f.age_months)
-            m &= (in_range | ~self.has_age) if f.allow_unknown_age else in_range
+            m &= (in_range | ~self.has_age) if (f.allow_unknown_age and not f.under_3) else in_range
+        if f.under_3:
+            m &= self.for_under_3
         if f.materials:
             any_mat = np.zeros(self.n, dtype=bool)
             for mat in f.materials:
@@ -279,7 +307,8 @@ def relaxation_ladder(f: ResolvedFilters, budget_stretch: float = 1.25) -> Itera
 
     Order: listing claims, materials, unknown-age products, brand, category, and only then the budget
     (first raised by ``budget_stretch``, then removed so the closest over-budget products can be shown,
-    each labelled as over budget). Safety exclusions and the price floor are never relaxed.
+    each labelled as over budget). Safety exclusions, the under-three rule and the price floor are never
+    relaxed; for a child under three, products with no stated age are never admitted either.
     """
     current = f.model_copy(deep=True)
     if current.claims:
@@ -288,7 +317,7 @@ def relaxation_ladder(f: ResolvedFilters, budget_stretch: float = 1.25) -> Itera
     if current.materials:
         current = current.model_copy(update={"materials": []})
         yield "materials", current
-    if current.age_months is not None and not current.allow_unknown_age:
+    if current.age_months is not None and not current.allow_unknown_age and not current.under_3:
         current = current.model_copy(update={"allow_unknown_age": True})
         yield "age_unknown_allowed", current
     if current.brand:
