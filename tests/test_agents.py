@@ -22,7 +22,7 @@ from langchain_core.messages import AIMessage
 from voiceshop.agents import rules
 from voiceshop.agents.answerer import CriticReport, Finding, real_findings
 from voiceshop.agents.finalize import build_answer, spoken_tail
-from voiceshop.agents.reconcile import match_score, model_numbers, reconcile
+from voiceshop.agents.reconcile import MATCH_THRESHOLD, match_score, model_numbers, reconcile
 from voiceshop.agents.state import (
     AnswerDraft,
     CatalogItem,
@@ -119,6 +119,76 @@ async def test_product_the_catalog_does_not_carry_is_answered_from_the_live_web(
     assert all(c.kind == "web" and c.as_of for c in result.answer.citations)
     assert policy.CHEMICAL_NOTE in result.answer.notes and "never mix" in result.answer.spoken
     assert result.route.safety == "caution"
+
+
+async def test_an_asked_for_quality_is_looked_up_and_reported_as_what_sources_state(assistant: Assistant) -> None:
+    """The assignment's own example. Listings carry no description, so a second search finds the pages that state the quality."""
+    result = await assistant.ask("recommend an eco friendly stainless steel cleaner under fifteen dollars")
+    assert result.route.constraints.must_have == ["eco-friendly"] and result.route.constraints.budget_max == 15
+    steps = [(s.tool, s.kind, s.price_max) for s in result.plan.steps]
+    assert steps == [("web.search", "shopping", 15.0), ("web.search", "web", None)]
+    assert [r.arguments.get("price_max") for r in result.tool_log] == [15.0, None]             # the budget is enforced by the tool
+
+    rows = {row.product.split(" Stainless")[0]: row for row in result.answer.table}
+    assert next(iter(rows)) == "EcoShine" and "ProChef" not in rows                                # supported claim first; $18.50 never offered
+    eco = rows["EcoShine"]
+    assert eco.ingredients == "biodegradable, plant-based, ammonia-free (stated by ecoshine.example.com)"
+    assert "stated to be" in eco.why and eco.caveat is None and eco.rating == "4.6 (2,310)"
+    assert rows["PureGleam"].ingredients == "biodegradable, fragrance-free (stated by reviews.example.com)"
+    unsupported = rows["BrightSteel"]
+    assert unsupported.ingredients == "not stated" and unsupported.caveat == "no source states that it is eco-friendly"
+
+    assert "stated to be biodegradable and plant-based" in result.answer.spoken and "eco-friendly" not in result.answer.spoken
+    cited = {c.source for c in result.answer.citations}
+    assert {"ecoshine.example.com", "reviews.example.com"} <= cited                             # the pages the claims rest on are cited
+    step = next(e for e in result.trace if e["node"] == "reconcile")
+    assert "linked to a page that describes the product" in step["summary"]
+
+
+def test_a_round_up_page_credits_each_product_only_with_its_own_sentence() -> None:
+    from voiceshop.agents.reconcile import link_descriptions, text_about
+
+    def listing(ref: str, title: str) -> WebItem:
+        return WebItem(ref=ref, url=f"https://shop.example.com/{ref}", title=title, source="Example Mart", price=6.99)
+
+    wipes, polish, sink = listing("W1", "PureGleam Stainless Steel Wipes, 30 count"), listing("W2", "BrightSteel Stainless Steel Cleaner & Polish"), \
+        listing("W3", "BrightSteel Stainless Steel Sink Cleaner")
+    review = WebItem(ref="W4", url="https://reviews.example.com/best", title="The best stainless steel cleaners we tested", source="reviews.example.com",
+                     snippet="PureGleam Stainless Steel Wipes are biodegradable and fragrance-free; testers liked the finish. "
+                             "BrightSteel Stainless Steel Cleaner & Polish removed fingerprints fastest but contains petroleum distillates.")
+    maker = WebItem(ref="W5", url="https://brightsteel.example.com/polish", title="BrightSteel Stainless Steel Cleaner & Polish | Official", source="brightsteel.example.com",
+                    snippet="Streak-free shine. Fragrance-free formula.")
+    assert "biodegradable" in (text_about(wipes, review) or "") and "petroleum" not in (text_about(wipes, review) or "")
+    assert text_about(sink, review) is None                                                     # "Sink" is not mentioned: a different product
+    web = [wipes, polish, sink, review, maker]
+    link_descriptions(web)
+    assert wipes.claims_elsewhere == {"W4": ["biodegradable", "fragrance-free"]} and wipes.cautions_elsewhere == {}
+    assert polish.cautions_elsewhere == {"W4": ["contains petroleum distillates"]} and polish.claims_elsewhere == {"W5": ["fragrance-free"]}
+    assert polish.described_by == ["W4", "W5"] and sink.described_by == []
+
+
+def test_claims_are_phrases_found_in_the_text_and_related_to_what_was_asked() -> None:
+    from voiceshop.agents.claims import asked_qualities, stated_cautions, stated_claims, supporting
+
+    text = "Plant-based surfactants. No ammonia or phosphates. Biodegradable, EPA Safer Choice certified, unscented."
+    claims = stated_claims(text)
+    assert claims == ["biodegradable", "plant-based", "ammonia-free", "fragrance-free", "EPA Safer Choice"]
+    assert stated_claims("Stainless Steel Cleaner & Polish") == [] and stated_claims("for natural gas grills") == []
+    assert stated_cautions("Contains petroleum distillates. Extremely flammable.") == ["contains petroleum distillates", "flammable"]
+    assert asked_qualities(["eco friendly"]) == ["eco-friendly"] and asked_qualities(["wooden"]) == []
+    assert supporting(["eco-friendly"], claims) == ["biodegradable", "plant-based", "EPA Safer Choice"]
+    assert supporting(["eco-friendly"], ["fragrance-free"]) == [] and supporting(["fragrance-free"], claims) == ["fragrance-free"]
+
+
+def test_web_only_plans_get_the_budget_and_the_claim_search_whatever_the_model_wrote() -> None:
+    from voiceshop.agents.planner import normalise_plan
+
+    constraints = Constraints(product="stainless steel cleaner", budget_max=15.0, must_have=["eco-friendly"])
+    written = Plan(strategy="web_only", reason="not in the catalog",
+                   steps=[PlanStep(tool="web.search", purpose="find", query="eco-friendly stainless steel cleaner under 15 dollars", kind="shopping")])
+    plan, notes = normalise_plan(written, RouteDecision(intent="product_search", constraints=constraints), constraints, "…", None, deps_stub())
+    assert [(s.kind, s.price_max) for s in plan.steps] == [("shopping", 15.0), ("web", None)]
+    assert any("pages that state the requested quality" in note for note in notes)
 
 
 async def test_current_price_request_reconciles_catalog_and_live_web(assistant: Assistant) -> None:
@@ -298,21 +368,29 @@ async def test_retriever_model_calls_tools_through_function_calling(agent_env: A
     assert "Results of the planned searches" in seen["first_prompt"] and "rag.search(" in seen["first_prompt"]
     assert [(r.tool, r.origin, r.round) for r in result.tool_log] == [("rag.search", "plan", 0), ("web.search", "agent", 1)]
     step = next(e for e in result.trace if e["node"] == "retriever")["details"]
-    assert step["agent_rounds"] == 2 and step["agent_decision"] == "a live price check was planned"
+    # one model call: its search came back with results, so it was not asked again just to say "done"
+    assert step["agent_rounds"] == 1 and step["agent_decision"] == "a live price check was planned"
     assert next(c for c in result.evidence.catalog if c.title.startswith("Carmarace")).live is not None
 
 
 async def test_retriever_round_limit_and_fast_path(agent_env: Any, assistant: Assistant) -> None:
     calls = {"n": 0}
 
+    query = {"text": "a product no shop lists"}
+
     def greedy(messages: list[Any], tools: list[Any], schema: type | None) -> Any:
         calls["n"] += 1
-        return AIMessage(content="", tool_calls=[{"name": "web_search", "args": {"query": f"board game {calls['n']}"}, "id": f"c{calls['n']}", "type": "tool_call"}])
+        return AIMessage(content="", tool_calls=[{"name": "web_search", "args": {"query": f"{query['text']} {calls['n']}"}, "id": f"c{calls['n']}", "type": "tool_call"}])
 
     register_fake("greedy", greedy)
     agent_env(LLM_MODEL_RETRIEVER="fake:greedy", RETRIEVER_MAX_ROUNDS="2")
     result = await assistant.ask("what is the current price of a board game for a ten year old")
-    assert calls["n"] == 2 and sum(r.origin == "agent" for r in result.tool_log) == 2      # two rounds, then the loop stops by itself
+    # searches that find nothing give the model another round to try something else; the round limit then ends the loop
+    assert calls["n"] == 2 and sum(r.origin == "agent" for r in result.tool_log) == 2
+
+    calls["n"], query["text"] = 0, "board game"
+    found = await assistant.ask("what is the current price of a board game for a ten year old", thread_id="found")
+    assert calls["n"] == 1 and sum(r.origin == "agent" for r in found.tool_log) == 1         # a search that found results is not followed by another model call
 
     calls["n"] = 0
     agent_env(WEB_PRICE_CHECK="never")
@@ -338,10 +416,49 @@ def test_reconcile_matches_by_sku_model_number_then_brand_and_title() -> None:
     }
     assert match_score(lego, web["sku"]) == (1.0, "same SKU in the URL")
     assert match_score(lego, web["model"])[0] == 0.95
-    assert match_score(lego, web["other_model"])[0] < 0.72 and "different model number" in match_score(lego, web["other_model"])[1]
+    assert match_score(lego, web["other_model"])[0] < 0.72 and "different set or piece numbers" in match_score(lego, web["other_model"])[1]
     assert match_score(puzzle, web["title"])[0] >= 0.72
     assert match_score(puzzle, web["no_brand"])[0] < 0.72                           # a similar title without the brand is not a match
     assert model_numbers("Poster 24x36 100pcs 10696 12-Pack 2-in-1 2019 HS-65HB") == {"10696", "hs-65hb"}
+
+
+@pytest.mark.parametrize(("catalog_title", "brand", "web_title", "same"), [
+    # the four wrong matches of the first live run (real Google Shopping titles): same brand, a few shared words, different products
+    ("LEGO Lunch Box, Medium Pink", "LEGO", "LEGO Classic Medium Creative Brick Box", False),
+    ("LEGO Lunch Box, Medium Pink", "LEGO", "LEGO Classic Medium Creative Bricks Kids 484 Piece Building Box Set", False),
+    ("LEGO Classic Creative Suitcase 10713 Building Kit (213 Pieces)", "LEGO", "Classic LEGO Large Creative Brick Box", False),
+    ("LEGO 8-Brick Storage Box, Bright Red", "LEGO", "LEGO Classic Medium Creative Brick Box 10696 - 484 Pieces, 4+, Colourful Bricks and Storage Box", False),
+    # one word apart is a different product
+    ("Janod 3 Level Puzzle - Turtle Puzzle", "Janod", "Janod 3 Level Puzzle - Bear", False),
+    ("Melissa & Doug Safari Wooden Chunky Puzzle (Preschool, 8 Pieces)", "Melissa & Doug", "Melissa & Doug Farm Wooden Chunky Puzzle", False),
+    ("Hot Wheels 20 Car Gift Pack (Styles May Vary)", "Hot Wheels", "Hot Wheels 50 Car Gift Pack", False),
+    ("Ravensburger Disney Collector's Edition 1000 Piece Jigsaw Puzzle", "Ravensburger", "Ravensburger Disney Collector's Edition Puzzle 500 Piece", False),
+    # too little to go on, or another maker
+    ("Melissa & Doug Safari Wooden Chunky Puzzle (Preschool, 8 Pieces)", "Melissa & Doug", "Melissa & Doug Chunky Puzzle", False),
+    ("Melissa & Doug Safari Wooden Chunky Puzzle (Preschool, 8 Pieces)", "Melissa & Doug", "Safari Wooden Chunky Puzzle by Hape", False),
+    # the same product, said shorter, longer, or spelled differently
+    ("LEGO Classic Creative Suitcase 10713 Building Kit (213 Pieces)", "LEGO", "LEGO Classic Creative Suitcase", True),
+    ("LEGO Classic Medium Creative Brick Box 10696 Building Toys for Creative Play; Kids Creativity Kit (484 Pieces)", "LEGO",
+     "LEGO Classic Medium Creative Bricks Kids 484 Piece Building Box Set", True),
+    ("Janod 3 Level Puzzle - Turtle Puzzle", "Janod", "Janod Chunky Puzzle 3 Levels Turtle", True),
+    ("Crayola Farm Animals Wooden Puzzle & Stamps, Educational Toys", "Crayola", "Crayola Wooden Farm Animal Puzzle and Stamps", True),
+    ("Ravensburger Disney Collector's Edition 1000 Piece Jigsaw Puzzle", "Ravensburger", "Ravensburger Disney Collectors Edition Jigsaw Puzzle 1,000 pc", True),
+    ("Colourful Wooden Stacking Rainbow Toy", "Grimm's", "Grimms Colorful Wooden Stacking Rainbow", True),
+])
+def test_title_matching_needs_every_distinguishing_word_not_just_the_brand(catalog_title: str, brand: str, web_title: str, same: bool) -> None:
+    item = catalog_item("C1", catalog_title, 10.0, brand=brand)
+    result = WebItem(ref="W1", url="https://www.google.com/search?ibp=oshop&q=x", title=web_title, source="Target", price=11.0)
+    score, reason = match_score(item, result)
+    assert (score >= MATCH_THRESHOLD) is same, f"{score} ({reason})"
+
+
+def test_a_lookalike_of_the_same_brand_is_not_given_a_price_conflict() -> None:
+    """Live run, 2026-11-11: a lunch box "matched" a brick box and a +90% price conflict was reported between two products."""
+    lunch_box = catalog_item("C3", "LEGO Lunch Box, Medium Pink", 11.29, brand="LEGO")
+    brick_box = WebItem(ref="W1", url="https://www.google.com/search?ibp=oshop&q=x", title="LEGO Classic Medium Creative Brick Box", source="Target",
+                        price=21.49, price_source="listing")
+    out = reconcile(Evidence(catalog=[lunch_box], web=[brick_box]), Constraints())
+    assert out.catalog[0].live is None and out.web[0].matched_ref is None and out.conflicts == []
 
 
 def test_reconcile_records_conflicts_and_refuses_implausible_prices() -> None:

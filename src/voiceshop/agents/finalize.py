@@ -51,7 +51,17 @@ def _is_chemical(*texts: str | None) -> bool:
     return any(re.search(rf"\b{re.escape(w)}s?\b", blob) for w in policy.CHEMICAL_WORDS)
 
 
-def table_row(rank: int, item: CatalogItem | WebItem, why: str, caveat: str | None) -> TableRow:
+def stated_about(item: WebItem, evidence: Evidence | None = None) -> str:
+    """The "Ingredients" cell of a web result: the claims its sources state, with who stated them; never a guess."""
+    parts = [f"{', '.join(item.claims)} (stated in the listing)"] if item.claims else []
+    for ref, claims in item.claims_elsewhere.items():
+        page = evidence.get(ref) if evidence is not None else None
+        who = page.source if isinstance(page, WebItem) and page.source else ref
+        parts.append(f"{', '.join(claims)} (stated by {who})")
+    return "; ".join(parts) or "not stated"
+
+
+def table_row(rank: int, item: CatalogItem | WebItem, why: str, caveat: str | None, evidence: Evidence | None = None) -> TableRow:
     """One comparison-table row, every cell copied from the evidence."""
     if isinstance(item, CatalogItem):
         live = item.live
@@ -80,13 +90,21 @@ def table_row(rank: int, item: CatalogItem | WebItem, why: str, caveat: str | No
         rating = f"{item.rating:.1f}" + (f" ({item.rating_count:,})" if item.rating_count else "")
     return TableRow(
         rank=rank, ref=item.ref, product=item.title, price=f"{_money(item.price)} at {item.source}" if item.price is not None else "not stated",
-        rating=rating, ingredients="not stated", source=f"Web: {item.source}", citation=item.url,
+        rating=rating, ingredients=stated_about(item, evidence), source=f"Web: {item.source}", citation=item.url, image_url=item.image,
         price_live=item.price, availability=item.availability, why=why, caveat=caveat, url=item.url, live_url=item.url,
     )
 
 
-def citations_for(items: list[CatalogItem | WebItem]) -> list[Citation]:
+def citations_for(items: list[CatalogItem | WebItem], evidence: Evidence | None = None) -> list[Citation]:
+    """Sources of the chosen products, followed by the pages whose statements about them are shown."""
     out: list[Citation] = []
+    for item in items:
+        if isinstance(item, WebItem) and evidence is not None:
+            for ref in item.described_by:
+                page = evidence.get(ref)
+                if isinstance(page, WebItem) and all(c.ref != ref for c in out):
+                    out.append(Citation(ref=ref, kind="web", id=page.url, title=page.title, url=page.url, source=page.source, as_of=page.retrieved_at))
+    support, out = out, []
     for item in items:
         if isinstance(item, CatalogItem):
             out.append(Citation(ref=item.ref, kind="catalog", id=item.doc_id, title=item.title, url=item.product_url,
@@ -96,7 +114,7 @@ def citations_for(items: list[CatalogItem | WebItem]) -> list[Citation]:
                                     url=item.live.url, source=item.live.source, as_of=item.live.retrieved_at))
         else:
             out.append(Citation(ref=item.ref, kind="web", id=item.url, title=item.title, url=item.url, source=item.source, as_of=item.retrieved_at))
-    return out
+    return out + [c for c in support if all(c.ref != existing.ref for existing in out)]
 
 
 def safety_notes(items: list[CatalogItem | WebItem], constraints: Constraints, route: RouteDecision | None) -> tuple[list[str], list[str]]:
@@ -141,7 +159,7 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
         if item is not None:
             picked.append((item, rec.why.strip(), (rec.caveat or "").strip() or None))
     items = [p[0] for p in picked]
-    rows = [table_row(i, item, why, caveat) for i, (item, why, caveat) in enumerate(picked, 1)]
+    rows = [table_row(i, item, why, caveat, evidence) for i, (item, why, caveat) in enumerate(picked, 1)]
     screen_notes, spoken_notes = safety_notes(items, constraints, route)
 
     notes: list[str] = list(screen_notes)
@@ -187,7 +205,7 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
     if question:
         lines.extend(["", question])
     kind = "abstain" if (draft.abstain or not rows) else "recommendation"
-    return FinalAnswer(spoken=spoken.strip(), text="\n".join(lines).strip(), table=rows, citations=citations_for(items), notes=notes,
+    return FinalAnswer(spoken=spoken.strip(), text="\n".join(lines).strip(), table=rows, citations=citations_for(items, evidence), notes=notes,
                        follow_up_question=question, kind=kind, grounded_by=grounded_by, revisions=revisions)  # type: ignore[arg-type]
 
 

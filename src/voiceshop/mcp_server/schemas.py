@@ -77,6 +77,7 @@ class WebHit(BaseModel):
         description="'listing': a structured price field of a merchant listing; 'snippet': read from the result's text, so less certain",
     )
     delivery: str | None = None
+    image: str | None = Field(default=None, description="Thumbnail URL when the source provides one")
     retrieved_at: str = Field(default="", description="UTC time this result was fetched (ISO 8601)")
     flagged: bool = Field(default=False, description="True when instruction-like text was removed from the snippet")
 
@@ -90,5 +91,7 @@ class WebSearchResult(BaseModel):
     cache_age_s: float | None = None
     cache_ttl_s: int = 0
     removed_by_domain_policy: int = Field(default=0, description="Results dropped by the allow/block list")
+    price_max: float | None = Field(default=None, description="The price limit that was applied, if any")
+    removed_over_price: int = Field(default=0, description="Results dropped because their price is above price_max")
     notes: list[str] = Field(default_factory=list)
     took_ms: float = 0.0

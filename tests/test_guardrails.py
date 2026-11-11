@@ -204,3 +204,14 @@ def test_policy_summary_lists_what_is_refused_and_never_said() -> None:
     summary = policy.summary()
     assert "prompt_injection" in summary["refuses"] and "completely safe" in summary["never_said"]
     assert set(policy.SPOKEN_FLAGS) <= set(policy.FLAG_NOTES)
+
+
+def test_a_denied_or_unconfirmed_claim_is_not_a_claim() -> None:
+    """Live finding: "no source confirms it is eco-friendly" was itself flagged as an unsupported eco-friendly claim."""
+    from voiceshop.guardrails.output import _claims_in
+
+    assert [name for name, _ in _claims_in("It is eco-friendly and non-toxic.")] == ["non-toxic", "eco-friendly"]
+    assert _claims_in("No source confirms it is eco-friendly.") == []
+    assert _claims_in("It contains petroleum distillates, which is not eco-friendly.") == []
+    assert [name for name, _ in _claims_in("Listed as plant-based; the listing does not state that it is organic.")] == ["eco-friendly"]
+

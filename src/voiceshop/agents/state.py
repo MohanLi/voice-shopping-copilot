@@ -79,8 +79,10 @@ class PlanStep(BaseModel):
     query: str = Field(description="Search text: what the product is, without the constraints that go in filters")
     filters: SearchFilters | None = Field(default=None, description="rag.search only: hard constraints")
     top_k: int = Field(default=5, ge=1, le=10)
-    kind: Literal["shopping", "web"] = Field(default="shopping", description="web.search only")
+    kind: Literal["shopping", "web"] = Field(default="shopping", description="web.search only: 'shopping' = listings with prices and ratings; "
+                                             "'web' = pages whose text says what a product is made of, whether it is in stock, or backs a claim")
     site: str | None = Field(default=None, description="web.search only: restrict to one host")
+    price_max: float | None = Field(default=None, description="web.search shopping only: leave out listings priced above this budget")
 
 
 class Plan(BaseModel):
@@ -167,6 +169,12 @@ class WebItem(BaseModel):
     matched_ref: str | None = None
     match_score: float | None = None
     match_note: str | None = None
+    image: str | None = None
+    claims: list[str] = Field(default_factory=list, description="Claims stated in this result's own title or snippet")
+    cautions: list[str] = Field(default_factory=list, description="Cautions stated in this result's own text")
+    described_by: list[str] = Field(default_factory=list, description="Other web results (refs) whose text is about this same product")
+    claims_elsewhere: dict[str, list[str]] = Field(default_factory=dict, description="Claims stated by those results: ref -> claims")
+    cautions_elsewhere: dict[str, list[str]] = Field(default_factory=dict, description="Cautions stated by those results: ref -> cautions")
 
 
 class Evidence(BaseModel):

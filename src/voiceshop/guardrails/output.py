@@ -73,7 +73,9 @@ def item_text(item: CatalogItem | WebItem) -> str:
         parts = [item.title, item.brand or "", item.product_type or "", item.description or "", *item.features, *item.claims,
                  *(item.ingredients or []), item.age_label or ""]
     else:
-        parts = [item.title, item.snippet, item.source, item.delivery or ""]
+        # what the result says itself, plus what other results were found to state about the same product (reconcile.link_descriptions)
+        parts = [item.title, item.snippet, item.source, item.delivery or "", *item.claims, *item.cautions,
+                 *(c for claims in item.claims_elsewhere.values() for c in claims), *(c for cautions in item.cautions_elsewhere.values() for c in cautions)]
     return " ".join(parts).lower()
 
 
@@ -112,8 +114,10 @@ def _has_live_price(item: CatalogItem | WebItem) -> bool:
 
 
 def _claims_in(text: str) -> list[tuple[str, tuple[str, ...]]]:
+    """Sensitive claims the text asserts. "No source confirms it is eco-friendly" asserts nothing and is the right thing to say."""
     low = (text or "").lower()
-    return [(name, variants) for name, variants in policy.SENSITIVE_CLAIMS.items() if any(v in low for v in variants)]
+    return [(name, variants) for name, variants in policy.SENSITIVE_CLAIMS.items()
+            if any(asserted(re.compile(re.escape(v)), low) for v in variants)]
 
 
 def known_prices(item: CatalogItem | WebItem, evidence: Evidence) -> list[float]:

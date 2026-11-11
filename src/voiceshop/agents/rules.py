@@ -183,10 +183,27 @@ def extract_constraints(text: str) -> Constraints:
     rest = re.sub(r"\bfor\s+(?:my|a|an|our|the)\s+(?:[\w'-]+\s+){0,4}?(?:son|daughter|kid|child|nephew|niece|grandson|granddaughter|baby|toddler|infant|newborn|boy|girl)\b", " ", rest)
     rest = re.sub(r"\b(?:who|that)\s+(?:loves?|likes?|is\s+into)\b", " ", rest)
     rest = _FILLER.sub(" ", rest)
+    for name, pattern in _QUALITIES.items():             # "eco friendly stainless steel cleaner": a quality asked for, plus the product
+        if pattern.search(rest):
+            c.must_have.append(name)
+            rest = pattern.sub(" ", rest)
     rest = re.sub(r"[^\w\s&'-]", " ", rest)
     product = " ".join(rest.split())
     c.product = product or None
     return c
+
+
+_QUALITIES = {
+    "eco-friendly": re.compile(r"\beco[- ]?friendly\b|\benvironmentally[- ]friendly\b", re.I),
+    "organic": re.compile(r"\borganic\b", re.I),
+    "non-toxic": re.compile(r"\bnon[- ]?toxic\b", re.I),
+    "fragrance-free": re.compile(r"\b(?:fragrance|scent)[- ]?free\b|\bunscented\b", re.I),
+    "plant-based": re.compile(r"\bplant[- ]?based\b", re.I),
+    "biodegradable": re.compile(r"\bbiodegradable\b", re.I),
+    "hypoallergenic": re.compile(r"\bhypo[- ]?allergenic\b", re.I),
+    "BPA-free": re.compile(r"\bbpa[- ]?free\b", re.I),
+    "vegan": re.compile(r"\bvegan\b", re.I),
+}
 
 
 def route(text: str, shown: list[dict[str, Any]] | None = None) -> RouteDecision:
@@ -243,11 +260,11 @@ def plan(route_decision: RouteDecision, constraints: Constraints, user_text: str
         return Plan(strategy="catalog_then_web", reason="Live information was requested for products on screen.", steps=steps,
                     retrieval_fields=["price", "availability"], comparison_criteria=["current price", "availability"])
     if web_available and any(re.search(rf"\b{re.escape(w)}s?\b", low) for w in OUT_OF_CATALOG_WORDS):
-        budget = f" under {constraints.budget_max:g} dollars" if constraints.budget_max else ""
         return Plan(
             strategy="web_only", reason="The 2020 catalog does not carry this kind of product, so the live web is searched.",
-            steps=[PlanStep(tool="web.search", purpose="find current products", query=f"{query}{budget}", kind="shopping")],
-            retrieval_fields=["price", "availability", "rating"], comparison_criteria=["fits the budget", "price"],
+            steps=web_steps(constraints, query),
+            retrieval_fields=["price", "rating", *(["claims", "ingredients"] if constraints.must_have else [])],
+            comparison_criteria=["fits the budget", "price", *(f"is {wish}" for wish in constraints.must_have)],
         )
     criteria = ["relevance to the request"]
     if constraints.budget_max:
@@ -263,6 +280,23 @@ def plan(route_decision: RouteDecision, constraints: Constraints, user_text: str
         retrieval_fields=["price", "brand", "ingredients", "age_label", "safety_flags"] + (["availability"] if verify else []),
         comparison_criteria=criteria,
     )
+
+
+def web_steps(constraints: Constraints, query: str) -> list[PlanStep]:
+    """Live-web steps for a product the catalog does not carry.
+
+    Listings give price, merchant and rating but no description, so when the shopper asks for a
+    quality ("eco-friendly", "fragrance-free") a second, ordinary web search looks for pages
+    that state it. The budget goes into ``price_max`` - as query words it changes nothing.
+    """
+    product = constraints.product or query
+    wishes = " ".join(constraints.must_have)
+    steps = [PlanStep(tool="web.search", purpose="current listings with prices and ratings", query=f"{wishes} {product}".strip(), kind="shopping",
+                      price_max=constraints.budget_max)]
+    if constraints.must_have:
+        steps.append(PlanStep(tool="web.search", purpose=f"pages that state whether a product is {wishes}", query=f"{wishes} {product} ingredients".strip(),
+                              kind="web"))
+    return steps
 
 
 # --------------------------------------------------------------------- answerer
@@ -307,8 +341,13 @@ def _why(item: CatalogItem | WebItem, constraints: Constraints) -> str:
     else:
         if item.price is not None:
             facts.append(f"${item.price:.2f} at {item.source}")
+        if item.rating is not None:
+            facts.append(f"rated {item.rating:g} stars" + (f" by {item.rating_count:,} shoppers" if item.rating_count else ""))
         if item.availability:
             facts.append(item.availability.replace("_", " "))
+        backing = wish_support(item, constraints)
+        if backing:
+            facts.append("stated to be " + ", ".join(backing))
     text = "; ".join(facts)
     return (text[0].upper() + text[1:] + ".") if text else "Matches the request."
 
@@ -322,9 +361,30 @@ def _caveat(item: CatalogItem | WebItem, constraints: Constraints) -> str | None
             notes.append(f"now ${live.price:.2f} at {live.source}, above the ${constraints.budget_max:g} budget")
         if live is not None and live.availability == "out_of_stock":
             notes.append(f"currently out of stock at {live.source}")
-    elif constraints.budget_max is not None and item.price is not None and item.price > constraints.budget_max:
-        notes.append(f"${item.price:.2f} is above the ${constraints.budget_max:g} budget")
+    else:
+        if constraints.budget_max is not None and item.price is not None and item.price > constraints.budget_max:
+            notes.append(f"${item.price:.2f} is above the ${constraints.budget_max:g} budget")
+        if constraints.must_have and not wish_support(item, constraints):
+            notes.append(f"no source states that it is {' or '.join(constraints.must_have)}")
+        notes.extend(all_cautions(item))
     return "; ".join(dict.fromkeys(notes)) or None
+
+
+def all_claims(item: WebItem) -> list[str]:
+    """Claims stated in the result itself or by other results about the same product."""
+    return list(dict.fromkeys([*item.claims, *(c for claims in item.claims_elsewhere.values() for c in claims)]))
+
+
+def all_cautions(item: WebItem) -> list[str]:
+    return list(dict.fromkeys([*item.cautions, *(c for cautions in item.cautions_elsewhere.values() for c in cautions)]))
+
+
+def wish_support(item: CatalogItem | WebItem, constraints: Constraints) -> list[str]:
+    """The stated claims that back the qualities the shopper asked for (empty when nothing does)."""
+    from voiceshop.agents.claims import supporting
+
+    claims = all_claims(item) if isinstance(item, WebItem) else list(item.claims)
+    return supporting(constraints.must_have, claims)
 
 
 def pick(evidence: Evidence, constraints: Constraints, weak_score: float | None = None, limit: int = 3) -> list[CatalogItem | WebItem]:
@@ -334,6 +394,8 @@ def pick(evidence: Evidence, constraints: Constraints, weak_score: float | None 
     missing = [c for c in catalog if not _fits(c, constraints)]
     web = [w for w in evidence.web if w.matched_ref is None and w.price is not None and not w.flagged and w.availability != "out_of_stock"]
     web_fitting = [w for w in web if _fits(w, constraints)]
+    if constraints.must_have:                                # products whose sources state the asked-for quality come first (stable)
+        web_fitting.sort(key=lambda w: (not wish_support(w, constraints), bool(all_cautions(w))))
     fitting.sort(key=lambda c: c.live is not None and c.live.availability == "out_of_stock")    # unavailable products go last (stable)
     if constraints.sort == "cheapest":
         fitting.sort(key=lambda c: _best_price(c) or 1e9)
@@ -380,6 +442,9 @@ def answer(evidence: Evidence, constraints: Constraints, weak_score: float | Non
     if focused and constraints.wants_current_info:
         stock = top.live.availability if isinstance(top, CatalogItem) and top.live is not None else (top.availability if isinstance(top, WebItem) else None)
         lead += f" It is listed as {stock.replace('_', ' ')}." if stock else " I could not confirm whether it is in stock right now."
+    backing = wish_support(top, constraints) if constraints.must_have else []
+    if backing:
+        lead = lead[:-1] + f", stated to be {' and '.join(backing[:2])}."
     caveat = recs[0].caveat
     if caveat:
         lead += f" Note: {caveat}."

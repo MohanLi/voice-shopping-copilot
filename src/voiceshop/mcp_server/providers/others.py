@@ -170,7 +170,8 @@ class FixtureProvider:
     """Recorded responses for tests, CI and offline demos (``WEB_SEARCH_PROVIDER=fixture``).
 
     The fixture file maps a lower-cased query substring to a list of raw results; the first key
-    contained in the query wins. Unknown queries return no results (never invented ones).
+    contained in the query wins. An entry with ``"kind"`` is returned only for that kind of
+    search. Unknown queries return no results (never invented ones).
     """
 
     name = "fixture"
@@ -192,6 +193,7 @@ class FixtureProvider:
             if key.startswith("_"):
                 continue
             if key in low:
-                hits = [make_hit(**item) for item in items]
+                wanted = [{k: v for k, v in item.items() if k != "kind"} for item in items if item.get("kind", kind) == kind]
+                hits = [make_hit(**item) for item in wanted]
                 return [h for h in hits if h is not None][: max_results * 2]
         return []

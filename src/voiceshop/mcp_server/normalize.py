@@ -195,10 +195,13 @@ _INJECTION = re.compile(
 )
 
 
+_MARKS = re.compile(r"[\u00ae\u2122\u00a9\u2120]|(?<=[A-Z])\u017d(?=\s|$)")      # (R), TM, (C), SM - and "Ž", a mis-decoded (R) seen in live feeds ("LEGOŽ")
+
+
 def clean_text(value: Any, limit: int) -> str:
-    """Plain text: entities unescaped, tags and invisible/control characters removed, whitespace collapsed."""
+    """Plain text: entities unescaped, tags, trademark signs and invisible/control characters removed, whitespace collapsed."""
     text = html.unescape(str(value or ""))
-    text = _CTRL.sub("", _TAG.sub(" ", text))
+    text = _MARKS.sub("", _CTRL.sub("", _TAG.sub(" ", text)))
     return _WS.sub(" ", text).strip()[:limit].strip()
 
 
@@ -225,6 +228,7 @@ def make_hit(
     rating_count: Any = None,
     source: Any = None,
     delivery: Any = None,
+    image: Any = None,
     retrieved_at: str | None = None,
 ) -> WebHit | None:
     """Build one normalised, sanitised result; None when it has no usable URL or title."""
@@ -257,6 +261,7 @@ def make_hit(
         price_text=as_written,
         price_source=price_source,  # type: ignore[arg-type]
         delivery=clean_text(delivery, 120) or None,
+        image=str(image).strip() if isinstance(image, str) and str(image).strip().startswith("https://") else None,
         retrieved_at=retrieved_at or now_iso(),
         flagged=flagged,
     )

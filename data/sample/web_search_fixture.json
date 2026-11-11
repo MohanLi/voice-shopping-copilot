@@ -1,5 +1,5 @@
 {
-  "_about": "SYNTHETIC results for tests, CI and offline demos (WEB_SEARCH_PROVIDER=fixture). Nothing here is a real offer: every URL is on the reserved example.com domain and every price is made up. The UI labels answers built from this file as 'offline demo data'. Keys are lower-case substrings matched against the query; the first key found in the query wins.",
+  "_about": "SYNTHETIC results for tests, CI and offline demos (WEB_SEARCH_PROVIDER=fixture). Nothing here is a real offer: every URL is on the reserved example.com domain and every brand, price and rating is made up. Keys are lower-case substrings matched against the query; the first key found in the query wins. An entry with \"kind\" is returned only for that kind of search. The 'stainless' entries copy the SHAPE of real responses: shopping listings carry a name, a store, a price and a rating and nothing else, while ordinary web results carry the snippets in which makers and reviewers describe a product.",
   "carmarace": [
     {
       "title": "Carmarace Board Game",
@@ -36,43 +36,80 @@
   ],
   "stainless": [
     {
-      "title": "EcoShine Plant-Based Stainless Steel Cleaner, 16 fl oz",
-      "url": "https://home.example.com/ecoshine-stainless-steel-cleaner-16oz",
-      "snippet": "Plant-based formula, no ammonia or bleach. Streak-free on appliances.",
+      "kind": "shopping",
+      "title": "BrightSteel Stainless Steel Cleaner & Polish",
+      "url": "https://shop.example.com/offer/brightsteel-cleaner-polish",
+      "snippet": "Sold by Example Mart · $6.99",
+      "price": "$6.99",
+      "rating": 4.5,
+      "rating_count": 2100,
+      "source": "Example Mart",
+      "image": "https://img.example.com/brightsteel-cleaner-polish.jpg"
+    },
+    {
+      "kind": "shopping",
+      "title": "EcoShine Stainless Steel Cleaner, 16 fl oz",
+      "url": "https://shop.example.com/offer/ecoshine-stainless-16oz",
+      "snippet": "Sold by Example Home · $9.49",
       "price": "$9.49",
       "rating": 4.6,
       "rating_count": 2310,
       "source": "Example Home",
-      "delivery": "Free delivery over $35. In stock"
+      "image": "https://img.example.com/ecoshine-stainless-16oz.jpg"
     },
     {
-      "title": "PureSteel Stainless Steel Cleaner & Polish Spray, 12 oz",
-      "url": "https://market.example.com/puresteel-cleaner-polish-12oz",
-      "snippet": "Fragrance-free cleaner and polish. Not for use on cooking surfaces.",
-      "price": "$12.99",
+      "kind": "shopping",
+      "title": "PureGleam Stainless Steel Wipes, 30 count",
+      "url": "https://shop.example.com/offer/puregleam-wipes-30",
+      "snippet": "Sold by Example Home · $4.99",
+      "price": "$4.99",
       "rating": 4.4,
-      "rating_count": 871,
-      "source": "Example Market",
-      "delivery": "Ships within 2 days"
+      "rating_count": 880,
+      "source": "Example Home",
+      "image": "https://img.example.com/puregleam-wipes-30.jpg"
     },
     {
-      "title": "GreenWorks Stainless Steel Wipes, 30 count",
-      "url": "https://home.example.com/greenworks-stainless-wipes-30",
-      "snippet": "Biodegradable wipes. Currently unavailable.",
-      "price": "$7.25",
-      "rating": 4.1,
-      "rating_count": 412,
-      "source": "Example Home"
-    },
-    {
+      "kind": "shopping",
       "title": "ProChef Stainless Steel Cleaner Concentrate, 32 oz",
-      "url": "https://market.example.com/prochef-stainless-concentrate-32oz",
-      "snippet": "Commercial-strength concentrate. Contains solvents; use with gloves and ventilation.",
+      "url": "https://shop.example.com/offer/prochef-concentrate-32oz",
+      "snippet": "Sold by Example Market · $18.50",
       "price": "$18.50",
       "rating": 4.7,
       "rating_count": 156,
       "source": "Example Market",
-      "delivery": "In stock"
+      "image": "https://img.example.com/prochef-concentrate-32oz.jpg"
+    },
+    {
+      "kind": "shopping",
+      "title": "BrightSteel Stainless Steel Sink Cleaner",
+      "url": "https://shop.example.com/offer/brightsteel-sink-cleaner",
+      "snippet": "Sold by Example Hardware · $6.78",
+      "price": "$6.78",
+      "rating": 4.3,
+      "rating_count": 81,
+      "source": "Example Hardware",
+      "image": "https://img.example.com/brightsteel-sink-cleaner.jpg"
+    },
+    {
+      "kind": "web",
+      "title": "EcoShine Stainless Steel Cleaner | Plant-Based, Ammonia-Free",
+      "url": "https://ecoshine.example.com/stainless-steel-cleaner",
+      "snippet": "EcoShine Stainless Steel Cleaner uses coconut-derived, plant-based surfactants. No ammonia, bleach or phosphates. Biodegradable formula.",
+      "source": "ecoshine.example.com"
+    },
+    {
+      "kind": "web",
+      "title": "The best stainless steel cleaners we tested",
+      "url": "https://reviews.example.com/best-stainless-steel-cleaners",
+      "snippet": "PureGleam Stainless Steel Wipes are biodegradable and fragrance-free; testers liked the streak-free finish. BrightSteel Stainless Steel Cleaner & Polish removed fingerprints fastest but contains petroleum distillates.",
+      "source": "reviews.example.com"
+    },
+    {
+      "kind": "web",
+      "title": "How to choose a greener cleaner for stainless steel",
+      "url": "https://guides.example.com/greener-stainless-cleaners",
+      "snippet": "Look for plant-based surfactants and third-party certifications, and avoid aerosol propellants.",
+      "source": "guides.example.com"
     }
   ],
   "lego": [

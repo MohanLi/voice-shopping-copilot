@@ -127,6 +127,13 @@ def _web_block(item: WebItem) -> str:
     ]
     if item.snippet:
         lines.append("  snippet: " + item.snippet[:MAX_SNIPPET_CHARS])
+    if item.claims or item.cautions:
+        lines.append("  stated in this result: " + "; ".join(x for x in [", ".join(item.claims), ", ".join(item.cautions)] if x))
+    for ref in item.described_by:
+        said = "; ".join(x for x in [", ".join(item.claims_elsewhere.get(ref, [])), ", ".join(item.cautions_elsewhere.get(ref, []))] if x)
+        lines.append(f"  stated about this product by {ref}: {said}")
+    if item.price is not None and not item.claims and not item.described_by:
+        lines.append("  claims about materials or ingredients: none stated in any result")
     if item.match_note:
         lines.append("  note: " + item.match_note)
     if item.flagged:

@@ -117,7 +117,9 @@ class WebSearchService:
         )
 
     # ------------------------------------------------------------------ public
-    async def search(self, query: str, *, max_results: int = 5, kind: SearchKind = "shopping", site: str | None = None) -> WebSearchResult:
+    async def search(self, query: str, *, max_results: int = 5, kind: SearchKind = "shopping", site: str | None = None,
+                     price_max: float | None = None) -> WebSearchResult:
+        """Search; ``price_max`` drops results whose stated price is above it (results without a price are kept)."""
         started = time.perf_counter()
         q = clean_query(query)
         if not q:
@@ -131,7 +133,7 @@ class WebSearchService:
         cached = self.cache.get(key)
         if cached is not None:
             entry, age = cached
-            return self._result(entry, q, max_results, started, cached=True, age=age)
+            return self._result(entry, q, max_results, started, cached=True, age=age, price_max=price_max)
 
         allowed, retry_after = self.limiter.try_acquire()
         if not allowed:
@@ -142,7 +144,7 @@ class WebSearchService:
         except TimeoutError as exc:
             raise WebSearchUnavailableError(f"web search timed out after {self.total_timeout_s:.0f} s") from exc
         self.cache.put(key, entry)
-        return self._result(entry, q, max_results, started, cached=False, age=None)
+        return self._result(entry, q, max_results, started, cached=False, age=None, price_max=price_max)
 
     def stats(self) -> dict[str, Any]:
         return {
@@ -218,12 +220,24 @@ class WebSearchService:
                 attempt += 1
                 await asyncio.sleep(0.4 * attempt)
 
-    def _result(self, entry: _Entry, query: str, max_results: int, started: float, *, cached: bool, age: float | None) -> WebSearchResult:
+    def _result(self, entry: _Entry, query: str, max_results: int, started: float, *, cached: bool, age: float | None,
+                price_max: float | None = None) -> WebSearchResult:
         notes = list(entry.notes)
+        hits = entry.hits
+        over = 0
+        if price_max is not None and price_max > 0:                 # the cache holds the unfiltered page, so any limit can be served from it
+            hits = [h for h in entry.hits if h.price is None or h.price <= price_max]
+            over = len(entry.hits) - len(hits)
+            if over:
+                notes.append(f"{over} result(s) priced above ${price_max:g} were left out.")
+            if over and over == sum(1 for h in entry.hits if h.price is not None):
+                notes.append(f"Every priced result is above ${price_max:g}; say so rather than recommending one.")
         if not entry.hits:
             notes.append("No web results. Say that nothing was found rather than guessing a price or a link.")
         return WebSearchResult(
-            results=entry.hits[:max_results],
+            results=hits[:max_results],
+            price_max=price_max if price_max else None,
+            removed_over_price=over,
             query=query,
             kind=entry.kind,
             provider=entry.provider,

@@ -272,6 +272,54 @@ async def test_serper_shopping_results_are_normalised() -> None:
     assert hits[1].rating is None and hits[1].availability is None            # nothing stated, nothing claimed
 
 
+# The shape of a real response (captured 2026-11-11): no description, no stock, no delivery; the link is a Google Shopping
+# page, not the merchant's; one title carries "Ž", a mis-decoded registered-trademark sign.
+SHOPPING_AS_OBSERVED = {
+    "searchParameters": {"q": "LEGO Classic Medium Creative Brick Box 10696", "gl": "us", "hl": "en", "type": "shopping", "num": 40, "page": 1, "engine": "google"},
+    "shopping": [
+        {"title": "LEGO Classic Medium Creative Brick Box", "source": "Hobbiesville", "price": "$29.00", "rating": 4.8, "ratingCount": 3100,
+         "link": "https://www.google.com/search?ibp=oshop&q=LEGO+Classic+Medium+Creative+Brick+Box+10696&prds=catalogid:11142700746773067815",
+         "imageUrl": "https://encrypted-tbn0.gstatic.com/shopping?q=tbn:abc", "productId": "11142700746773067815", "position": 1},
+        {"title": "LEGO\u017d Classic Medium Creative Brick Box 10696 From MindWare", "source": "Mid-South Hobbies", "price": "$38.99",
+         "link": "https://www.google.com/search?ibp=oshop&q=LEGO+Classic+Medium+Creative+Brick+Box+10696&prds=catalogid:222",
+         "imageUrl": "https://encrypted-tbn1.gstatic.com/shopping?q=tbn:def", "productId": "222", "position": 8},
+    ],
+    "credits": 2,
+}
+
+
+async def test_serper_shopping_response_as_observed_live() -> None:
+    hits = await serper_with(lambda request: httpx.Response(200, json=SHOPPING_AS_OBSERVED)).search("lego 10696", max_results=5, kind="shopping", site=None)
+    first, second = hits
+    assert (first.title, first.source, first.price, first.price_source) == ("LEGO Classic Medium Creative Brick Box", "Hobbiesville", 29.0, "listing")
+    assert (first.rating, first.rating_count) == (4.8, 3100) and first.url.startswith("https://www.google.com/search?ibp=oshop")
+    assert first.image == "https://encrypted-tbn0.gstatic.com/shopping?q=tbn:abc"
+    assert first.availability is None and first.delivery is None             # a listing does not say whether the product is in stock
+    assert first.snippet == "Sold by Hobbiesville · $29.00"                   # and it has no description: nothing a claim could rest on
+    assert second.title == "LEGO Classic Medium Creative Brick Box 10696 From MindWare" and second.rating is None
+
+
+async def test_price_max_leaves_out_dearer_listings_and_reuses_the_cached_page() -> None:
+    provider = StubProvider("stub", [hit(1, price=6.99), hit(2, price=18.50), hit(3, price=9.49), hit(4, price=None, snippet="no price here")])
+    service = WebSearchService([provider], clock=FakeClock())
+    capped = await service.search("stainless steel cleaner", price_max=15)
+    assert [h.price for h in capped.results] == [6.99, 9.49, None]            # a result without a price is kept: it is not known to be over
+    assert capped.removed_over_price == 1 and capped.price_max == 15 and any("above $15" in note for note in capped.notes)
+    everything = await service.search("stainless steel cleaner")
+    assert len(everything.results) == 4 and everything.cached and len(provider.calls) == 1      # one fetch serves both
+    nothing = await service.search("stainless steel cleaner", price_max=5)
+    assert [h.price for h in nothing.results] == [None] and any("Every priced result is above $5" in note for note in nothing.notes)
+
+
+async def test_fixture_entries_can_be_limited_to_one_kind_of_search() -> None:
+    provider = FixtureProvider(FIXTURE)
+    listings = await provider.search("eco-friendly stainless steel cleaner", max_results=5, kind="shopping", site=None)
+    pages = await provider.search("eco-friendly stainless steel cleaner ingredients", max_results=5, kind="web", site=None)
+    assert listings and all(h.price is not None and h.snippet.startswith("Sold by ") and h.image for h in listings)
+    assert pages and all(h.price is None and len(h.snippet) > 40 for h in pages)
+    assert not {h.url for h in listings} & {h.url for h in pages}
+
+
 async def test_serper_organic_results_read_price_and_stock_from_the_snippet_only() -> None:
     hits = await serper_with(lambda r: httpx.Response(200, json=ORGANIC)).search("lego", max_results=5, kind="web", site=None)
     assert (hits[0].price, hits[0].availability) == (27.99, "in_stock")

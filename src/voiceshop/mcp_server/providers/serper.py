@@ -61,7 +61,7 @@ class SerperProvider:
         else:
             data = await self._post("/search", body)
             hits = [self._from_organic(item) for item in data.get("organic") or []]
-        return [h for h in hits if h is not None][: max_results * 2]
+        return [h for h in hits if h is not None][: max(max_results * 2, 30)]     # keep the whole page: a price limit may need it
 
     @staticmethod
     def _from_shopping(item: dict[str, Any]) -> WebHit | None:
@@ -76,6 +76,7 @@ class SerperProvider:
         return make_hit(
             title=item.get("title"), url=item.get("link"), snippet=snippet, price=item.get("price"),
             rating=item.get("rating"), rating_count=item.get("ratingCount"), source=item.get("source"), delivery=delivery,
+            image=item.get("imageUrl"),
         )
 
     @staticmethod

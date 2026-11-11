@@ -68,7 +68,7 @@ server: voice-shopping-copilot  protocol 2025-06-18  via stdio (python -m voices
 ┃ tool       ┃ alias for the LLM ┃ arguments (required*)            ┃ read-only ┃ open world ┃
 ┡━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━┩
 │ rag.search │ rag_search        │ query*, filters, top_k           │ True      │ False      │
-│ web.search │ web_search        │ query*, max_results, kind, site  │ True      │ True       │
+│ web.search │ web_search        │ query*, max_results, kind, site, price_max │ True │ True  │
 └────────────┴───────────────────┴──────────────────────────────────┴───────────┴────────────┘
 resource: catalog://stats        Size, price range, top categories and index details of the private catalog
 resource: catalog://categories   Every category name the `category` filter accepts, with product counts
@@ -129,31 +129,51 @@ Output (`outputSchema`; also returned as validated `structuredContent`):
 
 ## `web.search`
 
-Input: `query` (required), `max_results` (1–10, default 5), `kind` (`"shopping"` for merchant listings with
-structured prices, `"web"` for ordinary results such as reviews and recall notices), `site` (one host, e.g. `target.com`).
+Input: `query` (required), `max_results` (1–10, default 5), `kind`, `site` (one host, e.g. `target.com`) and
+`price_max` (leave out results priced above a budget; results without a price are kept).
+
+The two kinds return different things, and the difference matters for grounding. This is what the search API
+actually returned on the first live run (Serper, 2026-11-11):
+
+| | `kind="shopping"` | `kind="web"` |
+|---|---|---|
+| What a result is | a merchant listing | an ordinary page |
+| Fields | product name, store, price, star rating and count, thumbnail | title, link, snippet |
+| Link | a Google Shopping page for the offer (the store is named in `source`) | the page itself |
+| Says what the product is made of, or whether it is in stock | no: there is no description | often, in the snippet |
+
+So a listing can support a price and a rating, never a claim such as "eco-friendly". When a shopper asks for
+both, the Planner writes one search of each kind, and the agent links each listing to the pages that describe
+the same product (see `agents/reconcile.py`, `link_descriptions`).
 
 Output:
 
 ```jsonc
 {
   "results": [{
-    "title": "LEGO Classic Medium Creative Brick Box 10696",
-    "url": "https://…",              // the citation
-    "snippet": "484 pieces …",
-    "price": 27.99,                  // only when the source states one
-    "availability": "in_stock",      // in_stock | out_of_stock | limited | preorder — only when stated
-    "price_text": "$27.99",          // exactly as written
+    "title": "LEGO Classic Medium Creative Brick Box",
+    "url": "https://www.google.com/search?ibp=oshop&q=…",   // the citation
+    "snippet": "Sold by Hobbiesville · $29.00",              // listings: store and price only; pages: their own text
+    "price": 29.0,                   // only when the source states one
+    "availability": null,            // in_stock | out_of_stock | limited | preorder — only when stated
+    "price_text": "$29.00",          // exactly as written
     "price_source": "listing",       // "listing" = structured field, "snippet" = read from text (less certain)
-    "source": "Target", "rating": 4.9, "rating_count": 15230, "delivery": "Free pickup today",
-    "retrieved_at": "2026-11-11T06:42:10+00:00",
+    "source": "Hobbiesville", "rating": 4.8, "rating_count": 3100,
+    "image": "https://encrypted-tbn0.gstatic.com/shopping?q=…",
+    "retrieved_at": "2026-11-11T09:06:12+00:00",
     "flagged": false                 // true when instruction-like text was removed from this result
   }],
   "provider": "serper", "kind": "shopping",
   "cached": false, "cache_age_s": null, "cache_ttl_s": 180,
   "removed_by_domain_policy": 0,
-  "notes": []
+  "price_max": 15.0, "removed_over_price": 3,
+  "notes": ["3 result(s) priced above $15 were left out."]
 }
 ```
+
+The cache holds the unfiltered page of results, so the same search with a different `price_max` is answered
+from the cache. A shopping search costs two Serper credits whatever `max_results` is (the API always returns
+its full page of up to 40 listings); an ordinary search costs one.
 
 ### Search providers
 

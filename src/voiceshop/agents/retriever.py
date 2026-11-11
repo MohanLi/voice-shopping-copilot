@@ -21,6 +21,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 
+from voiceshop.agents.claims import stated_cautions, stated_claims
 from voiceshop.agents.context import render_constraints
 from voiceshop.agents.deps import Deps
 from voiceshop.agents.llm_utils import log_call, render, rules_mode
@@ -42,7 +43,8 @@ from voiceshop.mcp_client.adapters import as_langchain_tools, render_for_model
 
 VERIFY_TOP_N = 3
 _CATALOG_FIELDS = set(CatalogItem.model_fields) - {"ref", "from_query", "live"}
-_WEB_FIELDS = set(WebItem.model_fields) - {"ref", "provider", "cached", "kind", "from_query", "matched_ref", "match_score", "match_note"}
+_WEB_FIELDS = set(WebItem.model_fields) - {"ref", "provider", "cached", "kind", "from_query", "matched_ref", "match_score", "match_note",
+                                           "claims", "cautions", "described_by", "claims_elsewhere", "cautions_elsewhere"}
 
 
 def step_arguments(plan_step: PlanStep) -> dict[str, Any]:
@@ -55,6 +57,8 @@ def step_arguments(plan_step: PlanStep) -> dict[str, Any]:
     args = {"query": plan_step.query, "max_results": min(plan_step.top_k, 5), "kind": plan_step.kind}
     if plan_step.site:
         args["site"] = plan_step.site
+    if plan_step.price_max and plan_step.kind == "shopping":
+        args["price_max"] = plan_step.price_max
     return args
 
 
@@ -126,8 +130,10 @@ class EvidenceBuilder:
                 if not url:
                     continue
                 if url not in self.web:
+                    text = f"{hit.get('title') or ''}. {hit.get('snippet') or ''}"
                     self.web[url] = WebItem(ref=self._next_ref("W"), provider=str(data.get("provider") or ""), cached=bool(data.get("cached")),
                                             kind=str(data.get("kind") or "shopping"), from_query=query,
+                                            claims=stated_claims(text), cautions=stated_cautions(text),
                                             **{k: v for k, v in hit.items() if k in _WEB_FIELDS})
                 refs.append(self.web[url].ref)
         if result.ok:
@@ -242,6 +248,9 @@ async def _agent_rounds(deps: Deps, state: TurnState, plan: Plan, constraints: C
         notes.append(f"round {round_no}: " + ("; ".join(f"{t}({a.get('query', '')!r})" for t, a, _ in accepted) or "no new calls"))
         if not accepted or round_no == settings.retriever_max_rounds:
             break                              # the Answerer comes next; no model call is spent on saying "done"
+        if all(r.ok and r.results for r in results):
+            notes.append(f"round {round_no}: every search returned results, so the model was not asked again")
+            break                              # another round is for recovering from an empty or failed search
         messages.extend([ai, *replies])
     return model_calls, notes
 

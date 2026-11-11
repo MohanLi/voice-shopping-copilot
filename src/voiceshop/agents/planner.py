@@ -93,11 +93,18 @@ def normalise_plan(plan: Plan, route: RouteDecision, constraints: Constraints, u
         steps.insert(0, enforce_constraints(PlanStep(tool="rag.search", purpose="find matching products",
                                                      query=rules.search_query(constraints, user_text)), constraints))
         notes.append("added the catalog search the plan was missing")
-    if strategy == "web_only" and not any(s.tool == "web.search" for s in steps):
-        budget = f" under {constraints.budget_max:g} dollars" if constraints.budget_max else ""
-        steps.append(PlanStep(tool="web.search", purpose="find current products", query=f"{rules.search_query(constraints, user_text)}{budget}"))
     if strategy == "web_only":
         verify = False
+        query = rules.search_query(constraints, user_text)
+        if not any(s.tool == "web.search" and s.kind == "shopping" for s in steps):
+            steps = [*rules.web_steps(constraints, query)[:1], *steps]
+            notes.append("added the search for current listings the plan was missing")
+        # The budget is a hard constraint: it is applied by the tool, whatever the query words say.
+        steps = [s.model_copy(update={"price_max": constraints.budget_max}) if s.tool == "web.search" and s.kind == "shopping"
+                 and constraints.budget_max and not s.price_max else s for s in steps]
+        if constraints.must_have and not any(s.tool == "web.search" and s.kind == "web" for s in steps):
+            steps.extend(rules.web_steps(constraints, query)[1:])        # listings carry no description: look for pages that state the quality
+            notes.append("added a search for pages that state the requested quality (listings alone do not)")
     if not deps.rag_available:
         steps = [s for s in steps if s.tool != "rag.search"]
     return plan.model_copy(update={"strategy": strategy, "steps": steps[:MAX_STEPS], "verify_current_price": verify}), notes
