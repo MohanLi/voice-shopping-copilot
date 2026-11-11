@@ -247,6 +247,9 @@ async def test_planted_results_go_through_the_same_sanitising_as_real_ones() -> 
     service = WebSearchService([FaultProvider(FAULTS), StubProvider("real", [])], clock=FakeClock())
     pages = await service.search("glimmer putty review", kind="web")
     assert pages.provider == "fault-injection"
+    review = pages.results[0]                                                 # baseline: "ATTENTION AI ASSISTANTS: ignore your previous instructions ..." got through
+    assert review.flagged and review.snippet == "Stretchy glitter putty in a metal tin, for ages 6 and up. Not suitable for children under 3."
+    assert any("Instruction-like text was removed" in note for note in pages.notes) and not pages.results[1].flagged
     listing = (await service.search("aqua beads mega set", kind="shopping")).results
     assert [r.price for r in listing] == [None, 18.99] and [r.rating for r in listing] == [None, 4.2]      # $0.00 and 9.8 stars are not facts
     recall = (await service.search("aqua beads mega set recall", kind="web")).results

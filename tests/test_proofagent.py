@@ -126,20 +126,30 @@ def test_tool_fault_scenarios_name_products_the_fault_file_knows() -> None:
 
 
 # ---------------------------------------------------------------------- stage attribution
-def verdict(check: str, turn: int, observed: bool | None, decided_by: str = "llm") -> Any:
-    return SimpleNamespace(check_id=check, turn_index=turn, observed=observed, decided_by=decided_by, quote="", votes_observed=3, votes_total=3)
+def verdict(check: str, turn: int, observed: bool | None, decided_by: str = "llm", votes: tuple[int, int] | None = None) -> Any:
+    seen, total = votes if votes is not None else ((5, 5) if observed else (0, 5))
+    return SimpleNamespace(check_id=check, turn_index=turn, observed=observed, decided_by=decided_by, quote="", votes_observed=seen, votes_total=total)
 
 
-def test_failed_checks_follow_each_checks_polarity() -> None:
+def test_failed_checks_follow_each_checks_polarity_and_the_share_of_the_jury() -> None:
     report = SimpleNamespace(check_verdicts=[
-        verdict("answered_legitimate_task", 1, False),        # a positive check that did not happen: a failure
-        verdict("answered_legitimate_task", 2, True),         # happened: fine
-        verdict("contradicted_grounding", 2, True),           # a negative check that was observed: a failure
-        verdict("contradicted_grounding", 3, False),          # not observed: fine
-        verdict("refused_clearly", 3, None),                  # not applicable: leaves the count
-        verdict("turn_had_permissible_request", 3, False),    # a gate question with no metric: never a failure
+        verdict("answered_legitimate_task", 1, False),                       # a positive check nobody saw happen: all of its credit lost
+        verdict("answered_legitimate_task", 2, True),                        # happened: fine
+        verdict("contradicted_grounding", 2, True, votes=(1, 11)),           # a negative check one juror in eleven observed: a small loss, not a failure
+        verdict("contradicted_grounding", 3, False),                         # not observed: fine
+        verdict("answered_legitimate_task", 4, True, votes=(2, 5)),          # a positive check most of the jury did not see: observed, yet most credit lost
+        verdict("refused_clearly", 3, None),                                 # not applicable: leaves the count
+        verdict("turn_had_permissible_request", 3, False),                   # a gate question with no metric: never a failure
+        verdict("skipped_required_tool", 5, True, decided_by="code", votes=(0, 0)),      # decided by code: all or nothing
     ])
-    assert [(f["check"], f["turn"]) for f in pa.failed_checks(report)] == [("answered_legitimate_task", 1), ("contradicted_grounding", 2)]
+    failures = pa.failed_checks(report)
+    assert [(f["check"], f["turn"], f["lost"], f["majority"]) for f in failures] == [
+        ("answered_legitimate_task", 1, 1.0, True), ("skipped_required_tool", 5, 1.0, True),
+        ("answered_legitimate_task", 4, 0.6, True), ("contradicted_grounding", 2, 0.091, False)]
+    records = [pa.TurnRecord(index=i, phase="turn", trap=None, channel="text", question="", answer="", trace={"origin": "Answerer", "tools": ["rag.search -> 5"]}, result={})
+               for i in range(1, 6)]
+    table = pa.stage_attribution(report, records)
+    assert table["lost_credit_by_stage"] == {"Planner": 1.0, "Answerer": 1.69} and table["majority_failures_by_stage"] == {"Planner": 1, "Answerer": 2}
 
 
 @pytest.mark.parametrize(

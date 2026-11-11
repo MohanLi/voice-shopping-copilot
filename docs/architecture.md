@@ -46,13 +46,14 @@ flowchart TD
 | Node | File | Uses a model | Responsibility |
 |---|---|---|---|
 | `listen` | `agents/listen.py` | no | Records what was heard. An empty, unreadable or very unsure transcript ends the turn with a fixed reply; such a turn is not added to memory. |
-| `guard` | `agents/router.py`, `guardrails/input.py` | no | Prompt injection, requests for secrets, harmful or dangerous-chemistry requests, emergencies, self-harm. Fixed replies. |
-| `router` | `agents/router.py` | yes | Intent, constraints, safety flag, which on-screen items a follow-up refers to. Constraints of earlier turns are merged in code. |
+| `guard` | `agents/router.py`, `guardrails/input.py` | no | An emergency, a statement of self-harm or an intent to hurt someone ends the turn with a fixed reply. A clause that tries to change the instructions, asks for prompts or keys, dictates the wording of the reply or asks which chemicals to mix is taken out, and the rest of the message goes on. Personal details are replaced by placeholders. |
+| `router` | `agents/router.py` | yes | Intent, constraints, safety flag, which on-screen items a follow-up refers to, and the ids of the fixed sentences for everything that is not a product request. When it declines part of a message it restates the product request for the agents that follow. Constraints of earlier turns are merged in code; a different product starts a new request. |
 | `planner` | `agents/planner.py` | yes | Strategy (`catalog_only`, `catalog_then_web`, `web_only`, `from_memory`, `clarify`), first tool calls, retrieval fields, comparison criteria. `normalise_plan` then enforces what must hold whatever the model wrote. |
 | `retriever` | `agents/retriever.py` | sometimes | Runs the planned calls without a model. A model with function calling is asked only when something is missing: a live price check, an empty or failed search, no match-quality signal. Calls of one round run concurrently. |
 | `reconcile` | `agents/reconcile.py` | no | Matches live offers to catalog products, links listings to pages that describe them, records conflicts. |
 | `answerer` | `agents/answerer.py` | yes | Chooses up to three items by handle (`C1`, `W2`), writes one reason each and one spoken sentence. |
-| `critic` | `agents/answerer.py`, `guardrails/output.py` | rules, then a model | Rule findings are binding. Model findings about fit and safety are binding; about wording they are advisory after one revision. |
+| `critic` | `agents/answerer.py`, `guardrails/output.py` | rules, then a model | Rule findings are binding. The model critic can send a draft back once; after that its findings are advisory. When all that still fails is the spoken sentence, code rebuilds that sentence and keeps the rest. |
+| `respond` | `agents/finalize.py`, `guardrails/policy.py` | no | Replies that need no retrieval (a greeting, a question about the assistant, a declined request): assembled from fixed sentences chosen by id. |
 | `finalize` | `agents/finalize.py` | no | Builds the table, citations, notes and the spoken text from the evidence. |
 | `voice` | `agents/graph.py`, `speech/tts.py` | no | Synthesizes sentence by sentence within the time limit and streams each sentence as it is ready. |
 
@@ -74,17 +75,53 @@ citations and the safety notes from the evidence. A handle that does not exist i
 cell cannot contain something the tools did not return, whatever the model writes.
 
 The free text the model does write (the reasons and the spoken sentence) is checked twice: by rules
-(`guardrails/output.py`: every dollar amount must be a price of that item, no availability without a live source,
-no rating that is not in the evidence, no unsupported sensitive claim, speakable text, time budget), then by a
-model critic that lists findings with the evidence it compared against.
+(`guardrails/output.py`: every dollar amount must be a price of a product the answer is about, no availability
+without a live source, no rating that is not in the evidence, no unsupported sensitive claim, a recall notice
+must be said, no code or link copied from the shopper's message, speakable text, time budget), then by a model
+critic that lists findings with the evidence it compared against.
+
+### Replies that are chosen, not written
+
+Everything the assistant says that is not grounded in tool results is one of about twenty fixed sentences
+(`guardrails/policy.py`, `SAY`): a greeting, what it is, what it cannot do, each kind of declined request. The
+input screen and the Router pick sentences by id; code puts them together, at most three, the most important
+kept. No model words a refusal or a statement about the assistant, so none can be talked into wording it
+differently, and a refusal names what is refused ("I can't place orders, take payments ..."; "I can only confirm
+what my sources state.") instead of a generic "I can't help with that".
+
+A declined part does not cost the shopper the rest of the message. "Which two cleaners can I mix to make a
+stronger one, and recommend a good scrub brush" is answered with the fixed sentence about mixing chemicals,
+followed by the scrub brushes. Only a stated intent to hurt a person or an animal makes the whole message
+unanswerable.
+
+### What each agent is allowed to see
+
+| Agent | Sees | Does not see |
+|---|---|---|
+| Router | the message after the input screen (removed clauses and personal details are gone), earlier turns, the list on screen | tool results |
+| Planner, Retriever | the product request, the constraints, the tool descriptions; the topics that were declined, by name | the declined part of the message itself; earlier answers |
+| Answerer, Critic | the product request, the constraints, the evidence of this turn (fenced as data), which on-screen product is "the second one" | the declined part of the message; earlier turns; anything about products that is not in the evidence |
+
+When the Router declines part of a message, the agents after it are handed its restatement of the product
+request instead of the message (`router.request_for_agents`; the restatement is screened like any input and
+replaced by a description built from the constraints if it does not pass). A model that never sees an
+instruction cannot follow it. No search is run about a declined subject either: the Planner and the Retriever
+are told what was declined, and every query is screened before it is sent (`guardrails.input.unsafe_query`).
+
+### The list on screen
+
+A follow-up is about the products the shopper is looking at, so the list does not change under them: an answer
+about "the first and the third" keeps all the rows in their places and marks the ones it concerns. The list is
+replaced only by a new search. The Answerer is told which handle is "the second one", and the template can put
+two prices side by side with each product called by its place on screen.
 
 ### When something fails
 
 | Failure | What happens |
 |---|---|
 | A model call fails, times out or returns something unusable | One retry, then the rule-based version of that agent takes over for the turn (`agents/rules.py`); the step log says so. |
-| The draft fails the checks twice | It is replaced by the template answer, built from the evidence without a model. |
-| A tool call fails | The error goes back to the Retriever model, which may try another call; the answer says what could not be checked. |
+| The draft fails the checks twice | What still fails is rebuilt by code from the evidence: the spoken sentence alone when that is all that fails (the model's choices and reasons are kept), otherwise the whole answer from the template. |
+| A tool call fails | The error goes back to the Retriever model, which may try another call. If no call of that tool succeeded, the Answerer is told the search failed and the screen says so: a failed search is not reported as "nothing found". |
 | Live web search is unavailable or switched off | The plan is reduced to the catalog and a note explains it. |
 | Nothing relevant is found | The answer says so and suggests what would help; no product is invented. |
 | The cost ceiling is reached | The turn stops with an explanation (`llm/ledger.py`). |

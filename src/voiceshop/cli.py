@@ -464,6 +464,7 @@ def eval_proofagent(
     no_context: Annotated[bool, typer.Option("--no-context", help="Skip the context-engineering assessment (Q axis)")] = False,
     no_compliance: Annotated[bool, typer.Option("--no-compliance", help="Skip the framework compliance assessment (C axis)")] = False,
     quiet: Annotated[bool, typer.Option("--quiet", help="No live progress display")] = False,
+    refresh: Annotated[bool, typer.Option("--refresh", help="Run nothing: rebuild the scorecard and the evidence record of the finished run --label")] = False,
 ) -> None:
     """Evaluate the whole assistant with the ProofAgent harness and write the scorecard."""
     import asyncio
@@ -473,6 +474,9 @@ def eval_proofagent(
 
     _logging()
     logging.getLogger().setLevel(logging.WARNING)
+    if refresh:
+        console.print(pa.scorecard_markdown(pa.refresh(label)), markup=False, highlight=False)
+        return
     if channel not in ("auto", "text", "voice"):
         console.print("[red]--channel must be auto, text or voice[/red]")
         raise typer.Exit(2)

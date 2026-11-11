@@ -26,6 +26,8 @@ audio_out/
 # --- evaluation: reports are committed, raw transcripts with full tool payloads are not ---
 eval/results/**/raw/
 eval/results/**/audio/
+# the ProofAgent evidence bundle holds the whole conversation in clear; the validated record (report.per.json) is the committed form
+eval/results/**/report.bundle.json
 
 # --- python ---
 __pycache__/
