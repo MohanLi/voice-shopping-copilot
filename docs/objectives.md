@@ -59,7 +59,7 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 |----|-------------|----------------|:------:|
 | A1 | Whisper (or comparable) ASR | `speech/asr.py` (faster-whisper, own audio decoding, transcript status) | ✅ |
 | A2 | Fragment-based recording (WAV/MP3) | `frontend/src/useRecorder.ts` (one fragment per request, stops on a pause), upload of WAV/MP3/M4A/WebM; `speech/audio.py` decodes them | ✅ |
-| A3 | Handles common accents and speech variations (measured) | `evals/asr_eval.py` | ⬜ |
+| A3 | Handles common accents and speech variations (measured) | `evals/speech_eval.py`, `voiceshop eval speech` (accented voices, fast and noisy speech, brand hint on/off); the report of record comes from the Mac run | 🔄 |
 | A4 | Timestamps returned when available | `speech/asr.py` (segment timestamps always; word timestamps on request) | ✅ |
 
 ### 2.4 Agentic RAG — private + live data
