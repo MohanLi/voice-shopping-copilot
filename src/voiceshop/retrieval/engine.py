@@ -169,8 +169,10 @@ class SearchEngine:
         fused = [doc for doc, _ in reciprocal_rank_fusion(rankings, k=self.rrf_k, prefer=self.tie_break(len(rankings)))]
         return fused, dense_rank, lexical_rank
 
+    # Measured on all 600 benchmark queries (eval/experiments/tie_break.py, eval/results/retrieval/tie_break.json):
+    # hybrid ties by lexical order 83.7 hit@1 (by dense order 83.0); re-rank ties by retrieval order 93.7 hit@3 (by re-ranker 93.2).
     HYBRID_TIES: Literal["lexical", "dense", "index"] = "lexical"
-    RERANK_TIES: Literal["reranker", "retrieval", "index"] = "reranker"
+    RERANK_TIES: Literal["reranker", "retrieval", "index"] = "retrieval"
 
     def tie_break(self, n_rankings: int) -> int | None:
         if n_rankings < 2 or self.HYBRID_TIES == "index":
