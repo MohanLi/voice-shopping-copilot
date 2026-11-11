@@ -3,86 +3,46 @@
     "name": "rag.search",
     "description": "Search the private product catalog (Amazon Product Dataset 2020; 9,741 products) with hybrid retrieval: dense vectors and BM25 fused by reciprocal rank, metadata filters, and a cross-encoder re-ranker.\n\nUse this first for any product request. Put the shopper's hard constraints in `filters` (price_max for a budget, age_years, brand, category, materials, exclude_safety_flags) and keep `query` to what the product is.\n\nEach result has: sku, title, price (USD, January 2020), rating (null unless a real rating source exists), brand, ingredients (the materials the listing states), doc_id (cite this), plus features, description, age_label, safety_flags and unit prices where they apply.\n\nIf too few products meet every filter the tool loosens them in a fixed order and says which in `relaxed`; each result then lists the constraints it misses in `constraint_notes`. Safety exclusions are never loosened.\n\nLargest categories: toys & games, hobbies, home & kitchen, games & accessories, clothing, shoes & jewelry, costumes & accessories, costumes, arts & crafts, stuffed animals & plush toys, party supplies, sports & outdoors, dress up & pretend play, remote & app controlled vehicles & parts, sports & outdoor play.",
     "parameters": {
-      "$defs": {
-        "SearchFilters": {
+      "properties": {
+        "query": {
+          "description": "What the product is, in plain words, e.g. 'wooden jigsaw puzzle'",
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        },
+        "filters": {
           "additionalProperties": false,
-          "description": "Hard constraints for a catalog search. Every field is optional.",
+          "description": "Hard constraints; omit a field to leave it unconstrained",
           "properties": {
             "price_min": {
-              "anyOf": [
-                {
-                  "minimum": 0,
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "description": "Minimum price in USD",
-              "title": "Price Min"
+              "minimum": 0,
+              "type": "number",
+              "description": "Minimum price in USD"
             },
             "price_max": {
-              "anyOf": [
-                {
-                  "minimum": 0,
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "description": "Maximum price in USD (the shopper's budget)",
-              "title": "Price Max"
+              "minimum": 0,
+              "type": "number",
+              "description": "Maximum price in USD (the shopper's budget)"
             },
             "category": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "description": "Category name, e.g. 'Toys & Games', 'Puzzles', 'Costumes'",
-              "title": "Category"
+              "type": "string",
+              "description": "Category name, e.g. 'Toys & Games', 'Puzzles', 'Costumes'"
             },
             "brand": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "description": "Brand name, e.g. 'LEGO', 'Melissa & Doug'",
-              "title": "Brand"
+              "type": "string",
+              "description": "Brand name, e.g. 'LEGO', 'Melissa & Doug'"
             },
             "age_years": {
-              "anyOf": [
-                {
-                  "maximum": 120,
-                  "minimum": 0,
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "description": "Age in years of the person the product is for; keeps products recommended for that age",
-              "title": "Age Years"
+              "maximum": 120,
+              "minimum": 0,
+              "type": "number",
+              "description": "Age in years of the person the product is for; keeps products recommended for that age"
             },
             "materials": {
               "description": "Keep products made of ANY of these materials, e.g. ['wood']",
               "items": {
                 "type": "string"
               },
-              "title": "Materials",
               "type": "array"
             },
             "claims": {
@@ -90,7 +50,6 @@
               "items": {
                 "type": "string"
               },
-              "title": "Claims",
               "type": "array"
             },
             "exclude_safety_flags": {
@@ -98,53 +57,27 @@
               "items": {
                 "type": "string"
               },
-              "title": "Exclude Safety Flags",
               "type": "array"
             },
             "allow_unknown_age": {
               "default": false,
               "description": "With age_years: also keep products whose listing states no age",
-              "title": "Allow Unknown Age",
               "type": "boolean"
             }
           },
-          "title": "SearchFilters",
           "type": "object"
-        }
-      },
-      "properties": {
-        "query": {
-          "description": "What the product is, in plain words, e.g. 'wooden jigsaw puzzle'",
-          "maxLength": 300,
-          "minLength": 1,
-          "title": "Query",
-          "type": "string"
-        },
-        "filters": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SearchFilters"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Hard constraints; omit a field to leave it unconstrained"
         },
         "top_k": {
           "default": 5,
           "description": "How many products to return",
           "maximum": 10,
           "minimum": 1,
-          "title": "Top K",
           "type": "integer"
         }
       },
       "required": [
         "query"
       ],
-      "title": "rag_searchArguments",
       "type": "object"
     }
   },
@@ -157,7 +90,6 @@
           "description": "Search terms, e.g. the product's brand and name",
           "maxLength": 200,
           "minLength": 1,
-          "title": "Query",
           "type": "string"
         },
         "max_results": {
@@ -165,7 +97,6 @@
           "description": "How many results to return",
           "maximum": 10,
           "minimum": 1,
-          "title": "Max Results",
           "type": "integer"
         },
         "kind": {
@@ -175,41 +106,21 @@
             "shopping",
             "web"
           ],
-          "title": "Kind",
           "type": "string"
         },
         "site": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Restrict to one host, e.g. 'target.com'",
-          "title": "Site"
+          "type": "string",
+          "description": "Restrict to one host, e.g. 'target.com'"
         },
         "price_max": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Leave out results priced above this many US dollars",
-          "title": "Price Max"
+          "exclusiveMinimum": 0,
+          "type": "number",
+          "description": "Leave out results priced above this many US dollars"
         }
       },
       "required": [
         "query"
       ],
-      "title": "web_searchArguments",
       "type": "object"
     }
   }
