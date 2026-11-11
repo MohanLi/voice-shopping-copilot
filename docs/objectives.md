@@ -26,7 +26,7 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 
 | ID | Requirement | Where it lives | Status |
 |----|-------------|----------------|:------:|
-| S1 | Voice-to-voice interaction for product discovery and comparison | `speech/`, `agents/graph.py` (`voiceshop voice <file>` runs voice to voice end to end); `api/`, `frontend/` still to come | 🔄 |
+| S1 | Voice-to-voice interaction for product discovery and comparison | `speech/`, `agents/graph.py`, `api/`, `frontend/` (voice to voice in the browser and with `voiceshop voice`; `frontend/e2e/smoke.cjs` drives it through a fake microphone) | ✅ |
 | S2 | Multi-agent workflow: Intent → Plan → Retrieve/Tools → Answer/Critic → Voice response | `agents/` (listen, guard, router, planner, retriever, reconcile, answerer, critic, finalize, voice); live run on the Mac 2026-11-11 | ✅ |
 | S3 | LangGraph orchestrates the agents | `agents/graph.py` | ✅ |
 | S4 | Agentic RAG over a private product catalog | `retrieval/`, `agents/retriever.py` | ✅ |
@@ -34,7 +34,7 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 | S6 | Grounded recommendations with citations | `agents/answerer.py`, `agents/finalize.py`, `guardrails/output.py` | ✅ |
 | S7 | Basic guardrails and safety checks | `guardrails/` | ✅ |
 | S8 | ProofAgent evaluation of the completed agent | `eval/proofagent/` | ⬜ |
-| S9 | UI shows transcript, agent execution, results, citations, evaluation evidence | `frontend/` | ⬜ |
+| S9 | UI shows transcript, agent execution, results, citations, evaluation evidence | `frontend/` (what was heard, step log, comparison table, citations, evaluation panel fed by `eval/results`) | ✅ |
 | S10 | ASR/TTS fragment-based (streaming optional) | `speech/` (fragment in, fragment out; sentence-level streaming of the reply as an extra) | ✅ |
 
 ### 2.2 Agentic orchestration (LangGraph)
@@ -58,7 +58,7 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 | ID | Requirement | Where it lives | Status |
 |----|-------------|----------------|:------:|
 | A1 | Whisper (or comparable) ASR | `speech/asr.py` (faster-whisper, own audio decoding, transcript status) | ✅ |
-| A2 | Fragment-based recording (WAV/MP3) | `speech/audio.py` decodes WAV, MP3, WebM/Opus, MP4/AAC, FLAC; recording in `frontend/` still to come | 🔄 |
+| A2 | Fragment-based recording (WAV/MP3) | `frontend/src/useRecorder.ts` (one fragment per request, stops on a pause), upload of WAV/MP3/M4A/WebM; `speech/audio.py` decodes them | ✅ |
 | A3 | Handles common accents and speech variations (measured) | `evals/asr_eval.py` | ⬜ |
 | A4 | Timestamps returned when available | `speech/asr.py` (segment timestamps always; word timestamps on request) | ✅ |
 
@@ -107,13 +107,13 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 
 | ID | Requirement | Where it lives | Status |
 |----|-------------|----------------|:------:|
-| U1 | Streamlit or React | React + FastAPI | ⬜ |
-| U2 | Microphone recording / upload | `frontend/` | ⬜ |
-| U3 | Speech transcript | `frontend/` | ⬜ |
-| U4 | Agent execution / step log | `frontend/` | ⬜ |
-| U5 | Product comparison table: Product, Price, Rating, Ingredients, Source, Citation (top 3) | `frontend/` | ⬜ |
-| U6 | Citations: private document IDs and live-source links | `frontend/` | ⬜ |
-| U7 | TTS playback | `frontend/` | ⬜ |
+| U1 | Streamlit or React | React 19 + Vite, served by FastAPI (`voiceshop serve`); prebuilt bundle in `frontend/dist` | ✅ |
+| U2 | Microphone recording / upload | `frontend/src/components/AskBar.tsx`, `useRecorder.ts` (microphone, upload, typing) | ✅ |
+| U3 | Speech transcript | `frontend/src/components/Heard.tsx` (text, confidence, segment timestamps, correct-and-resend) | ✅ |
+| U4 | Agent execution / step log | `frontend/src/components/Receipt.tsx` (each stage with time, tool calls, expandable details, total time and cost) | ✅ |
+| U5 | Product comparison table: Product, Price, Rating, Ingredients, Source, Citation (top 3) | `frontend/src/components/ComparisonTable.tsx` (Product, Price, Rating, Ingredients, Source, Citation; top 3) | ✅ |
+| U6 | Citations: private document IDs and live-source links | table Citation column and `Sources.tsx` (catalog document ids; live links with retrieval time) | ✅ |
+| U7 | TTS playback | `frontend/src/useSpeechPlayer.ts`, `Reply.tsx` (plays sentence by sentence as audio arrives; captions follow) | ✅ |
 
 ### 2.8 ProofAgent evaluation
 

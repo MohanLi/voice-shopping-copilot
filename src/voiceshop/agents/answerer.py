@@ -32,12 +32,15 @@ from voiceshop.agents.state import (
 from voiceshop.guardrails.output import check_draft, repair
 from voiceshop.llm.ledger import BudgetExceededError
 from voiceshop.prompts import load_prompt
+from voiceshop.speech.text import WORDS_PER_SECOND
 
 # Model-critic objections that stop being binding once the Answerer has revised: wording-level grounding, and
 # constraints, which the retrieval filters and the rule checks already enforce. "unfit" and "safety" stay binding.
 ADVISORY_AFTER_REVISION = ("critic_unsupported", "critic_constraint")
 TAIL_WORDS = 9                   # "Two more options and the sources are on screen."
 QUESTION_WORDS = 12              # room for the follow-up question (or the safety sentence that replaces it)
+LEAD_SECONDS = 9.5               # how long the Answerer's own sentence may take to say; the pointer to the screen follows it
+LEAD_SECONDS_WITH_SAFETY = 8.0   # when a safety sentence is certain to follow (a chemical product, a child under three)
 
 
 class Finding(BaseModel):
@@ -98,9 +101,19 @@ def focus_refs(state: TurnState) -> list[str]:
     return [str(shown[p - 1].get("ref")) for p in route.refers_to if 0 < p <= len(shown)]
 
 
-def lead_budget(deps: Deps) -> int:
-    """Words the Answerer may use for its lead; the rest of the spoken budget is filled in by code."""
-    return max(16, deps.settings.spoken_max_words - TAIL_WORDS - QUESTION_WORDS)
+def lead_seconds(deps: Deps, state: TurnState | None = None) -> float:
+    """Speaking time left for the Answerer's sentence once the code-written parts of a 15-second answer are counted."""
+    scale = deps.settings.tts_max_seconds / 15.0
+    route: RouteDecision | None = state.get("route") if state else None
+    constraints: Constraints | None = state.get("session_constraints") if state else None
+    safety_follows = (route is not None and route.safety == "caution") or (constraints is not None and constraints.age_years is not None
+                                                                           and constraints.age_years < 3)
+    return (LEAD_SECONDS_WITH_SAFETY if safety_follows else LEAD_SECONDS) * scale
+
+
+def lead_budget(deps: Deps, state: TurnState | None = None) -> int:
+    """Words the Answerer is told it may use (a price counts as five); the rest of the spoken answer is written by code."""
+    return max(14, min(deps.settings.spoken_max_words - TAIL_WORDS - QUESTION_WORDS + 4, int(lead_seconds(deps, state) * WORDS_PER_SECOND) - 3))
 
 
 def make_answerer_node(deps: Deps):  # type: ignore[no-untyped-def]
@@ -112,7 +125,7 @@ def make_answerer_node(deps: Deps):  # type: ignore[no-untyped-def]
         critique: Critique | None = state.get("critique")
         revising = critique is not None and critique.verdict == "revise"
         weak = deps.settings.weak_match_score
-        budget = lead_budget(deps)
+        budget = lead_budget(deps, state)
 
         if evidence.empty:
             draft = rules.answer(evidence, constraints, weak, focus_refs(state))
@@ -171,10 +184,10 @@ def make_critic_node(deps: Deps):  # type: ignore[no-untyped-def]
         constraints: Constraints = state.get("session_constraints") or Constraints()
         draft: AnswerDraft = repair(state["draft"], evidence)  # type: ignore[arg-type]
         revisions = state.get("revisions") or 0
-        budget = lead_budget(deps)
+        budget = lead_budget(deps, state)
         from_template = state.get("draft_source") == "template"
 
-        issues = check_draft(draft, evidence, constraints, max_words=budget)
+        issues = check_draft(draft, evidence, constraints, max_words=budget, max_seconds=lead_seconds(deps, state))
         blocking = [i for i in issues if i.severity in ("block", "revise")]
         checked = ["rules"]
         report: CriticReport | None = None
@@ -221,9 +234,11 @@ def make_critic_node(deps: Deps):  # type: ignore[no-untyped-def]
         if verdict == "fallback":
             update["draft"] = rules.answer(evidence, constraints, settings.weak_match_score, focus_refs(state))
             update["draft_source"] = grounded_by = "template"
-        summary = {"pass": "Passed", "revise": f"Sent back for revision ({len(blocking)} finding(s))",
-                   "fallback": f"Replaced by the grounded template ({len(blocking)} unresolved finding(s))"}[verdict]
-        update["trace"] = [step("critic", f"{summary} - checked by {' + '.join(checked)}", status="ok" if verdict == "pass" else "warn", started=started,
+        n = len(blocking)
+        summary = {"pass": "Passed", "revise": f"Sent back for revision: {n} finding{'s' if n != 1 else ''}",
+                   "fallback": f"Replaced by the grounded template: {n} finding{'s' if n != 1 else ''} not resolved"}[verdict]
+        by = " and ".join({"rules": "the rules", "llm": "the critic model"}.get(c, c) for c in checked)
+        update["trace"] = [step("critic", f"{summary} (checked by {by})", status="ok" if verdict == "pass" else "warn", started=started,
                                 verdict=verdict, issues=[i.model_dump(exclude_none=True) for i in issues] or None,
                                 unsupported_claims=critique.unsupported_claims or None, grounded_by=grounded_by, llm_error=llm_error,
                                 revisions=revisions)]

@@ -47,7 +47,7 @@ NODE_TITLES = {
     "planner": "Planner",
     "recall": "Memory",
     "retriever": "Retriever (MCP tools)",
-    "reconcile": "Reconcile catalog and web",
+    "reconcile": "Reconcile sources",
     "answerer": "Answerer",
     "critic": "Critic",
     "finalize": "Final answer",

@@ -28,7 +28,7 @@ from voiceshop.agents.state import (
     step,
 )
 from voiceshop.guardrails import policy
-from voiceshop.guardrails.output import trim_spoken, word_count
+from voiceshop.guardrails.output import trim_spoken
 from voiceshop.speech.text import COMFORT_SPEED, MAX_SPEED, estimate_seconds, fits, split_sentences
 
 MAX_HISTORY = 12
@@ -91,6 +91,7 @@ def table_row(rank: int, item: CatalogItem | WebItem, why: str, caveat: str | No
     return TableRow(
         rank=rank, ref=item.ref, product=item.title, price=f"{_money(item.price)} at {item.source}" if item.price is not None else "not stated",
         rating=rating, ingredients=stated_about(item, evidence), source=f"Web: {item.source}", citation=item.url, image_url=item.image,
+        support_refs=list(item.claims_elsewhere),
         price_live=item.price, availability=item.availability, why=why, caveat=caveat, url=item.url, live_url=item.url,
     )
 
@@ -266,8 +267,11 @@ def make_finalize_node(deps: Any):  # type: ignore[no-untyped-def]
         grounded_by = "template" if state.get("draft_source") == "template" else "llm+critic"
         answer = build_answer(draft, evidence, constraints, state.get("route"), max_words=max_words, grounded_by=grounded_by,
                               revisions=state.get("revisions") or 0, max_seconds=deps.settings.tts_max_seconds)
-        summary = (f"{len(answer.table)} product(s) in the table, {len(answer.citations)} citation(s), {word_count(answer.spoken)} words "
-                   f"to say (about {estimate_seconds(answer.spoken):.0f} s); grounded by {grounded_by}") if answer.table else "Abstained: nothing suitable in the evidence"
+        by = {"llm+critic": "the model's answer, passed by the critic", "template": "the template answer, built from the evidence",
+              "llm": "the model's answer"}.get(grounded_by or "", grounded_by or "a fixed reply")
+        n_rows, n_cites = len(answer.table), len(answer.citations)
+        summary = (f"{n_rows} product{'s' if n_rows != 1 else ''} in the table, {n_cites} citation{'s' if n_cites != 1 else ''}, about "
+                   f"{estimate_seconds(answer.spoken):.0f} s to say; {by}") if answer.table else "Abstained: nothing suitable in the evidence"
         return {
             "answer": answer,
             **remember(state, answer),

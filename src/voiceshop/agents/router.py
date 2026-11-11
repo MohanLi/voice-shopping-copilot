@@ -11,7 +11,7 @@ import time
 from typing import Any
 
 from voiceshop.agents import rules
-from voiceshop.agents.context import render_history, render_shown
+from voiceshop.agents.context import describe_constraints, render_history, render_shown
 from voiceshop.agents.deps import Deps
 from voiceshop.agents.llm_utils import LLMCallError, call_structured, fallback_note
 from voiceshop.agents.state import (
@@ -27,6 +27,9 @@ from voiceshop.guardrails import policy
 from voiceshop.guardrails.input import screen_input
 from voiceshop.llm.ledger import BudgetExceededError
 from voiceshop.prompts import load_prompt
+
+INTENT_LABEL = {"product_search": "Product request", "follow_up": "Follow-up about what is on screen", "compare": "Comparison of products on screen",
+                "chitchat": "Small talk", "out_of_scope": "Not a shopping request", "unsafe": "Unsafe request"}
 
 # How a reply of the input guard is labelled; a screen shows an emergency or a support line differently from a refusal.
 _GUARD_KIND = {"empty": "clarify", "too_long": "clarify", "emergency": "emergency", "self_harm": "support"}
@@ -106,11 +109,14 @@ def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
         else:
             constraints = earlier or Constraints()
 
-        summary = f"Intent: {route.intent}"
-        if route.constraints.stated():
-            summary += f" | constraints: {route.constraints.stated()}"
+        summary = INTENT_LABEL.get(route.intent, route.intent)
+        said = describe_constraints(route.constraints)
+        if said:
+            summary += f": {said}"
+        if route.refers_to:
+            summary += f" (about item {', '.join(str(p) for p in route.refers_to)} on screen)"
         if route.safety != "ok":
-            summary += f" | safety: {route.safety} ({route.safety_reason or 'policy'})"
+            summary += f". Safety: {route.safety} ({route.safety_reason or 'policy'})"
         return {
             "route": route,
             "session_constraints": constraints if route.intent in ("product_search", "follow_up", "compare") else earlier,

@@ -59,6 +59,28 @@ def render_tools(specs: list[ToolSpec]) -> str:
     return "\n\n".join(blocks)
 
 
+def describe_constraints(constraints: Constraints | None) -> str:
+    """Constraints as a person would say them, for the step log: "wooden puzzle, up to $20, for age 3, made of wood"."""
+    if constraints is None:
+        return ""
+    c = constraints
+    age = f"{c.age_years:g}" if c.age_years is not None else ""
+    parts = [
+        c.product or "",
+        f"up to ${c.budget_max:g}" if c.budget_max is not None else "",
+        f"from ${c.budget_min:g}" if c.budget_min is not None else "",
+        f"for age {age}" if age else "",
+        f"brand {c.brand}" if c.brand else "",
+        f"category {c.category}" if c.category else "",
+        f"made of {', '.join(c.materials)}" if c.materials else "",
+        f"must be {', '.join(c.must_have)}" if c.must_have else "",
+        f"without {', '.join(c.avoid)}" if c.avoid else "",
+        "wants the current price or availability" if c.wants_current_info else "",
+        {"cheapest": "cheapest first", "highest_rated": "highest rated first"}.get(c.sort, ""),
+    ]
+    return ", ".join(p for p in parts if p)
+
+
 def render_constraints(constraints: Constraints | None) -> str:
     stated = constraints.stated() if constraints else {}
     if not stated:

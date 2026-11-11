@@ -110,6 +110,25 @@ def normalise_plan(plan: Plan, route: RouteDecision, constraints: Constraints, u
     return plan.model_copy(update={"strategy": strategy, "steps": steps[:MAX_STEPS], "verify_current_price": verify}), notes
 
 
+STRATEGY_LABEL = {
+    "catalog_only": "Search the private catalog",
+    "catalog_then_web": "Search the private catalog, then the live web",
+    "web_only": "Search the live web (the catalog does not carry this)",
+    "from_memory": "Answer from the products already on screen",
+    "clarify": "Ask a clarifying question",
+}
+
+
+def describe_step(plan_step: PlanStep) -> str:
+    """One planned call as a person would read it: rag.search "wooden puzzle" (price_max 20, age_years 3)."""
+    limits: list[str] = []
+    if plan_step.tool == "rag.search" and plan_step.filters is not None and not plan_step.filters.is_empty():
+        limits = [f"{key} {value if not isinstance(value, list) else ', '.join(map(str, value))}" for key, value in plan_step.filters.describe().items()]
+    elif plan_step.tool == "web.search":
+        limits = [f"{plan_step.kind} results"] + ([f"price_max {plan_step.price_max:g}"] if plan_step.price_max else []) + ([f"site {plan_step.site}"] if plan_step.site else [])
+    return f'{plan_step.tool} "{plan_step.query}"' + (f" ({'; '.join(limits)})" if limits else "")
+
+
 def make_planner_node(deps: Deps):  # type: ignore[no-untyped-def]
     async def planner_node(state: TurnState) -> dict[str, Any]:
         started = time.perf_counter()
@@ -140,8 +159,13 @@ def make_planner_node(deps: Deps):  # type: ignore[no-untyped-def]
             plan, meta, fallback = rules.plan(route, constraints, text, shown, web_available=deps.web_available), {"model": "rules"}, fallback_note(exc)
         plan, notes = normalise_plan(plan, route, constraints, text, shown, deps)
 
-        calls = [f"{s.tool}({s.query!r}" + (f", filters={s.filters.describe()}" if s.filters and not s.filters.is_empty() else "") + ")" for s in plan.steps]
-        summary = f"Strategy: {plan.strategy}" + (f" | first calls: {'; '.join(calls)}" if calls else "") + (" | then verify current price" if plan.verify_current_price else "")
+        summary = STRATEGY_LABEL.get(plan.strategy, plan.strategy)
+        if plan.steps:
+            summary += ". First: " + "; ".join(describe_step(s) for s in plan.steps)
+        if plan.verify_current_price:
+            summary += ". Then check current prices on the live web"
+        if plan.strategy == "clarify" and plan.clarifying_question:
+            summary += f": {plan.clarifying_question}"
         update: dict[str, Any] = {
             "plan": plan,
             "trace": [step("planner", summary, status="warn" if fallback else "ok", started=started, strategy=plan.strategy, reason=plan.reason,

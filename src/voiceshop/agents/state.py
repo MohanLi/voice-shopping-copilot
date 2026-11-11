@@ -256,6 +256,7 @@ class TableRow(BaseModel):
     image_url: str | None = None
     doc_id: str | None = None
     live_url: str | None = None
+    support_refs: list[str] = Field(default_factory=list, description="Citations (refs) of the pages whose statements about this product are shown")
 
 
 class Citation(BaseModel):

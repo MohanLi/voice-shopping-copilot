@@ -20,6 +20,7 @@ from itertools import combinations
 from voiceshop.agents.state import AnswerDraft, CatalogItem, Constraints, Evidence, Issue, WebItem
 from voiceshop.guardrails import policy
 from voiceshop.mcp_server.normalize import strip_injections
+from voiceshop.speech.text import estimate_seconds, split_sentences
 
 _DOLLARS = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)")
 _WORDS = re.compile(r"[A-Za-z0-9$%'’.-]+")
@@ -128,8 +129,9 @@ def known_prices(item: CatalogItem | WebItem, evidence: Evidence) -> list[float]
     return prices
 
 
-def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints, *, max_words: int = 42) -> list[Issue]:
-    """All rule-based findings for one draft."""
+def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints, *, max_words: int = 42,
+                max_seconds: float | None = None) -> list[Issue]:
+    """All rule-based findings for one draft. ``max_seconds`` bounds how long the first spoken sentence may take to say."""
     issues: list[Issue] = []
     items: list[CatalogItem | WebItem] = []
     seen: set[str] = set()
@@ -241,6 +243,12 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
         else:
             issues.append(Issue(code="spoken_trimmed", severity="info", where="spoken",
                                 message=f"{words} words written, {kept} kept: trailing sentence(s) dropped to fit the spoken budget."))
+    first = (split_sentences(draft.spoken) or [""])[0]
+    if max_seconds is not None and estimate_seconds(first) > max_seconds + 1.0 and not any(i.code == "spoken_too_long" for i in issues):
+        # Words on paper are not seconds in the ear: "$27.99" takes as long to say as seven words.
+        issues.append(Issue(code="spoken_too_long", severity="revise", where="spoken",
+                            message=f"The spoken sentence takes about {estimate_seconds(first):.0f} seconds to say (a price counts as five words); "
+                                    f"it has to fit in {max_seconds:.0f}. Keep the name, one or two facts and the price."))
     bad = _UNSPEAKABLE.search(draft.spoken)
     if bad:
         issues.append(Issue(code="spoken_not_speakable", severity="revise", where="spoken",
