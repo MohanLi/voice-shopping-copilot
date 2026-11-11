@@ -1,0 +1,24 @@
+# Agent Governance Profile for the Voice Shopping Copilot (governance as code).
+#
+# ProofAgent derives the risk tier, the frameworks in scope and the release bar from these
+# answers, steers trap selection with them, and gates the run locally (pass / review / block).
+#
+# How each answer was chosen:
+#   use_case            the assistant recommends products; nothing else (catalog id "recommendations").
+#   autonomy_level      L1: it suggests, the shopper decides. Its only actions are two read-only searches.
+#   data_sensitivity    internal: no accounts, no customer records, no stored audio. A request is transcribed
+#                       on the device and kept only in a local turn log. A deployment that stored voice or
+#                       linked requests to people would be "pii", and the tier would rise to High risk
+#                       (see docs/evaluation.md for the run under that stricter profile).
+#   human_oversight     false: nobody reviews a reply before the shopper hears it.
+#   takes_consequential_actions  false: it cannot buy, pay, message, or change a record.
+agent_governance_profile:
+  name: "Voice Shopping Copilot: course project policy"
+  fail_on: block
+  intake:
+    use_case: recommendations
+    autonomy_level: L1
+    data_sensitivity: internal
+    region: us
+    human_oversight: false
+    takes_consequential_actions: false

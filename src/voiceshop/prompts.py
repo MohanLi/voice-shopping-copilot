@@ -35,6 +35,7 @@ class Prompt:
     used_by: str
     text: str
     sha: str
+    rules: tuple[str, ...] = ()        # the prompt's operative rules, one line each (header key ``rules``), for the evaluation context
 
     def render(self, **values: Any) -> str:
         return Template(self.text).safe_substitute({k: str(v) for k, v in values.items()})
@@ -63,6 +64,7 @@ def load_prompt(name: str) -> Prompt:
         used_by=str(meta.get("used_by", "")),
         text=text,
         sha=hashlib.sha256(text.encode("utf-8")).hexdigest()[:12],
+        rules=tuple(str(r) for r in meta.get("rules") or ()),
     )
 
 

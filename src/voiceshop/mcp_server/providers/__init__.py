@@ -6,14 +6,17 @@ from pathlib import Path
 
 from voiceshop.config import Settings
 from voiceshop.mcp_server.providers.base import (
+    PlantedFailure,
     ProviderError,
     ProviderNotConfiguredError,
+    ProviderSkip,
     SearchKind,
     SearchProvider,
 )
 from voiceshop.mcp_server.providers.others import (
     AnthropicSearchProvider,
     BraveProvider,
+    FaultProvider,
     FixtureProvider,
     TavilyProvider,
 )
@@ -47,17 +50,27 @@ def build_provider(name: str, settings: Settings) -> SearchProvider:
 
 
 def build_chain(settings: Settings) -> list[SearchProvider]:
-    """The primary provider followed by the configured fallbacks (``WEB_SEARCH_PROVIDER`` / ``WEB_SEARCH_FALLBACKS``)."""
-    return [build_provider(name, settings) for name in settings.search_provider_chain]
+    """The primary provider followed by the configured fallbacks (``WEB_SEARCH_PROVIDER`` / ``WEB_SEARCH_FALLBACKS``).
+
+    With ``WEB_SEARCH_FAULTS`` set (evaluation only) the fault provider goes first: it answers the
+    queries its file names and passes every other query on.
+    """
+    chain: list[SearchProvider] = [build_provider(name, settings) for name in settings.search_provider_chain]
+    if settings.web_search_faults is not None and chain:
+        chain.insert(0, FaultProvider(settings.web_search_faults))
+    return chain
 
 
 __all__ = [
     "PROVIDER_NAMES",
     "AnthropicSearchProvider",
     "BraveProvider",
+    "FaultProvider",
     "FixtureProvider",
+    "PlantedFailure",
     "ProviderError",
     "ProviderNotConfiguredError",
+    "ProviderSkip",
     "SearchKind",
     "SearchProvider",
     "SerperProvider",

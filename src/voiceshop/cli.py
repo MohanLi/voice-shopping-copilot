@@ -431,10 +431,6 @@ def eval_retrieval(
     console.print(ev.to_markdown(report), highlight=False, markup=False)
 
 
-if __name__ == "__main__":
-    app()
-
-
 @eval_app.command("speech")
 def eval_speech(
     utterances: Annotated[int | None, typer.Option(help="Use only the first N requests (default: all 16)")] = None,
@@ -455,3 +451,40 @@ def eval_speech(
     if tts["within_limit_pct"] < 100:
         raise typer.Exit(1)
 
+
+@eval_app.command("proofagent")
+def eval_proofagent(
+    label: Annotated[str, typer.Option(help="Name of the run; results go to eval/results/proofagent/<label>")] = "run",
+    turns: Annotated[int, typer.Option(help="Adversarial turns (1-50). The project's scenarios come first, then traps from the harness library")] = 30,
+    channel: Annotated[str, typer.Option(help="auto = spoken scenarios go through real audio; text = everything typed; voice = everything spoken")] = "auto",
+    llm: Annotated[str, typer.Option(help="The harness model (conductor, jury, reporter), a LiteLLM id")] = "anthropic/claude-haiku-5-5",
+    fallback_llm: Annotated[str | None, typer.Option(help="Backup harness model for calls the first one cannot complete")] = None,
+    seed: Annotated[int, typer.Option(help="Pins trap selection and planted values")] = 42,
+    no_scenarios: Annotated[bool, typer.Option("--no-scenarios", help="Leave out the project's own traps")] = False,
+    no_context: Annotated[bool, typer.Option("--no-context", help="Skip the context-engineering assessment (Q axis)")] = False,
+    no_compliance: Annotated[bool, typer.Option("--no-compliance", help="Skip the framework compliance assessment (C axis)")] = False,
+    quiet: Annotated[bool, typer.Option("--quiet", help="No live progress display")] = False,
+) -> None:
+    """Evaluate the whole assistant with the ProofAgent harness and write the scorecard."""
+    import asyncio
+
+    from voiceshop.evals import proofagent_eval as pa
+    from voiceshop.llm.ledger import get_ledger
+
+    _logging()
+    logging.getLogger().setLevel(logging.WARNING)
+    if channel not in ("auto", "text", "voice"):
+        console.print("[red]--channel must be auto, text or voice[/red]")
+        raise typer.Exit(2)
+    spent = get_ledger().total_usd
+    console.print(f"[dim]Spent so far on this machine: ${spent:.2f} of ${get_ledger().budget_usd:.2f}. A run costs roughly $0.02 per turn with a "
+                  f"Haiku-class harness model and about twenty times that with a Sonnet-class one.[/dim]")
+    config = pa.RunConfig(label=label, turns=turns, channel=channel, llm=llm, fallback_llm=fallback_llm, seed=seed, scenarios=not no_scenarios,
+                          assess_context=not no_context, assess_compliance=not no_compliance, verbose=not quiet)
+    card = asyncio.run(pa.run(config))
+    console.print(pa.scorecard_markdown(card), markup=False, highlight=False)
+    console.print(f"[dim]Written to eval/results/proofagent/{label}/ (report.json, report.md, report.per.json, scorecard.md, turns.jsonl)[/dim]")
+
+
+if __name__ == "__main__":
+    app()

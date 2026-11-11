@@ -65,6 +65,8 @@ class Settings(BaseSettings):
     brave_api_key: SecretStr | None = None
     web_search_timeout_s: float = 12.0
     web_search_country: str = "us"
+    # Evaluation only: a file of planted faulty results (see mcp_server.providers.FaultProvider). Unset in normal use.
+    web_search_faults: Path | None = None
     # Comma-separated host suffixes. Empty allow-list = any host not on the block-list.
     web_allowed_domains: str = ""
     web_blocked_domains: str = "pinterest.com,facebook.com,instagram.com,tiktok.com,reddit.com,quora.com"

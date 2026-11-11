@@ -24,8 +24,10 @@ from voiceshop.config import Settings
 from voiceshop.mcp_server.controls import Clock, RateLimitedError, RateLimiter, TTLCache
 from voiceshop.mcp_server.normalize import clean_site, hit_allowed, host_matches
 from voiceshop.mcp_server.providers import (
+    PlantedFailure,
     ProviderError,
     ProviderNotConfiguredError,
+    ProviderSkip,
     SearchKind,
     SearchProvider,
     build_chain,
@@ -172,9 +174,13 @@ class WebSearchService:
         errors: list[str] = []
         if not self.providers:
             raise WebSearchUnavailableError("no web search provider is configured (set WEB_SEARCH_PROVIDER and its API key)")
-        for index, provider in enumerate(self.providers):
+        for provider in self.providers:
             try:
                 hits, used_kind = await self._ask(provider, query, kind, site)
+            except ProviderSkip:                            # this provider only answers some queries (evaluation faults)
+                continue
+            except PlantedFailure as exc:                   # evaluation: the tool has to fail, so no fallback is tried
+                raise WebSearchUnavailableError(f"web search is unavailable: {exc}") from exc
             except ProviderNotConfiguredError as exc:
                 errors.append(str(exc))
                 continue
@@ -185,7 +191,7 @@ class WebSearchService:
             removed = len(hits) - len(kept)
             kept = dedupe(kept)
             notes: list[str] = []
-            if index > 0:
+            if errors:
                 notes.append(f"Answered by the fallback provider {provider.name} ({'; '.join(errors)}).")
             if used_kind != kind:
                 notes.append("No shopping listings were found, so these are general web results; a price is present only where the page text states one.")

@@ -12,8 +12,10 @@ import httpx
 
 from voiceshop.mcp_server.normalize import make_hit
 from voiceshop.mcp_server.providers.base import (
+    PlantedFailure,
     ProviderError,
     ProviderNotConfiguredError,
+    ProviderSkip,
     SearchKind,
     with_site,
 )
@@ -197,3 +199,43 @@ class FixtureProvider:
                 hits = [make_hit(**item) for item in wanted]
                 return [h for h in hits if h is not None][: max_results * 2]
         return []
+
+
+class FaultProvider:
+    """Planted faulty results for evaluation (``WEB_SEARCH_FAULTS=<file>``): test instrumentation, never a data source.
+
+    Evaluating "incorrect tool results" needs a tool that returns something wrong on purpose. The
+    fault file maps a lower-cased query substring to what the search API should appear to return
+    for it: results with an instruction addressed to the assistant, a nonsense price, a recall
+    notice, unrelated products - or an error. Every other query is passed to the next provider
+    untouched. Planted results go through the same normalisation and sanitising as real ones and
+    are reported with the provider name ``fault-injection``, so they can never be mistaken for a
+    live result in a log or on screen.
+
+        {"glimmer putty": {"shopping": [{"title": ..., "url": ..., "price": "$7.99"}], "web": [...]},
+         "storm glider":  {"error": "HTTP 503 from the search API"}}
+    """
+
+    name = "fault-injection"
+
+    def __init__(self, path: Any) -> None:
+        self._path = path
+        self._data: dict[str, dict[str, Any]] | None = None
+        self.calls: list[dict[str, Any]] = []
+
+    def _load(self) -> dict[str, dict[str, Any]]:
+        if self._data is None:
+            raw = json.loads(self._path.read_text(encoding="utf-8")) if self._path and self._path.exists() else {}
+            self._data = {str(k).lower(): v for k, v in raw.items() if not str(k).startswith("_") and isinstance(v, dict)}
+        return self._data
+
+    async def search(self, query: str, *, max_results: int, kind: SearchKind, site: str | None) -> list[WebHit]:
+        low = query.lower()
+        for key, fault in self._load().items():
+            if key in low:
+                self.calls.append({"query": query, "kind": kind, "fault": key})
+                if fault.get("error"):
+                    raise PlantedFailure(self.name, str(fault["error"]))
+                hits = [make_hit(**item) for item in fault.get(kind) or []]
+                return [h for h in hits if h is not None][: max_results * 2]
+        raise ProviderSkip(self.name)

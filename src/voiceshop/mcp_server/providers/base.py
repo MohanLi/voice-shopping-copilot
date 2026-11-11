@@ -28,6 +28,17 @@ class ProviderNotConfiguredError(ProviderError):
     """No API key for this provider."""
 
 
+class ProviderSkip(ProviderError):
+    """This provider has nothing to say about this query; ask the next one in the chain."""
+
+    def __init__(self, provider: str) -> None:
+        super().__init__(provider, "no answer for this query")
+
+
+class PlantedFailure(ProviderError):
+    """Evaluation only: the search must fail for this query, so no fallback provider is asked."""
+
+
 class SearchProvider(Protocol):
     name: str
 
