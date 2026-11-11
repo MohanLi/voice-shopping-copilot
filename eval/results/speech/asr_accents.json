@@ -1,0 +1,178 @@
+{
+ "created": "2026-11-11T14:41:26",
+ "asr_model": "small.en",
+ "utterances": 10,
+ "clips": 295,
+ "voices": [
+  "af_heart",
+  "am_michael",
+  "bf_emma",
+  "bm_george",
+  "ef_dora",
+  "em_alex",
+  "ff_siwis",
+  "hf_alpha",
+  "hm_omega",
+  "if_sara",
+  "im_nicola",
+  "jf_alpha",
+  "jm_kumo",
+  "pf_dora",
+  "pm_alex",
+  "zf_xiaobei",
+  "zm_yunjian"
+ ],
+ "overall_clean": {
+  "clips": 170,
+  "wer_pct": 0.7,
+  "budget_ok_pct": 100.0,
+  "age_ok_pct": 100.0,
+  "brand_ok_pct": 100.0,
+  "usable_pct": 100.0,
+  "confidence": 0.826
+ },
+ "by_group": {
+  "American English": {
+   "clips": 20,
+   "wer_pct": 0.0,
+   "budget_ok_pct": 100.0,
+   "age_ok_pct": 100.0,
+   "brand_ok_pct": 100.0,
+   "usable_pct": 100.0,
+   "confidence": 0.817
+  },
+  "British English": {
+   "clips": 20,
+   "wer_pct": 0.3,
+   "budget_ok_pct": 100.0,
+   "age_ok_pct": 100.0,
+   "brand_ok_pct": 100.0,
+   "usable_pct": 100.0,
+   "confidence": 0.832
+  },
+  "Spanish-accented": {
+   "clips": 20,
+   "wer_pct": 0.0,
+   "budget_ok_pct": 100.0,
+   "age_ok_pct": 100.0,
+   "brand_ok_pct": 100.0,
+   "usable_pct": 100.0,
+   "confidence": 0.834
+  },
+  "French-accented": {
+   "clips": 10,
+   "wer_pct": 3.9,
+   "budget_ok_pct": 100.0,
+   "age_ok_pct": 100.0,
+   "brand_ok_pct": 100.0,
+   "usable_pct": 100.0,
+   "confidence": 0.818
+  },
+  "Hindi-accented": {
+   "clips": 20,
+   "wer_pct": 0.7,
+   "budget_ok_pct": 100.0,
+   "age_ok_pct": 100.0,
+   "brand_ok_pct": 100.0,
+   "usable_pct": 100.0,
+   "confidence": 0.822
+  },
+  "Italian-accented": {
+   "clips": 20,
+   "wer_pct": 0.3,
+   "budget_ok_pct": 100.0,
+   "age_ok_pct": 100.0,
+   "brand_ok_pct": 100.0,
+   "usable_pct": 100.0,
+   "confidence": 0.833
+  },
+  "Japanese-accented": {
+   "clips": 20,
+   "wer_pct": 0.8,
+   "budget_ok_pct": 100.0,
+   "age_ok_pct": 100.0,
+   "brand_ok_pct": 100.0,
+   "usable_pct": 100.0,
+   "confidence": 0.821
+  },
+  "Portuguese-accented": {
+   "clips": 20,
+   "wer_pct": 0.0,
+   "budget_ok_pct": 100.0,
+   "age_ok_pct": 100.0,
+   "brand_ok_pct": 100.0,
+   "usable_pct": 100.0,
+   "confidence": 0.832
+  },
+  "Mandarin-accented": {
+   "clips": 20,
+   "wer_pct": 1.9,
+   "budget_ok_pct": 100.0,
+   "age_ok_pct": 100.0,
+   "brand_ok_pct": 100.0,
+   "usable_pct": 100.0,
+   "confidence": 0.821
+  }
+ },
+ "conditions": {
+  "clean": {
+   "clips": 20,
+   "wer_pct": 0.0,
+   "budget_ok_pct": 100.0,
+   "age_ok_pct": 100.0,
+   "brand_ok_pct": 100.0,
+   "usable_pct": 100.0,
+   "confidence": 0.817
+  },
+  "fast (1.25x)": {
+   "clips": 20,
+   "wer_pct": 0.4,
+   "budget_ok_pct": 100.0,
+   "age_ok_pct": 100.0,
+   "brand_ok_pct": 100.0,
+   "usable_pct": 100.0,
+   "confidence": 0.813
+  },
+  "noisy (10 dB SNR)": {
+   "clips": 20,
+   "wer_pct": 0.6,
+   "budget_ok_pct": 100.0,
+   "age_ok_pct": 100.0,
+   "brand_ok_pct": 100.0,
+   "usable_pct": 100.0,
+   "confidence": 0.786
+  }
+ },
+ "brand_hint": {
+  "with the brand hint": {
+   "clips": 85,
+   "wer_pct": 0.7,
+   "budget_ok_pct": 100.0,
+   "age_ok_pct": 100.0,
+   "brand_ok_pct": 100.0,
+   "usable_pct": 100.0,
+   "confidence": 0.833
+  },
+  "without it": {
+   "clips": 85,
+   "wer_pct": 2.3,
+   "budget_ok_pct": 100.0,
+   "age_ok_pct": 100.0,
+   "brand_ok_pct": 94.1,
+   "usable_pct": 100.0,
+   "confidence": 0.783
+  }
+ },
+ "real_time_factor": 0.427,
+ "seconds": 491.3,
+ "worst": [
+  {
+   "group": "Mandarin-accented",
+   "voice": "zf_xiaobei",
+   "condition": "no brand hint",
+   "id": "u06",
+   "heard": "Xiaomi Playdoh sets under $12.",
+   "wer": 0.5
+  }
+ ]
+}

@@ -1,5 +1,5 @@
 {
- "created": "2026-11-11T03:14:57",
+ "created": "2026-11-11T14:31:51",
  "queries": 600,
  "machine": "Darwin arm64, 12 CPUs, Python 3.12.14",
  "query_types": [
@@ -10,7 +10,7 @@
  "queries_with_budget": 378,
  "queries_with_age": 234,
  "index": {
-  "created": "2026-11-11T03:06:01",
+  "created": "2026-11-11T14:22:56",
   "n_docs": 9741,
   "embedding_backend": "fastembed",
   "embedding_model": "BAAI/bge-small-en-v1.5",
@@ -21,7 +21,7 @@
   "products_sha256": "527e25147b4a236fb0c19d254284c0c6804b581ff3d04a5095be7490170dc3f0",
   "categories": 1147,
   "brands": 2204,
-  "build_seconds": 6.6
+  "build_seconds": 6.2
  },
  "reranker": "Xenova/ms-marco-MiniLM-L-6-v2",
  "variants": {
@@ -152,8 +152,8 @@
    "mrr@10": 0.763,
    "in_budget@3": 77.6,
    "age_ok@3": 77.2,
-   "latency_ms_p50": 11.7,
-   "latency_ms_p95": 13.1,
+   "latency_ms_p50": 11.9,
+   "latency_ms_p95": 13.5,
    "by_type": {
     "brand": {
      "hit@3": 99.5,
@@ -263,27 +263,27 @@
   },
   "hybrid (rrf)": {
    "n_queries": 600,
-   "hit@1": 81.0,
+   "hit@1": 80.5,
    "hit@3": 90.3,
    "hit@5": 94.0,
-   "hit@10": 95.7,
-   "mrr@10": 0.861,
-   "in_budget@3": 78.2,
+   "hit@10": 95.8,
+   "mrr@10": 0.859,
+   "in_budget@3": 78.3,
    "age_ok@3": 79.6,
-   "latency_ms_p50": 11.9,
-   "latency_ms_p95": 13.2,
+   "latency_ms_p50": 12.0,
+   "latency_ms_p95": 13.4,
    "by_type": {
     "brand": {
      "hit@3": 100.0,
-     "mrr@10": 0.994
+     "mrr@10": 0.989
     },
     "descriptive": {
      "hit@3": 85.0,
-     "mrr@10": 0.783
+     "mrr@10": 0.786
     },
     "spoken": {
      "hit@3": 86.0,
-     "mrr@10": 0.806
+     "mrr@10": 0.802
     }
    },
    "example_misses": [
@@ -388,8 +388,8 @@
    "mrr@10": 0.807,
    "in_budget@3": 100.0,
    "age_ok@3": 100.0,
-   "latency_ms_p50": 57.6,
-   "latency_ms_p95": 133.0,
+   "latency_ms_p50": 57.1,
+   "latency_ms_p95": 131.9,
    "by_type": {
     "brand": {
      "hit@3": 99.5,
@@ -506,16 +506,16 @@
    "mrr@10": 0.881,
    "in_budget@3": 100.0,
    "age_ok@3": 100.0,
-   "latency_ms_p50": 58.0,
-   "latency_ms_p95": 134.0,
+   "latency_ms_p50": 57.5,
+   "latency_ms_p95": 132.6,
    "by_type": {
     "brand": {
      "hit@3": 100.0,
-     "mrr@10": 0.994
+     "mrr@10": 0.989
     },
     "descriptive": {
      "hit@3": 88.0,
-     "mrr@10": 0.816
+     "mrr@10": 0.821
     },
     "spoken": {
      "hit@3": 88.5,
@@ -624,8 +624,8 @@
    "mrr@10": 0.876,
    "in_budget@3": 100.0,
    "age_ok@3": 100.0,
-   "latency_ms_p50": 543.7,
-   "latency_ms_p95": 658.2,
+   "latency_ms_p50": 541.1,
+   "latency_ms_p95": 649.8,
    "by_type": {
     "brand": {
      "hit@3": 99.0,
@@ -735,27 +735,27 @@
   },
   "hybrid + filters + re-rank top 10 (fused) = default": {
    "n_queries": 600,
-   "hit@1": 84.5,
-   "hit@3": 93.3,
+   "hit@1": 83.8,
+   "hit@3": 93.7,
    "hit@5": 95.5,
    "hit@10": 96.7,
-   "mrr@10": 0.889,
+   "mrr@10": 0.886,
    "in_budget@3": 100.0,
    "age_ok@3": 100.0,
-   "latency_ms_p50": 165.5,
-   "latency_ms_p95": 255.1,
+   "latency_ms_p50": 164.3,
+   "latency_ms_p95": 250.8,
    "by_type": {
     "brand": {
      "hit@3": 100.0,
-     "mrr@10": 0.995
+     "mrr@10": 0.988
     },
     "descriptive": {
-     "hit@3": 88.5,
-     "mrr@10": 0.83
+     "hit@3": 89.0,
+     "mrr@10": 0.829
     },
     "spoken": {
-     "hit@3": 91.5,
-     "mrr@10": 0.842
+     "hit@3": 92.0,
+     "mrr@10": 0.843
     }
    },
    "example_misses": [
@@ -805,7 +805,7 @@
      "qid": "q091-spoken",
      "query": "um so i want like peel and stick wall stickers of the minion characters for my kid's room, the kind i can take off later without leaving marks you know",
      "target": "RoomMates Despicable Me 2 Peel And Stick Wall Decals",
-     "top1": "RoomMates Despicable Me 2 Minions Giant Peel And Stick Giant Wall Decals"
+     "top1": "Wallmonkeys WM22946 Cute Baby Yellow and Brown Cartoon Tiger Peel and Stick Wall Decals (3"
     },
     {
      "qid": "q097-descriptive",
@@ -835,7 +835,7 @@
      "qid": "q116-descriptive",
      "query": "I want a 1000 piece jigsaw puzzle with a cozy countryside scene of a cat relaxing, and it needs to cost under twenty dollars.",
      "target": "Buffalo Games - Charles Wysocki - Max in The Adirondacks - 1000 Piece Jigsaw Puzzle",
-     "top1": "White Mountain Puzzles Readers Paradise - 1000 Piece Jigsaw Puzzle"
+     "top1": "White Mountain Puzzles Home Sweet Home - 1000Piece Jigsaw Puzzle"
     },
     {
      "qid": "q116-spoken",
