@@ -94,11 +94,14 @@ class SearchEngine:
         manifest: dict[str, Any] | None = None,
         rrf_k: int = 60,
         candidates: int = 40,
+        rerank_top_n: int = 10,
+        rerank_weight: float = 1.0,
     ) -> None:
         self.store, self.lexical, self.payloads = store, lexical, payloads
         self.embedder, self.reranker = embedder, reranker
         self.manifest = manifest or {}
         self.rrf_k, self.n_candidates = rrf_k, candidates
+        self.rerank_top_n, self.rerank_weight = rerank_top_n, rerank_weight
         self.filter_index = FilterIndex(payloads)
         self.vocab = Vocabulary.from_payloads(payloads)
 
@@ -130,6 +133,8 @@ class SearchEngine:
             manifest=manifest,
             rrf_k=s.rrf_k,
             candidates=s.retrieval_candidates,
+            rerank_top_n=s.rerank_top_n,
+            rerank_weight=s.rerank_weight,
         )
 
     @classmethod
@@ -171,9 +176,20 @@ class SearchEngine:
         *,
         mode: SearchMode = "hybrid",
         rerank: bool | None = None,
+        rerank_mode: Literal["fuse", "replace"] = "fuse",
+        rerank_top_n: int | None = None,
         relax: bool = True,
         dedupe: bool = True,
     ) -> SearchResponse:
+        """Search the catalog.
+
+        Re-ranking: the cross-encoder scores the first ``rerank_top_n`` candidates. With ``rerank_mode="fuse"``
+        (the default) its ranking is combined with the retrieval ranking by reciprocal-rank fusion, so it
+        acts as one more voter; ``"replace"`` orders by its score alone. The benchmark in
+        ``eval/results/retrieval`` shows why fusing a short list is the default: the same accuracy as
+        re-ranking everything at a quarter of the latency. Its top score is also the "is anything here
+        relevant at all" signal reported as ``best_match_score``.
+        """
         t0 = time.perf_counter()
         timings: dict[str, float] = {}
         filters = filters or SearchFilters()
@@ -201,12 +217,17 @@ class SearchEngine:
         ordered = fused
         if use_rerank and fused:
             t = time.perf_counter()
-            pool = fused[:n]
+            head = fused[: max(1, rerank_top_n or self.rerank_top_n)]
             assert self.reranker is not None
-            values = self.reranker.score(query, [rerank_text(self.payloads[d]) for d in pool])
-            rerank_scores = dict(zip(pool, values, strict=True))
-            ordered = sorted(pool, key=lambda d: -rerank_scores[d])
-            scores = rerank_scores
+            values = self.reranker.score(query, [rerank_text(self.payloads[d]) for d in head])
+            rerank_scores = dict(zip(head, (float(v) for v in values), strict=True))
+            by_score = sorted(head, key=lambda d: -rerank_scores[d])
+            if rerank_mode == "replace":
+                new_head = by_score
+            else:
+                new_head = [doc for doc, _ in reciprocal_rank_fusion([head, by_score], k=self.rrf_k, weights=[1.0, self.rerank_weight])]
+            ordered = [*new_head, *fused[len(head):]]
+            scores = {doc: 1.0 / (rank + 1) for rank, doc in enumerate(ordered)}
             timings["rerank"] = (time.perf_counter() - t) * 1000
 
         results: list[docs.SearchHit] = []

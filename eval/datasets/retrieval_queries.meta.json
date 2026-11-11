@@ -1,0 +1,11 @@
+{
+ "products": 200,
+ "queries": 600,
+ "with_budget": 378,
+ "with_age": 234,
+ "cost_usd": 0.029,
+ "seconds": 28.9,
+ "model": "anthropic:claude-haiku-5-5",
+ "prompt_version": "1",
+ "seed": 7
+}

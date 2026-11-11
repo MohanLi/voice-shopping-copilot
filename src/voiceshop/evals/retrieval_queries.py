@@ -102,14 +102,19 @@ def choose_constraints(row: dict[str, Any], rng: random.Random) -> tuple[dict[st
         lo = int(age_min)
         hi = int(age_max) if age_max is not None and not (isinstance(age_max, float) and math.isnan(age_max)) else lo + 48
         hi = min(hi, lo + 48, 16 * 12)
-        if lo < 24:
+        # An age under three is only a fair request for products the under-three rule admits
+        # (listing explicitly for babies or toddlers); for the others the request asks for three or older.
+        under_three_ok = bool(row.get("for_under_3"))
+        if lo < 24 and under_three_ok:
             months = rng.choice([m for m in (6, 9, 12, 18) if lo <= m <= max(hi, lo)] or [max(lo, 1)])
             filters["age_years"] = round(months / 12, 2)
             mention.append(f"it is for a {months} month old" if months < 24 else f"it is for a {months // 12} year old")
         else:
-            years = rng.randint(math.ceil(lo / 12), max(math.ceil(lo / 12), hi // 12))
-            filters["age_years"] = float(years)
-            mention.append(f"it is for a {years} year old")
+            start = lo if under_three_ok else max(lo, 36)
+            if hi >= start:
+                years = rng.randint(math.ceil(start / 12), max(math.ceil(start / 12), hi // 12))
+                filters["age_years"] = float(years)
+                mention.append(f"it is for a {years} year old")
     return filters, mention
 
 

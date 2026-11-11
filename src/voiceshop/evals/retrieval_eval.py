@@ -36,10 +36,11 @@ VARIANTS: dict[str, dict[str, Any]] = {
     "bm25": {"mode": "lexical", "rerank": False, "filters": False},
     "dense": {"mode": "dense", "rerank": False, "filters": False},
     "hybrid (rrf)": {"mode": "hybrid", "rerank": False, "filters": False},
-    "hybrid + rerank": {"mode": "hybrid", "rerank": True, "filters": False},
     "dense + filters": {"mode": "dense", "rerank": False, "filters": True},
     "hybrid + filters": {"mode": "hybrid", "rerank": False, "filters": True},
-    "hybrid + filters + rerank": {"mode": "hybrid", "rerank": True, "filters": True},
+    # The cross-encoder used two ways: as the only judge of all 40 candidates, or as one more voter on the first 10.
+    "hybrid + filters + re-rank all 40 (replace)": {"mode": "hybrid", "rerank": True, "filters": True, "rerank_mode": "replace", "rerank_top_n": 40, "slow": True},
+    "hybrid + filters + re-rank top 10 (fused) = default": {"mode": "hybrid", "rerank": True, "filters": True, "rerank_mode": "fuse", "rerank_top_n": 10},
 }
 
 
@@ -55,7 +56,7 @@ def _pct(values: list[float]) -> float:
     return round(100.0 * sum(values) / len(values), 1) if values else float("nan")
 
 
-def score_variant(engine: SearchEngine, queries: list[dict[str, Any]], *, mode: str, rerank: bool, filters: bool) -> dict[str, Any]:
+def score_variant(engine: SearchEngine, queries: list[dict[str, Any]], *, mode: str, rerank: bool, filters: bool, **search_kwargs: Any) -> dict[str, Any]:
     hits: dict[int, list[float]] = {k: [] for k in KS}
     rr: list[float] = []
     in_budget: list[float] = []
@@ -66,7 +67,7 @@ def score_variant(engine: SearchEngine, queries: list[dict[str, Any]], *, mode: 
     for q in queries:
         gold = SearchFilters(**q["filters"]) if filters and q["filters"] else None
         t = time.perf_counter()
-        res = engine.search(q["query"], gold, top_k=10, mode=mode, rerank=rerank, relax=False, dedupe=False)  # type: ignore[arg-type]
+        res = engine.search(q["query"], gold, top_k=10, mode=mode, rerank=rerank, relax=False, dedupe=False, **search_kwargs)  # type: ignore[arg-type]
         latency.append((time.perf_counter() - t) * 1000)
         ids = [h.doc_id for h in res.results]
         rank = ids.index(q["source_doc_id"]) + 1 if q["source_doc_id"] in ids else None
@@ -129,7 +130,7 @@ def run(
     max_queries: int | None = None,
     rerank_max_queries: int | None = None,
 ) -> dict[str, Any]:
-    """Score every variant. ``rerank_max_queries`` scores the (slow) re-ranked variants on a seeded sample."""
+    """Score every variant. ``rerank_max_queries`` scores the variants marked slow on a seeded sample."""
     all_queries = load_queries(queries_path)
     queries = stratified_sample(all_queries, max_queries)
     rerank_queries = stratified_sample(queries, rerank_max_queries)
@@ -138,7 +139,8 @@ def run(
         chosen = {name: cfg for name, cfg in chosen.items() if not cfg["rerank"]}
     results = {}
     for name, cfg in chosen.items():
-        subset = rerank_queries if cfg["rerank"] else queries
+        cfg = dict(cfg)
+        subset = rerank_queries if cfg.pop("slow", False) else queries
         results[name] = {"n_queries": len(subset), **score_variant(engine, subset, **cfg)}
     report = {
         "created": time.strftime("%Y-%m-%dT%H:%M:%S"),

@@ -90,6 +90,9 @@ class Settings(BaseSettings):
     retrieval_top_k: int = 5
     retrieval_candidates: int = 40
     rrf_k: int = 60
+    # The cross-encoder scores this many of the fused candidates and votes with this weight (see docs/retrieval.md).
+    rerank_top_n: int = Field(default=10, ge=1, le=50)
+    rerank_weight: float = Field(default=1.0, ge=0.0, le=5.0)
 
     # --------------------------------------------------------------- speech
     asr_provider: Literal["faster_whisper", "openai", "none"] = "faster_whisper"
@@ -101,6 +104,24 @@ class Settings(BaseSettings):
     tts_speed: float = 1.0
     tts_max_seconds: float = 15.0
     elevenlabs_api_key: SecretStr | None = None
+
+    # --------------------------------------------------------------- agents
+    # auto: the planner decides (web when the shopper asks for current/latest info or the catalog cannot answer);
+    # always: also check the live price of the top catalog matches on every product request; never: catalog only.
+    web_price_check: Literal["auto", "always", "never"] = "auto"
+    # Tool-calling rounds the Retriever may add after the planned searches.
+    retriever_max_rounds: int = Field(default=2, ge=0, le=4)
+    retriever_max_calls_per_round: int = Field(default=4, ge=1, le=6)
+    # How many times the Answerer may revise after the Critic objects before the grounded template is used.
+    critic_max_revisions: int = Field(default=1, ge=0, le=2)
+    critic_llm_enabled: bool = True
+    # Re-ranker score below which the best catalog match is treated as "the catalog has nothing relevant".
+    weak_match_score: float = -4.0
+    # Spoken summary budget in words (lead + "N more options ..." + question); the audio is also held to TTS_MAX_SECONDS.
+    spoken_max_words: int = Field(default=45, ge=20, le=80)
+    memory_turns: int = Field(default=4, ge=0, le=12)
+    # Write full prompts and model outputs to logs/llm_calls.jsonl (prompt name, version and hash are always logged).
+    log_prompts: bool = True
 
     # ------------------------------------------------------------- service
     api_host: str = "127.0.0.1"

@@ -1,0 +1,29 @@
+{"query": "eco-friendly stainless steel cleaner spray", "kind": "absent", "why": "household cleaning chemicals are not in the catalog"}
+{"query": "laundry detergent pods for sensitive skin", "kind": "absent", "why": "no laundry products"}
+{"query": "dishwasher detergent tablets", "kind": "absent", "why": "no dishwashing products"}
+{"query": "bleach free bathroom tile cleaner", "kind": "absent", "why": "no cleaning chemicals"}
+{"query": "wireless noise cancelling headphones", "kind": "absent", "why": "no consumer electronics of this kind"}
+{"query": "15 inch laptop with 16 gigabytes of memory", "kind": "absent", "why": "no computers"}
+{"query": "4k smart television 55 inch", "kind": "absent", "why": "no televisions"}
+{"query": "android smartphone with a good camera", "kind": "absent", "why": "no phones"}
+{"query": "espresso machine with milk frother", "kind": "lookalike", "why": "the catalog has a toy coffee maker, not a real appliance"}
+{"query": "robot vacuum cleaner for pet hair", "kind": "lookalike", "why": "the catalog has a toy vacuum, not a real one"}
+{"query": "car engine oil 5w30 synthetic", "kind": "absent", "why": "no automotive fluids"}
+{"query": "windshield wiper blades 22 inch", "kind": "absent", "why": "no car parts"}
+{"query": "whey protein powder chocolate", "kind": "absent", "why": "no supplements"}
+{"query": "vitamin d3 supplement capsules", "kind": "absent", "why": "no supplements"}
+{"query": "ibuprofen pain relief tablets", "kind": "absent", "why": "no medicines"}
+{"query": "organic ground coffee dark roast", "kind": "absent", "why": "no groceries"}
+{"query": "gluten free pasta", "kind": "absent", "why": "no groceries"}
+{"query": "dry cat food for indoor cats", "kind": "absent", "why": "no pet food"}
+{"query": "cordless power drill 20 volt", "kind": "lookalike", "why": "the catalog has a toy drill, not a power tool"}
+{"query": "lawn mower self propelled", "kind": "absent", "why": "no garden machinery"}
+{"query": "men's running shoes size 10", "kind": "lookalike", "why": "the catalog has paddling boots, not running shoes"}
+{"query": "shampoo for dry scalp", "kind": "absent", "why": "no hair care"}
+{"query": "electric toothbrush with replacement heads", "kind": "absent", "why": "no oral care"}
+{"query": "printer ink cartridge black", "kind": "absent", "why": "no printer supplies"}
+{"query": "external hard drive 2 terabytes", "kind": "absent", "why": "no storage devices"}
+{"query": "air fryer 5 quart", "kind": "absent", "why": "no kitchen appliances of this kind"}
+{"query": "baby formula powder", "kind": "absent", "why": "no infant nutrition"}
+{"query": "sunscreen spf 50 lotion", "kind": "absent", "why": "no skin care"}
+{"query": "red wine cabernet sauvignon", "kind": "absent", "why": "no alcohol"}

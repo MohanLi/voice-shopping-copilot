@@ -45,7 +45,11 @@ class RagSearchResult(BaseModel):
         default_factory=list,
         description="Constraints loosened because too few products met all of them; results then carry constraint_notes",
     )
+    safety_rules: list[str] = Field(default_factory=list, description="Rules applied automatically for safety; they are never loosened")
     strict_matches: int = Field(default=0, description="How many catalog products satisfy every requested filter")
+    best_match_score: float | None = Field(
+        default=None, description="Re-ranker score of the best result (higher is better); null when the re-ranker is off"
+    )
     catalog: CatalogInfo = Field(default_factory=CatalogInfo)
     notes: list[str] = Field(default_factory=list, description="Caveats the answer must respect")
     took_ms: float = 0.0
