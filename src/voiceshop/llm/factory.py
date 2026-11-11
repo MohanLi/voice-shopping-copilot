@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import warnings
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
@@ -158,15 +159,22 @@ def spec_for(role: str) -> ModelSpec:
     return parse_spec(settings.model_for(role) if role in AGENT_ROLES else settings.llm_model)  # type: ignore[arg-type]
 
 
-_NATIVE_JSON_SCHEMA = {"anthropic", "openai", "ollama", "google_genai"}
+# Providers that get their native JSON-schema mode. Anthropic is deliberately not here: measured on the
+# real schemas (2026-11-11), a forced tool call returned in 0.9-3.3 s where JSON-schema mode took 2.2-17.7 s
+# (the schema is compiled on first use), so Claude gets function calling for structured output.
+_NATIVE_JSON_SCHEMA = {"openai", "ollama", "google_genai"}
 
 
 def structured(llm: BaseChatModel, schema: type, *, provider: str) -> Runnable[Any, Any]:
-    """Bind a pydantic schema using the provider's native structured-output mode when it has one."""
+    """Bind a pydantic schema: native JSON-schema mode where it fits, forced function calling otherwise."""
     if provider == "fake":
         return llm.with_structured_output(schema)
     method = "json_schema" if provider in _NATIVE_JSON_SCHEMA else "function_calling"
-    return llm.with_structured_output(schema, method=method)
+    with warnings.catch_warnings():
+        # langchain-anthropic warns that a forced tool call is not guaranteed on models whose thinking cannot be
+        # switched off; call_structured() validates the output, retries once and falls back to rules, so it is safe.
+        warnings.filterwarnings("ignore", message=".*structured output via forced tool calling.*")
+        return llm.with_structured_output(schema, method=method)
 
 
 def clear_model_cache() -> None:

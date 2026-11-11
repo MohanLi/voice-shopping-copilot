@@ -44,3 +44,68 @@ def products(raw_sample: pd.DataFrame) -> pd.DataFrame:
 
     frame, _ = ingest_frame(raw_sample)
     return frame
+
+
+# --------------------------------------------------------------------- agents
+FIXTURE_WEB = ROOT / "data" / "sample" / "web_search_fixture.json"
+
+
+@pytest.fixture(scope="session")
+def sample_engine(products: pd.DataFrame):  # type: ignore[no-untyped-def]
+    """A search engine over the committed sample (hashing embedder, no model files)."""
+    from voiceshop.retrieval.embedder import HashingEmbedder
+    from voiceshop.retrieval.engine import SearchEngine
+
+    return SearchEngine.in_memory(products.to_dict(orient="records"), HashingEmbedder())
+
+
+@pytest.fixture
+def agent_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):  # type: ignore[no-untyped-def]
+    """Point the whole process at a throw-away configuration: rule-based agents, fixture web search, temp logs.
+
+    Returns a function that sets further environment variables (for example ``LLM_MODEL=fake:<script>``).
+    """
+    from voiceshop.config import reload_settings
+    from voiceshop.llm.factory import clear_model_cache
+    from voiceshop.llm.ledger import reset_ledger
+
+    def apply(**env: str) -> None:
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
+        reload_settings()
+        clear_model_cache()
+        reset_ledger()
+
+    apply(LLM_MODEL="fake:rules", LOGS_DIR=str(tmp_path / "logs"), DATA_DIR=str(tmp_path / "data"), WEB_SEARCH_PROVIDER="fixture",
+          WEB_SEARCH_FALLBACKS="", WEB_PRICE_CHECK="auto", EMBEDDING_BACKEND="hashing", RERANKER_ENABLED="false",
+          **{f"LLM_MODEL_{role}": "" for role in ("ROUTER", "PLANNER", "RETRIEVER", "ANSWERER", "CRITIC")})
+    yield apply
+    monkeypatch.undo()
+    reload_settings()
+    clear_model_cache()
+    reset_ledger()
+
+
+@pytest.fixture
+async def assistant(agent_env, sample_engine, tmp_path: Path):  # type: ignore[no-untyped-def]
+    """The full assistant wired to an in-process MCP server (sample catalog, fixture web results)."""
+    from voiceshop.assistant import Assistant
+    from voiceshop.config import get_settings
+    from voiceshop.mcp_client import MCPToolClient
+    from voiceshop.mcp_server.controls import AuditLog
+    from voiceshop.mcp_server.providers import FixtureProvider
+    from voiceshop.mcp_server.server import build_server
+    from voiceshop.mcp_server.web import WebSearchService
+
+    settings = get_settings()
+    server = build_server(settings, engine=sample_engine, web=WebSearchService([FixtureProvider(FIXTURE_WEB)], per_minute=600),
+                          audit=AuditLog(tmp_path / "logs" / "mcp_calls.jsonl"))
+    mcp = MCPToolClient(settings, server=server)
+    await mcp.start()
+    bot = Assistant(mcp=mcp)                    # follows the process configuration, so a test can change it mid-way
+    await bot.start()
+    try:
+        yield bot
+    finally:
+        await bot.aclose()
+        await mcp.aclose()

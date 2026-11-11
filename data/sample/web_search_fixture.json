@@ -1,5 +1,25 @@
 {
   "_about": "SYNTHETIC results for tests, CI and offline demos (WEB_SEARCH_PROVIDER=fixture). Nothing here is a real offer: every URL is on the reserved example.com domain and every price is made up. The UI labels answers built from this file as 'offline demo data'. Keys are lower-case substrings matched against the query; the first key found in the query wins.",
+  "carmarace": [
+    {
+      "title": "Carmarace Board Game",
+      "url": "https://games.example.com/carmarace-board-game",
+      "snippet": "Racing strategy game for 2 to 6 players. Ages 8 and up.",
+      "price": "$41.99",
+      "rating": 4.3,
+      "rating_count": 212,
+      "source": "Example Games",
+      "delivery": "In stock"
+    },
+    {
+      "title": "Carmarace Board Game - Expansion Bundle (3 games)",
+      "url": "https://market.example.com/carmarace-bundle",
+      "snippet": "Bundle of three games.",
+      "price": "$189.00",
+      "source": "Example Market",
+      "delivery": "Ships in 3 days"
+    }
+  ],
   "poisoned": [
     {
       "title": "Wooden Train Set 50 Pieces",

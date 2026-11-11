@@ -7,9 +7,10 @@
     voiceshop mcp serve       start the MCP server (stdio or streamable HTTP)
     voiceshop mcp tools       connect as a client and print what discovery returns
     voiceshop mcp call …      call rag.search / web.search through MCP
+    voiceshop ask "…"         one text turn through the full agent workflow (add more quoted turns for a conversation)
     voiceshop config          effective configuration, secrets masked
 
-Further commands (ask, voice, serve, eval) are added by the modules that implement them.
+Further commands (voice, serve, eval) are added by the modules that implement them.
 """
 
 from __future__ import annotations
@@ -135,6 +136,56 @@ def search(
     for i, h in enumerate(res.results, 1):
         table.add_row(str(i), h.doc_id, f"${h.price:.2f}", h.brand or "-", h.title[:60], h.age_label or "-", "; ".join(h.constraint_notes) or "-")
     console.print(table)
+
+
+@app.command()
+def ask(
+    turns: Annotated[list[str], typer.Argument(help="What the shopper says. Several arguments make a multi-turn conversation.")],
+    as_json: Annotated[bool, typer.Option("--json", help="Print the full turn record instead of the readable view")] = False,
+    quiet: Annotated[bool, typer.Option("--quiet", help="Hide the agent step log")] = False,
+) -> None:
+    """Run text turns through the whole workflow: guard, router, planner, retriever (MCP), answerer, critic."""
+    import asyncio
+
+    from voiceshop.assistant import Assistant
+    from voiceshop.mcp_client import MCPConnectionError
+
+    async def run() -> None:
+        async with Assistant() as assistant:
+            for text in turns:
+                result = None
+                if not as_json:
+                    console.print(f"\n[bold cyan]You:[/bold cyan] {text}")
+                async for event in assistant.stream(text, thread_id="cli"):
+                    if event["type"] == "step" and not quiet and not as_json:
+                        mark = {"ok": "[green]ok[/green]", "warn": "[yellow]note[/yellow]", "error": "[red]error[/red]"}[event["status"]]
+                        took = f"{event['duration_ms']:.0f} ms" if event.get("duration_ms") is not None else ""
+                        console.print(f"  [dim]{event['title']:<28}[/dim] {mark:<5} {event['summary']} [dim]{took}[/dim]", highlight=False)
+                    elif event["type"] == "result":
+                        result = event["result"]
+                assert result is not None
+                if as_json:
+                    console.print_json(json.dumps(result.to_dict(include_evidence=False), default=str))
+                    continue
+                answer = result.answer
+                console.print(f"\n[bold magenta]Assistant (spoken, {len(answer.spoken.split())} words):[/bold magenta] {answer.spoken}", highlight=False)
+                if answer.table:
+                    table = Table("#", "Product", "Price", "Rating", "Ingredients", "Source", "Citation", show_lines=True)
+                    for row in answer.table:
+                        table.add_row(str(row.rank), row.product[:48], row.price, row.rating, row.ingredients[:28], row.source, row.citation[:52])
+                    console.print(table)
+                for note in answer.notes:
+                    console.print(f"  [dim]- {note}[/dim]", highlight=False)
+                console.print(f"[dim]{answer.kind} | grounded by {answer.grounded_by or '-'} | {result.seconds:.1f} s | "
+                              f"${result.cost_usd:.4f} | tools: {', '.join(result.tools_called) or 'none'}[/dim]", highlight=False)
+
+    _logging()
+    logging.getLogger().setLevel(logging.WARNING)
+    try:
+        asyncio.run(run())
+    except MCPConnectionError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
 
 
 # ------------------------------------------------------------------------ mcp

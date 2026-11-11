@@ -1,0 +1,232 @@
+"""Answerer and Critic nodes.
+
+The Answerer writes a draft from the evidence only. The Critic checks it twice — first with
+the rule-based output guardrail, then with a model that looks for unsupported claims — and
+either passes it, sends it back once with specific findings, or replaces it with the
+template answer, which is grounded by construction.
+"""
+
+from __future__ import annotations
+
+import re
+import time
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+from voiceshop.agents import rules
+from voiceshop.agents.context import render_constraints, render_evidence
+from voiceshop.agents.deps import Deps
+from voiceshop.agents.llm_utils import LLMCallError, call_structured, fallback_note
+from voiceshop.agents.state import (
+    AnswerDraft,
+    Constraints,
+    Critique,
+    Evidence,
+    Issue,
+    Plan,
+    RouteDecision,
+    TurnState,
+    step,
+)
+from voiceshop.guardrails.output import check_draft, repair
+from voiceshop.llm.ledger import BudgetExceededError
+from voiceshop.prompts import load_prompt
+
+# Model-critic objections that stop being binding once the Answerer has revised: wording-level grounding, and
+# constraints, which the retrieval filters and the rule checks already enforce. "unfit" and "safety" stay binding.
+ADVISORY_AFTER_REVISION = ("critic_unsupported", "critic_constraint")
+TAIL_WORDS = 9                   # "Two more options and the sources are on screen."
+QUESTION_WORDS = 12              # room for the follow-up question (or the safety sentence that replaces it)
+
+
+class Finding(BaseModel):
+    kind: Literal["unsupported", "constraint", "unfit", "safety"]
+    ref: str = Field(description="The product concerned (C1, W2 ...) or 'spoken'")
+    quote: str = Field(description="The exact words from the draft that are wrong")
+    evidence_says: str = Field(default="", description="What the evidence states on that point, or 'nothing'")
+    must_fix: bool = Field(default=True, description="True only if the draft would mislead the customer or break the policy as it stands")
+    fix: str = Field(description="What to change, at most 15 words")
+
+
+class CriticReport(BaseModel):
+    """What the Critic model returns: only things that must be fixed. An empty list passes the draft."""
+
+    findings: list[Finding] = Field(default_factory=list)
+
+
+_NOT_A_FINDING = re.compile(
+    r"\bno\s+change\s+(?:is\s+)?needed\b|\bkeep\b|\b(?:is|are|this\s+is)\s+supported\b|\bevidence\s+supports\b|\bstill\s+a\s+valid\b|"
+    r"\bnot\s+a\s+violation\b|\bacceptable\b|\b(?:fine|correct|ok|okay)\s+as\s+(?:is|written)\b|\bno\s+(?:fix|action|issue|problem)\b", re.I)
+
+
+def real_findings(report: CriticReport) -> tuple[list[Finding], list[Finding]]:
+    """Split the Critic's list into findings to act on and entries it marked, in its own words, as fine.
+
+    Small models tend to report what they *verified* ("keep; the evidence supports this"). Those entries are
+    recognised by ``must_fix`` being false or by their own wording, and are logged but not acted on.
+    """
+    keep: list[Finding] = []
+    dropped: list[Finding] = []
+    for finding in report.findings:
+        text = f"{finding.fix} {finding.evidence_says}"
+        (dropped if (not finding.must_fix or _NOT_A_FINDING.search(text)) else keep).append(finding)
+    return keep, dropped
+
+
+def _request_block(state: TurnState, constraints: Constraints, plan: Plan | None) -> str:
+    route: RouteDecision | None = state.get("route")
+    lines = [f'Shopper said: "{state["user_text"]}"', f"Constraints: {render_constraints(constraints)}"]
+    if plan and plan.comparison_criteria:
+        lines.append("Compare on: " + ", ".join(plan.comparison_criteria))
+    shown = state.get("shown") or []
+    if route and route.refers_to and shown:
+        refs = [f'{shown[p - 1].get("ref")} ({shown[p - 1].get("name")})' for p in route.refers_to if 0 < p <= len(shown)]
+        if refs:
+            lines.append("The shopper is referring to: " + ", ".join(refs))
+    if route and route.safety == "caution":
+        lines.append(f"Safety caution: {route.safety_reason or 'see policy'}")
+    return "\n".join(lines)
+
+
+def focus_refs(state: TurnState) -> list[str]:
+    """Handles of the on-screen products a follow-up refers to."""
+    route: RouteDecision | None = state.get("route")
+    shown = state.get("shown") or []
+    if route is None or route.intent not in ("follow_up", "compare"):
+        return []
+    return [str(shown[p - 1].get("ref")) for p in route.refers_to if 0 < p <= len(shown)]
+
+
+def lead_budget(deps: Deps) -> int:
+    """Words the Answerer may use for its lead; the rest of the spoken budget is filled in by code."""
+    return max(16, deps.settings.spoken_max_words - TAIL_WORDS - QUESTION_WORDS)
+
+
+def make_answerer_node(deps: Deps):  # type: ignore[no-untyped-def]
+    async def answerer_node(state: TurnState) -> dict[str, Any]:
+        started = time.perf_counter()
+        evidence: Evidence = state.get("evidence") or Evidence()
+        constraints: Constraints = state.get("session_constraints") or Constraints()
+        plan: Plan | None = state.get("plan")
+        critique: Critique | None = state.get("critique")
+        revising = critique is not None and critique.verdict == "revise"
+        weak = deps.settings.weak_match_score
+        budget = lead_budget(deps)
+
+        if evidence.empty:
+            draft = rules.answer(evidence, constraints, weak, focus_refs(state))
+            return {"draft": draft, "draft_source": "template",
+                    "trace": [step("answerer", "Nothing was retrieved: abstaining with the template answer", status="warn",
+                                   started=started, grounded_by="template")]}
+        user = f"{_request_block(state, constraints, plan)}\n\nEVIDENCE\n{render_evidence(evidence, weak)}"
+        if revising and critique is not None:
+            previous: AnswerDraft | None = state.get("draft")
+            findings = "\n".join(f"- [{i.where or 'draft'}] {i.message}" for i in critique.blocking)
+            user += ("\n\nYOUR PREVIOUS DRAFT WAS REJECTED BY THE CRITIC. Fix every finding and return the full corrected answer.\n"
+                     f"{_draft_block(previous) if previous else ''}\nFindings:\n{findings}")
+        fallback, used_template = None, False
+        try:
+            draft, meta = await call_structured(
+                "answerer", "answerer", AnswerDraft, user=user, turn_id=state.get("turn_id", ""),
+                variables={"max_words": budget, "safety_policy": load_prompt("safety_policy").text},
+            )
+        except BudgetExceededError:
+            raise
+        except LLMCallError as exc:
+            draft, meta, fallback, used_template = rules.answer(evidence, constraints, weak, focus_refs(state)), {"model": "rules"}, fallback_note(exc), True
+        picks = ", ".join(r.ref for r in draft.recommendations) or ("abstained" if draft.abstain else "none")
+        return {
+            "draft": draft,
+            "draft_source": "template" if used_template else "llm",
+            "revisions": (state.get("revisions") or 0) + (1 if revising else 0),
+            "trace": [step("answerer", ("Revised draft" if revising else "Draft") + f": {picks}", status="warn" if fallback else "ok", started=started,
+                           recommendations=[r.model_dump() for r in draft.recommendations], spoken=draft.spoken, abstain=draft.abstain,
+                           model=meta.get("model"), prompt=meta.get("prompt"), prompt_version=meta.get("version"),
+                           grounded_by="template" if used_template else None, fallback=fallback, spoken_budget_words=budget)],
+        }
+
+    return answerer_node
+
+
+def _draft_block(draft: AnswerDraft) -> str:
+    lines = ["DRAFT ANSWER"]
+    if draft.abstain:
+        lines.append(f"abstain: yes ({draft.abstain_reason or 'no reason given'})")
+    for i, rec in enumerate(draft.recommendations, 1):
+        lines.append(f"{i}. {rec.ref} - why: {rec.why}" + (f" | caveat: {rec.caveat}" if rec.caveat else ""))
+    lines.append(f'spoken: "{draft.spoken}"')
+    if draft.conflict_note:
+        lines.append(f"conflict_note: {draft.conflict_note}")
+    if draft.follow_up_question:
+        lines.append(f"follow_up_question: {draft.follow_up_question}")
+    return "\n".join(lines)
+
+
+def make_critic_node(deps: Deps):  # type: ignore[no-untyped-def]
+    async def critic_node(state: TurnState) -> dict[str, Any]:
+        started = time.perf_counter()
+        settings = deps.settings
+        evidence: Evidence = state.get("evidence") or Evidence()
+        constraints: Constraints = state.get("session_constraints") or Constraints()
+        draft: AnswerDraft = repair(state["draft"], evidence)  # type: ignore[arg-type]
+        revisions = state.get("revisions") or 0
+        budget = lead_budget(deps)
+        from_template = state.get("draft_source") == "template"
+
+        issues = check_draft(draft, evidence, constraints, max_words=budget)
+        blocking = [i for i in issues if i.severity in ("block", "revise")]
+        checked = ["rules"]
+        report: CriticReport | None = None
+        llm_error = None
+        # The model critic is only worth a call when the rules found nothing and a model wrote the draft.
+        if not blocking and not from_template and settings.critic_llm_enabled and not evidence.empty:
+            try:
+                report, _ = await call_structured(
+                    "critic", "critic", CriticReport, turn_id=state.get("turn_id", ""),
+                    user=f"{_request_block(state, constraints, state.get('plan'))}\n\nEVIDENCE\n{render_evidence(evidence, settings.weak_match_score)}\n\n{_draft_block(draft)}",
+                    variables={"safety_policy": load_prompt("safety_policy").text},
+                )
+                checked.append("llm")
+            except BudgetExceededError:
+                raise
+            except LLMCallError as exc:
+                llm_error = fallback_note(exc)
+            acted, set_aside = real_findings(report) if report is not None else ([], [])
+            for finding in acted[:6]:
+                says = f" (evidence: {finding.evidence_says.strip()[:120]})" if finding.evidence_says.strip() else ""
+                issues.append(Issue(code=f"critic_{finding.kind}", severity="revise", where=finding.ref,
+                                    message=f'"{finding.quote.strip()[:160]}" - {finding.fix.strip()[:160]}{says}'))
+            for finding in set_aside[:6]:
+                issues.append(Issue(code="critic_verified", severity="info", where=finding.ref,
+                                    message=f'checked and found supported: "{finding.quote.strip()[:120]}"'))
+            blocking = [i for i in issues if i.severity in ("block", "revise")]
+
+        if not blocking:
+            verdict: Literal["pass", "revise", "fallback"] = "pass"
+        elif revisions < settings.critic_max_revisions and not from_template:
+            verdict = "revise"
+        elif all(i.code in ADVISORY_AFTER_REVISION for i in blocking):
+            # The rules are binding; the model critic's wording objections are advisory once the Answerer has
+            # revised. They are kept in the log (and counted in the evaluation) but no longer replace the answer.
+            for issue in blocking:
+                issue.severity = "info"
+            verdict = "pass"
+        else:
+            verdict = "fallback"
+        critique = Critique(verdict=verdict, issues=issues, checked_by=checked,
+                            unsupported_claims=[i.message for i in issues if i.code == "critic_unsupported"])
+        update: dict[str, Any] = {"critique": critique, "draft": draft}
+        grounded_by = None
+        if verdict == "fallback":
+            update["draft"] = rules.answer(evidence, constraints, settings.weak_match_score, focus_refs(state))
+            update["draft_source"] = grounded_by = "template"
+        summary = {"pass": "Passed", "revise": f"Sent back for revision ({len(blocking)} finding(s))",
+                   "fallback": f"Replaced by the grounded template ({len(blocking)} unresolved finding(s))"}[verdict]
+        update["trace"] = [step("critic", f"{summary} - checked by {' + '.join(checked)}", status="ok" if verdict == "pass" else "warn", started=started,
+                                verdict=verdict, issues=[i.model_dump(exclude_none=True) for i in issues] or None,
+                                unsupported_claims=critique.unsupported_claims or None, grounded_by=grounded_by, llm_error=llm_error,
+                                revisions=revisions)]
+        return update
+
+    return critic_node
