@@ -78,7 +78,7 @@ Requirements: macOS or Linux, Python 3.12, [uv](https://docs.astral.sh/uv/). An 
 bash scripts/bootstrap_mac.sh        # .venv from uv.lock, the dataset, the local speech and retrieval models
 cp -n .env.example .env              # keeps an existing .env; then add ANTHROPIC_API_KEY and SERPER_API_KEY
 source .venv/bin/activate
-voiceshop ingest && voiceshop index  # clean the catalog (9,741 products) and build the hybrid index
+voiceshop ingest && voiceshop index  # clean the catalog (9,740 products) and build the hybrid index
 voiceshop serve                      # open http://127.0.0.1:8000 and press Talk
 ```
 
@@ -90,7 +90,7 @@ voiceshop voice question.m4a         # voice in, voice out; the reply is kept in
 voiceshop mcp tools                  # what the agents discover on the MCP server
 voiceshop eval retrieval             # the retrieval benchmark below
 voiceshop eval proofagent --label my-run --fallback-llm anthropic/claude-sonnet-5-5   # the ProofAgent evaluation below (15 min, $0.50 to $0.90)
-python -m pytest tests -q            # 615 tests, about 20 s, no key or network needed
+python -m pytest tests -q            # 619 tests, about 20 s, no key or network needed
 ```
 
 `LLM_MODEL=fake:rules` runs every agent on rules only (no key, no cost); `LLM_MODEL=ollama:<model>` or any other

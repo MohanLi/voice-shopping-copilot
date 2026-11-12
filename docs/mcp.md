@@ -5,7 +5,7 @@ The agents never touch the vector index or the web directly. Everything they ret
 
 | Tool | Reads | Returns (assignment shape first) |
 |---|---|---|
-| `rag.search` | the private catalog (Amazon Product Dataset 2020, 9,741 products) | `sku, title, price, rating, brand?, ingredients?, doc_id` + context for comparison and safety |
+| `rag.search` | the private catalog (Amazon Product Dataset 2020, 9,740 products) | `sku, title, price, rating, brand?, ingredients?, doc_id` + context for comparison and safety |
 | `web.search` | the live web through a search API | `title, url, snippet, price?, availability?` + source, rating, freshness |
 
 ```
@@ -119,7 +119,7 @@ Output (`outputSchema`; also returned as validated `structuredContent`):
   "unmatched_filters": {},           // e.g. a brand the catalog does not carry (then used as query text)
   "relaxed": [],                     // constraints loosened, in order, when too few products met all of them
   "strict_matches": 1537,            // how many products satisfy every requested filter
-  "catalog": {"source": "Amazon Product Dataset 2020 (private catalog)", "snapshot_date": "2020-01", "documents": 9741},
+  "catalog": {"source": "Amazon Product Dataset 2020 (private catalog)", "snapshot_date": "2020-01", "documents": 9740},
   "notes": ["Catalog prices and availability are a snapshot from January 2020. Call web.search before …"]
 }
 ```

@@ -291,7 +291,7 @@ def _without_instructions(hit: RagHit) -> tuple[RagHit, bool]:
     """A catalog hit whose listing text carries no sentence addressed to an AI, and whether one was removed.
 
     A catalog listing is third-party text as much as a web page is (a seller wrote it), so it goes through the same
-    filter as web results before any model reads it. On the 9,741 products of the 2020 dataset the filter removes one
+    filter as web results before any model reads it. On the products of the 2020 dataset the filter removes one
     sentence each from four listings, all false alarms ("players try to convince the customer ..."): cheap insurance
     for a catalog that is rebuilt from a newer feed.
     """

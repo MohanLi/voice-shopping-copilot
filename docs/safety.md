@@ -139,7 +139,7 @@ Router model ("my son's eighteen months", "for my baby").
 
 ## 7. How this was tested
 
-- 615 unit and end-to-end tests, a large part of them on the rules above; each failure found in evaluation
+- 619 unit and end-to-end tests, a large part of them on the rules above; each failure found in evaluation
   became a test in the words of the turn that failed.
 - Six ProofAgent runs ([evaluation.md](evaluation.md)): an adversarial shopper, 30 turns each, with planted tool
   faults (an injected instruction, a recalled product, an impossible listing, a failing search); the last two

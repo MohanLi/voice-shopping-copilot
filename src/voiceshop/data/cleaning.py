@@ -40,7 +40,8 @@ def clean_title(value: Any) -> str:
 
 # ---------------------------------------------------------------------- price
 _PRICE = re.compile(r"\$\s*(\d[\d,]*(?:\.\d{1,2})?)")
-_PRICE_SPLIT_CENTS = re.compile(r"^\$\s*(\d[\d,]*)\s+(\d{2})$")  # "$ 12 63" means $12.63
+# "$ 12 63" means $12.63: alone in the cell, or in front of a list price and scraped page code ("$ 19 99 $39.95 #listPrice...").
+_PRICE_SPLIT_CENTS = re.compile(r"^\$\s*(\d[\d,]*)\s+(\d{2})(?=\s|$)")
 
 
 def parse_price(value: Any) -> tuple[float, float | None] | None:
@@ -48,11 +49,15 @@ def parse_price(value: Any) -> tuple[float, float | None] | None:
 
     Shapes in the file: "$16.99" (96 %), "$17.57 - $32.26" (range: the lowest
     price is the price, the highest is kept as price_max), "$28.13 $ 28 . 13"
-    (a duplicated render: the first is used), "$ 12 63", and non-prices such as
-    "Total price:", "from 9 sellers", "Currently unavailable.".
+    (a duplicated render: the first is used), "$ 12 63" (dollars and cents apart, sometimes
+    followed by the list price: the first amount is the selling price), and non-prices such as
+    "Total price:", "from 9 sellers", "Currently unavailable." and a shipping notice that names an
+    order threshold in dollars.
     """
     text = normalize_text(value)
-    if not text:
+    if not text.startswith("$"):
+        # Every price in the file opens its cell. A dollar amount further in is something else: one cell reads "FREE
+        # Shipping ... when you order $25.00 of eligible items", and that product was in the catalog at $25.00.
         return None
     m = _PRICE_SPLIT_CENTS.match(text)
     if m:

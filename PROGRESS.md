@@ -23,7 +23,7 @@ Legend: ✅ done · 🔄 in progress · ⏳ waiting on Kevin · ⬜ not started
 | Phase | What | Status | Evidence |
 |------:|------|:------:|----------|
 | 0 | Objectives, decisions, repo skeleton, config, download/bootstrap scripts, Mac mirror, locked dependencies | ✅ | `docs/objectives.md`, `docs/decisions.md`, `scripts/`, `uv.lock` |
-| 1 | Data pipeline, derived attributes, hybrid index, retrieval engine, retrieval benchmark | ✅ (docs open) | 9,741 products; benchmark of record from the Mac in `eval/results/retrieval/benchmark.md`; `docs/data.md`, `docs/retrieval.md` and the ingestion notebook still to write |
+| 1 | Data pipeline, derived attributes, hybrid index, retrieval engine, retrieval benchmark | ✅ (docs open) | 9,740 products (9,741 in every recorded evaluation: two price-parsing fixes on 12 Nov, `docs/data.md` §2); benchmark of record from the Mac in `eval/results/retrieval/benchmark.md`; `docs/data.md`, `docs/retrieval.md` and the ingestion notebook still to write |
 | 2 | MCP server: `rag.search` + `web.search` (schemas, cache, rate limit, logging, both transports) | ✅ | live Serper check passed on the Mac 2026-11-11; `docs/mcp.md`; `tests/test_mcp_*.py` |
 | 3 | LangGraph agents (Router, Planner, Retriever, Answerer, Critic), guardrails, prompts, memory | ✅ | four live turns on the Mac 2026-11-11 (Claude + Serper); three defects found there are fixed and tested (`docs/decisions.md`, "First live run"); since 12 Nov a web fallback when the catalog has nothing suitable (`docs/architecture.md`) |
 | 4 | Speech: faster-whisper ASR, Kokoro TTS, ≤15 s spoken summary, voice turns | ✅ | `src/voiceshop/speech/`, `agents/listen.py`, `voiceshop voice / transcribe / say`, `tests/test_speech.py`; run voice to voice on the Mac 2026-11-11 (Kevin: "the voice sounds natural") |
@@ -32,7 +32,7 @@ Legend: ✅ done · 🔄 in progress · ⏳ waiting on Kevin · ⬜ not started
 | 7 | Beyond-requirements bundles (retrieval & grounding, eval rigor, voice UX, engineering showcase) | 🔄 | retrieval & grounding and eval rigor in place (replay tool, repeated-ballot report, upload to the ProofAgent dashboard); open: CI, Docker, demo GIF, second-provider run |
 | 8 | Documentation, verification pass against `docs/objectives.md` | 🔄 | `README.md`, `docs/architecture.md`, `docs/mcp.md`, `docs/evaluation.md`, `docs/safety.md`, `docs/decisions.md`, `prompts/README.md`, `eval/proofagent/README.md`; still to write: data, retrieval, checkpoints, the ingestion notebook |
 
-Tests: 615 passing (`python -m pytest tests -q`, ~20 s, no key or network needed) plus one behind `--run-models`,
+Tests: 619 passing (`python -m pytest tests -q`, ~20 s, no key or network needed) plus one behind `--run-models`,
 and the browser check `node frontend/e2e/smoke.cjs` against a running server.
 Lint clean (`ruff check src tests scripts eval`).
 
@@ -138,7 +138,7 @@ of them and of run 4 to the dashboard.
 - Measured per-call latency with Haiku 5.5: router ≈ 1.0 s, planner ≈ 1.6 s, answerer ≈ 1.5–2.4 s, critic ≈ 0.9 s.
   A catalog-only turn takes about 6–8 s of agent time in the workspace; a follow-up 4–5 s.
 - Qdrant runs embedded, so one process at a time may open `data/index/qdrant` (the MCP server owns it).
-- Dataset facts: 10,002 rows × 28 columns; 9,741 kept; Brand / Rating / Ingredients / reviews columns are
+- Dataset facts: 10,002 rows × 28 columns; 9,740 kept; Brand / Rating / Ingredients / reviews columns are
   empty in the source; the age field is unreliable below three years (see decisions).
 - Serper facts (from the live run): a shopping search costs 2 credits and returns up to 40 listings with name,
   store, price, rating and thumbnail, a Google Shopping link, and no description or stock; an ordinary search

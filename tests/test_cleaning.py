@@ -20,13 +20,22 @@ from voiceshop.data import cleaning as cl
         ("$8.99 $ 8", (8.99, None)),
         ("$ 12 63", (12.63, None)),                   # dollars and cents split by a space
         ("$24.99 $24.99", (24.99, None)),
+        # The selling price with its cents apart, in front of the list price and scraped page code. Three products were
+        # in the catalog at $19.00, $53.00 and $7.00 until this shape was read: the cents had been dropped.
+        ("$ 19 99 $39.95 #listPriceLegalMessageText { margin-left: 4px !important; }", (19.99, None)),
+        ("$ 7 97 $14.95 #listPriceLegalMessageText { margin-left: 4px !important; }", (7.97, None)),
+        ("$ 1,053 98", (1053.98, None)),
     ],
 )
 def test_parse_price_shapes(raw: str, expected: tuple[float, float | None]) -> None:
     assert cl.parse_price(raw) == expected
 
 
-@pytest.mark.parametrize("raw", ["Total price:", "from 9 sellers", "Currently unavailable.", "", None, float("nan")])
+@pytest.mark.parametrize("raw", [
+    "Total price:", "from 9 sellers", "Currently unavailable.", "", None, float("nan"),
+    # A dollar amount that is not the price: this cell put one product into the catalog at $25.00.
+    "FREE Shipping Get free shipping Free 5-8 business-day shipping within the U.S. when you order $25.00 of eligible items sold or fulfilled by Amazon.",
+])
 def test_parse_price_rejects_non_prices(raw: object) -> None:
     assert cl.parse_price(raw) is None
 
