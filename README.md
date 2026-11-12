@@ -14,8 +14,9 @@ three-way comparison on screen where every cell can be traced to a source.
 > web UI, and the evaluation with its scorecards and twenty-three failure analyses
 > ([docs/evaluation.md](docs/evaluation.md)). The last run lost five turns to one line of my own code; that is
 > fixed and tested, and has not been before a jury yet.
-> Not done yet: the presentation and part of the written documentation. [PROGRESS.md](PROGRESS.md) is the build log; [docs/objectives.md](docs/objectives.md) lists
-> every requirement of the assignment with where it is met.
+> Not done yet: the presentation, a run with a second model provider, and a container image.
+> [PROGRESS.md](PROGRESS.md) is the build log; [docs/objectives.md](docs/objectives.md) lists every requirement
+> of the assignment with where it is met.
 
 ## How a request is answered
 
@@ -62,7 +63,7 @@ toys, and the Planner cannot know before it searches that a request for a scrub 
 covers. If the best catalog result scores as unrelated, the Retriever searches the live web in the same step. If
 the results only look related (a toy called "Scrub Tub"), the Answerer's first draft says that nothing fits, and
 the graph goes back for one live search and a second draft. The reply says that its listings come from the web.
-Both live evaluation runs had ended that request with a true and useless "I could not find a scrub brush"
+The first two live evaluation runs had ended that request with a true and useless "I could not find a scrub brush"
 ([failure 21](docs/evaluation.md), [how it works](docs/architecture.md)).
 
 ![The step log for "What's a good scrub brush?": a catalog search, a first draft that abstains, the web fallback with its one call, and a second draft from the web results](docs/images/ui-web-fallback.png)
