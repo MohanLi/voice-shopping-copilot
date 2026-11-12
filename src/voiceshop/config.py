@@ -85,6 +85,9 @@ class Settings(BaseSettings):
     embedding_backend: Literal["fastembed", "hashing"] = "fastembed"
     # Product text is truncated to this many tokens before embedding (title and features come first).
     embedding_max_tokens: int = Field(default=256, ge=32, le=512)
+    # Text put in front of a query before it is embedded. Unset: the instruction the model's authors recommend for
+    # retrieval, if there is one (bge: "Represent this sentence for searching relevant passages: "). Empty: none.
+    embedding_query_instruction: str | None = None
     reranker_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
     reranker_enabled: bool = True
     qdrant_url: str = ""  # empty = embedded local mode under data/index/qdrant

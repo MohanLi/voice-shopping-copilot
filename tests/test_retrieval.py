@@ -17,6 +17,8 @@ from voiceshop.retrieval.filters import (
     UNDER_3_RULE,
     ResolvedFilters,
     SearchFilters,
+    Vocabulary,
+    constraint_notes,
     relaxation_ladder,
     resolve,
     to_qdrant,
@@ -94,6 +96,37 @@ def test_free_text_is_mapped_onto_the_catalog_vocabulary(engine: SearchEngine) -
     assert resolved.brand is None and resolved.category is None
     assert set(resolved.unmatched) == {"brand", "category"}
     assert to_qdrant(ResolvedFilters()) is None
+
+
+def test_a_named_category_selects_every_catalog_category_with_those_words() -> None:
+    # Names and counts from the full catalog, where taking the exact name hides what was meant: the level called "Toys"
+    # holds three pet toys, "Games" nine video games, "Baby" is a costume size. The 148-row sample has none of these traps.
+    vocab = Vocabulary(
+        categories={"toys & games": 6521, "toys": 3, "games": 9, "games & accessories": 636, "board games": 279, "puzzles": 360,
+                    "jigsaw puzzles": 272, "puzzle play mats": 2, "baby products": 214, "baby & toddler toys": 255, "kids & baby": 267,
+                    "baby": 27, "diaries, journals & notebooks": 9, "cars": 7, "home & kitchen": 692, "kitchen toys": 49},
+        brands={}, materials={}, claims={},
+    )
+    assert vocab.resolve_category("toys") == "toys & games"
+    assert vocab.resolve_category("Toys and Games") == "toys & games"
+    assert vocab.resolve_category("games") == "toys & games"
+    assert vocab.resolve_categories("puzzle") == ["puzzles", "jigsaw puzzles", "puzzle play mats"]     # singular, widest first
+    assert set(vocab.resolve_categories("baby")) == {"kids & baby", "baby & toddler toys", "baby products", "baby"}
+    assert vocab.resolve_categories("kitchen") == ["home & kitchen", "kitchen toys"]
+    assert vocab.resolve_categories("board games") == ["board games"]
+    assert vocab.resolve_categories("bord games") == ["board games"]                                   # a misspelt name
+    assert vocab.resolve_categories("books") == []                                                     # whole words: not "notebooks"
+    assert vocab.resolve_categories("rc cars") == [] and vocab.resolve_categories("outdoor toys") == []
+    assert vocab.resolve_categories("and") == [] and vocab.resolve_categories(None) == []
+
+    resolved = resolve(SearchFilters(category="puzzle"), vocab)
+    assert resolved.category == "puzzles" and resolved.category_any == ["puzzles", "jigsaw puzzles", "puzzle play mats"]
+    assert SearchEngine.describe_filters(resolved) == {"category": "puzzles", "category_matches": 3}
+    jigsaw = {"price": 9.0, "category_norm": ["toys & games", "jigsaw puzzles"]}
+    doll = {"price": 9.0, "category_norm": ["toys & games", "dolls & accessories"]}
+    assert constraint_notes(jigsaw, resolved) == []                    # filed under a narrower puzzle category: still what was asked for
+    assert constraint_notes(doll, resolved) == ["outside the requested category"]
+    assert resolve(SearchFilters(category="outdoor toys"), vocab).unmatched == {"category": "outdoor toys"}   # kept as query text
 
 
 def test_budget_is_a_hard_constraint(engine: SearchEngine) -> None:
@@ -208,6 +241,67 @@ def test_near_identical_listings_are_collapsed() -> None:
     assert [h.sku for h in deduped.results].count("A") + [h.sku for h in deduped.results].count("B") == 1
     assert deduped.variants_collapsed == 1
     assert len(eng.search("MightySkins skin Parrot Bebop", top_k=3, dedupe=False).results) == 3
+
+
+def test_a_query_is_embedded_with_the_models_instruction_and_a_document_without() -> None:
+    # fastembed embeds queries and passages alike for the bge models. The instruction those models expect in front of a
+    # query was missing until this test was written; the dense retriever alone gained 5.8 points hit@1 from it.
+    from voiceshop.config import Settings
+    from voiceshop.retrieval.embedder import BGE_QUERY_INSTRUCTION, QUERY_INSTRUCTIONS, FastEmbedEmbedder
+
+    assert QUERY_INSTRUCTIONS[Settings().embedding_model] == BGE_QUERY_INSTRUCTION      # the default model has one
+
+    class Model:
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+            self.passages: list[str] = []
+
+        def query_embed(self, text: str):  # type: ignore[no-untyped-def]
+            self.queries.append(text)
+            yield np.zeros(4, dtype=np.float32)
+
+        def passage_embed(self, texts: list[str], batch_size: int = 32):  # type: ignore[no-untyped-def]
+            self.passages.extend(texts)
+            yield from (np.zeros(4, dtype=np.float32) for _ in texts)
+
+    embedder = FastEmbedEmbedder.__new__(FastEmbedEmbedder)                              # no model file: only the text that would be embedded
+    embedder._model, embedder.dim, embedder.query_instruction = Model(), 4, BGE_QUERY_INSTRUCTION
+    embedder.embed_query("wooden puzzle")
+    embedder.embed_documents(["Melissa & Doug Safari Wooden Chunky Puzzle"])
+    assert embedder._model.queries == [BGE_QUERY_INSTRUCTION + "wooden puzzle"]
+    assert embedder._model.passages == ["Melissa & Doug Safari Wooden Chunky Puzzle"]
+    embedder.query_instruction = ""                                                      # EMBEDDING_QUERY_INSTRUCTION= switches it off
+    embedder.embed_query("wooden puzzle")
+    assert embedder._model.queries[-1] == "wooden puzzle"
+
+
+# ------------------------------------------------- the second benchmark: paraphrases
+def test_a_paraphrase_may_not_borrow_a_word_from_the_title() -> None:
+    from voiceshop.evals import retrieval_queries as rq
+
+    row = {"title": "Melissa & Doug Safari Wooden Chunky Puzzle (Preschool, Chunky Wooden Pieces, 8 Pieces)", "brand": "Melissa & Doug",
+           "product_type": "chunky puzzle", "spoken_name": "Safari Wooden Chunky Puzzle"}
+    assert rq.borrowed_words("a wooden puzzle with safari animals for my 3 year old", row) == ["wooden", "puzzle", "safari"]
+    assert rq.borrowed_words("Puzzles for preschoolers", row) == ["puzzles", "preschoolers"]            # any form of a title word
+    assert rq.borrowed_words("something with zoo creatures that a toddler can put together, under twenty dollars", row) == []
+    # a title that states an age or a count does not forbid the words a constraint is said with
+    aged = {"title": "Kite for Kids Ages 5 Years and Up, Three Pack"}
+    assert rq.borrowed_words("something to fly on a windy day for my five year old, three of them", aged) == []
+    assert rq.mention_phrases({"price_max": 20.0, "age_years": 3.0}) == ["a budget of under 20 dollars", "it is for a 3 year old"]
+    assert rq.mention_phrases({"age_years": 0.75}) == ["it is for a 9 month old"] and rq.mention_phrases({}) == []
+
+
+def test_the_committed_paraphrases_keep_their_rule_and_their_constraints() -> None:
+    from voiceshop.evals import retrieval_queries as rq
+    from voiceshop.paths import project_root
+
+    datasets = project_root() / "eval" / "datasets"
+    first = {q["source_doc_id"]: q for q in rq.load_queries(datasets / "retrieval_queries.jsonl")}
+    paraphrases = rq.load_queries(datasets / "retrieval_queries_paraphrase.jsonl")
+    assert len(paraphrases) >= 150 and len({q["source_doc_id"] for q in paraphrases}) == len(paraphrases)
+    for q in paraphrases:
+        assert rq.borrowed_words(q["query"], {"title": q["title"]}) == [], q["qid"]                     # no word of the title, in any form
+        assert q["filters"] == first[q["source_doc_id"]]["filters"], q["qid"]                           # same product, same gold filters
 
 
 def test_embedding_text_uses_title_features_description() -> None:

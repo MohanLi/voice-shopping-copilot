@@ -1,0 +1,115 @@
+{
+ "created": "2026-11-12T04:23:13",
+ "machine": "Linux x86_64, 2 CPUs, Python 3.12.13",
+ "seconds": 412,
+ "queries": 600,
+ "query_file": "retrieval_queries.jsonl",
+ "instruction": "Represent this sentence for searching relevant passages: ",
+ "index": {
+  "n_docs": 9740,
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "products_sha256": "7d8e47f9564cb4fbf61e38bc71a3f3ac3396a6b3577b7132facdfd4cd3141a86"
+ },
+ "results": {
+  "no instruction": {
+   "dense": {
+    "hit@1": 69.0,
+    "hit@3": 82.2,
+    "hit@5": 85.3,
+    "hit@10": 91.0,
+    "mrr@10": 0.763,
+    "hit@3 by type": {
+     "brand": 99.5,
+     "descriptive": 73.0,
+     "spoken": 74.0
+    }
+   },
+   "dense + filters": {
+    "hit@1": 74.7,
+    "hit@3": 86.0,
+    "hit@5": 89.2,
+    "hit@10": 92.7,
+    "mrr@10": 0.807,
+    "hit@3 by type": {
+     "brand": 99.5,
+     "descriptive": 77.5,
+     "spoken": 81.0
+    }
+   },
+   "hybrid (rrf)": {
+    "hit@1": 80.7,
+    "hit@3": 90.3,
+    "hit@5": 94.0,
+    "hit@10": 95.8,
+    "mrr@10": 0.86,
+    "hit@3 by type": {
+     "brand": 100.0,
+     "descriptive": 85.0,
+     "spoken": 86.0
+    }
+   },
+   "hybrid + filters": {
+    "hit@1": 83.3,
+    "hit@3": 92.2,
+    "hit@5": 94.8,
+    "hit@10": 96.7,
+    "mrr@10": 0.881,
+    "hit@3 by type": {
+     "brand": 100.0,
+     "descriptive": 88.0,
+     "spoken": 88.5
+    }
+   }
+  },
+  "with instruction": {
+   "dense": {
+    "hit@1": 74.8,
+    "hit@3": 85.3,
+    "hit@5": 89.2,
+    "hit@10": 93.3,
+    "mrr@10": 0.81,
+    "hit@3 by type": {
+     "brand": 100.0,
+     "descriptive": 78.5,
+     "spoken": 77.5
+    }
+   },
+   "dense + filters": {
+    "hit@1": 79.2,
+    "hit@3": 88.7,
+    "hit@5": 91.2,
+    "hit@10": 94.7,
+    "mrr@10": 0.844,
+    "hit@3 by type": {
+     "brand": 100.0,
+     "descriptive": 83.0,
+     "spoken": 83.0
+    }
+   },
+   "hybrid (rrf)": {
+    "hit@1": 81.5,
+    "hit@3": 91.5,
+    "hit@5": 93.8,
+    "hit@10": 95.7,
+    "mrr@10": 0.869,
+    "hit@3 by type": {
+     "brand": 100.0,
+     "descriptive": 87.5,
+     "spoken": 87.0
+    }
+   },
+   "hybrid + filters": {
+    "hit@1": 84.5,
+    "hit@3": 93.0,
+    "hit@5": 94.7,
+    "hit@10": 96.3,
+    "mrr@10": 0.89,
+    "hit@3 by type": {
+     "brand": 100.0,
+     "descriptive": 90.0,
+     "spoken": 89.0
+    }
+   }
+  }
+ }
+}

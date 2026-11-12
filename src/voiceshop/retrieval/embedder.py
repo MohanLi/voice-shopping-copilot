@@ -1,7 +1,8 @@
 """Text embedders behind one small interface.
 
 * ``FastEmbedEmbedder`` — the real one: an ONNX sentence encoder (default
-  BAAI/bge-small-en-v1.5, 384-d) run with fastembed. No PyTorch.
+  BAAI/bge-small-en-v1.5, 384-d) run with fastembed. No PyTorch. A query is
+  embedded with the instruction the model was trained to expect in front of it.
 * ``HashingEmbedder`` — a deterministic feature-hashing embedder with no model
   file. It is what unit tests and CI use, so they need no download.
 
@@ -71,18 +72,31 @@ def local_model_dir(models_dir: Path, kind: str, model_name: str) -> Path | None
     return candidate if candidate.is_dir() and any(candidate.iterdir()) else None
 
 
+# The bge English models were trained with this sentence in front of a short query that looks for longer passages,
+# and with nothing in front of the passages. fastembed embeds queries and passages alike for these models, so it is
+# added here. Until 12 November it was not, although this module said it was: on the 600 benchmark requests the dense
+# retriever alone went from 69.0 to 74.8 hit@1 once it was (eval/results/retrieval/query_instruction.json).
+BGE_QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
+QUERY_INSTRUCTIONS: dict[str, str] = dict.fromkeys(("BAAI/bge-small-en-v1.5", "BAAI/bge-base-en-v1.5", "BAAI/bge-large-en-v1.5"), BGE_QUERY_INSTRUCTION)
+
+
 class FastEmbedEmbedder:
-    """ONNX sentence encoder via fastembed (queries get the model's query prefix).
+    """ONNX sentence encoder via fastembed.
 
     Documents are truncated to ``max_tokens`` and embedded in length-sorted batches: padding every
-    batch to its longest text is what makes mixed-length batches slow on CPU.
+    batch to its longest text is what makes mixed-length batches slow on CPU. Queries get
+    ``query_instruction`` in front (None: the model's own, from ``QUERY_INSTRUCTIONS``; "": none);
+    documents never do, so changing it needs no new index.
     """
 
-    def __init__(self, model_name: str, models_dir: Path, max_tokens: int = 256, threads: int | None = None) -> None:
+    def __init__(
+        self, model_name: str, models_dir: Path, max_tokens: int = 256, threads: int | None = None, query_instruction: str | None = None
+    ) -> None:
         from fastembed import TextEmbedding
 
         self.name = model_name
         self.max_tokens = max_tokens
+        self.query_instruction = QUERY_INSTRUCTIONS.get(model_name, "") if query_instruction is None else query_instruction
         local = local_model_dir(models_dir, "embeddings", model_name)
         kwargs: dict[str, object] = {"threads": threads} if threads else {}
         if local is not None:
@@ -107,7 +121,7 @@ class FastEmbedEmbedder:
         return out
 
     def embed_query(self, text: str) -> np.ndarray:
-        return np.asarray(next(iter(self._model.query_embed(text))), dtype=np.float32)
+        return np.asarray(next(iter(self._model.query_embed(self.query_instruction + text))), dtype=np.float32)
 
 
 def build_embedder(settings: Settings | None = None, backend: str | None = None) -> Embedder:
@@ -115,7 +129,7 @@ def build_embedder(settings: Settings | None = None, backend: str | None = None)
     chosen = backend or s.embedding_backend
     if chosen == "hashing":
         return HashingEmbedder()
-    return FastEmbedEmbedder(s.embedding_model, s.models_dir, max_tokens=s.embedding_max_tokens)
+    return FastEmbedEmbedder(s.embedding_model, s.models_dir, max_tokens=s.embedding_max_tokens, query_instruction=s.embedding_query_instruction)
 
 
 def batched(items: Sequence[str], size: int) -> Iterable[Sequence[str]]:

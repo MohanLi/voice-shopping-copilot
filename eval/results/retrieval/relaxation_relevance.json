@@ -1,0 +1,791 @@
+{
+ "created": "2026-11-12T03:58:44",
+ "machine": "Linux x86_64, 2 CPUs, Python 3.12.13",
+ "seconds": 152,
+ "weak_match_score": -4.0,
+ "index": {
+  "n_docs": 9740,
+  "products_sha256": "7d8e47f9564cb4fbf61e38bc71a3f3ac3396a6b3577b7132facdfd4cd3141a86"
+ },
+ "recorded": {
+  "searches": 62,
+  "weak_today": 23,
+  "relevant_at_a_looser_rung": 10,
+  "by_rung": {
+   "age_unknown_allowed": 5,
+   "category": 2,
+   "brand": 2,
+   "budget_stretched": 1
+  }
+ },
+ "probes": {
+  "searches": 10,
+  "weak_today": 6,
+  "relevant_at_a_looser_rung": 6,
+  "by_rung": {
+   "age_unknown_allowed": 3,
+   "budget_stretched": 2,
+   "budget_removed": 1
+  }
+ },
+ "cases": [
+  {
+   "source": "recorded",
+   "runs": [
+    "final"
+   ],
+   "query": "Zentrix Hoverboard Pro",
+   "filters": {
+    "age_years": 6.0
+   },
+   "today": {
+    "relaxed": [],
+    "best_score": -8.899,
+    "top": "Ultra Pro 50ct Pro-Matte Light Blue Standard Deck Protectors"
+   },
+   "weak_today": true,
+   "first_relevant_rung": "age_unknown_allowed",
+   "ladder": [
+    {
+     "rung": "strict",
+     "candidates": 62,
+     "best_score": -8.9,
+     "title": "Ultra Pro 50ct Pro-Matte Light Blue Standard Deck Protectors",
+     "price": 5.49,
+     "misses": []
+    },
+    {
+     "rung": "age_unknown_allowed",
+     "candidates": 70,
+     "best_score": -1.17,
+     "title": "HOVER-1 Chrome Electric Hoverboard Scooter",
+     "price": 199.0,
+     "misses": [
+      "the listing states no recommended age"
+     ]
+    }
+   ]
+  },
+  {
+   "source": "recorded",
+   "runs": [
+    "mac-live"
+   ],
+   "query": "Zentrix Hoverboard Pro Nine Thousand hoverboard",
+   "filters": {
+    "age_years": 6.0,
+    "brand": "Zentrix",
+    "price_max": 8.0
+   },
+   "today": {
+    "relaxed": [],
+    "best_score": -10.5004,
+    "top": "Ultra Pro 50ct Pro-Matte Light Blue Standard Deck Protectors"
+   },
+   "weak_today": true,
+   "first_relevant_rung": "age_unknown_allowed",
+   "ladder": [
+    {
+     "rung": "strict",
+     "candidates": 48,
+     "best_score": -10.5,
+     "title": "Ultra Pro 50ct Pro-Matte Light Blue Standard Deck Protectors",
+     "price": 5.49,
+     "misses": []
+    },
+    {
+     "rung": "age_unknown_allowed",
+     "candidates": 57,
+     "best_score": -3.78,
+     "title": "Hover-1 Chrome 2.0 Hoverboard",
+     "price": 6.99,
+     "misses": [
+      "the listing states no recommended age"
+     ]
+    },
+    {
+     "rung": "budget_stretched",
+     "candidates": 67,
+     "best_score": -3.78,
+     "title": "Hover-1 Chrome 2.0 Hoverboard",
+     "price": 6.99,
+     "misses": [
+      "the listing states no recommended age"
+     ]
+    },
+    {
+     "rung": "budget_removed",
+     "candidates": 68,
+     "best_score": -2.48,
+     "title": "HOVER-1 Chrome Electric Hoverboard Scooter",
+     "price": 199.0,
+     "misses": [
+      "$199.00 is above the $8.00 budget",
+      "the listing states no recommended age"
+     ]
+    }
+   ]
+  },
+  {
+   "source": "recorded",
+   "runs": [
+    "mac-live"
+   ],
+   "query": "scrub brush",
+   "filters": {
+    "category": "Home & Kitchen"
+   },
+   "today": {
+    "relaxed": [],
+    "best_score": -9.7369,
+    "top": "Furniture of America CM7382C Rexburg Dark Gray Chest"
+   },
+   "weak_today": true,
+   "first_relevant_rung": "category",
+   "ladder": [
+    {
+     "rung": "strict",
+     "candidates": 72,
+     "best_score": -9.74,
+     "title": "Unbranded Emoji, Cool Dude, 3-Piece Comforter Set Twin, Featuring Soft Brushed F",
+     "price": 50.22,
+     "misses": []
+    },
+    {
+     "rung": "category",
+     "candidates": 65,
+     "best_score": 2.56,
+     "title": "Crayola Scribble Scrubbie Pets Scrub Tub Animal Toy Set, Gift Age 3+",
+     "price": 19.97,
+     "misses": [
+      "outside the requested category"
+     ]
+    }
+   ]
+  },
+  {
+   "source": "recorded",
+   "runs": [
+    "mac-live"
+   ],
+   "query": "Glimmer Kids Immune Gummies immune support gummies for children",
+   "filters": {
+    "age_years": 4.0
+   },
+   "today": {
+    "relaxed": [],
+    "best_score": -6.8367,
+    "top": "Critter Piller Kid's Travel Buddy and Comfort Pillow, Blue Dog, Hypoallergenic, "
+   },
+   "weak_today": true,
+   "first_relevant_rung": "age_unknown_allowed",
+   "ladder": [
+    {
+     "rung": "strict",
+     "candidates": 79,
+     "best_score": -6.84,
+     "title": "Huffy 18\" Glimmer Girls Bike, Amethyst",
+     "price": 119.99,
+     "misses": []
+    },
+    {
+     "rung": "age_unknown_allowed",
+     "candidates": 74,
+     "best_score": -3.91,
+     "title": "Skechers Kids Skechers Twinkle Toes Glimmer Backpack Accessory",
+     "price": 12.16,
+     "misses": [
+      "the listing states no recommended age"
+     ]
+    }
+   ]
+  },
+  {
+   "source": "recorded",
+   "runs": [
+    "run2"
+   ],
+   "query": "LEGO Duplo set",
+   "filters": {
+    "brand": "LEGO",
+    "price_max": 8.0
+   },
+   "today": {
+    "relaxed": [
+     "brand"
+    ],
+    "best_score": -4.5248,
+    "top": "LEGO Minifigure Series 18: Party - 1 Figure Building Kit 7 pieces"
+   },
+   "weak_today": true,
+   "first_relevant_rung": "budget_stretched",
+   "ladder": [
+    {
+     "rung": "strict",
+     "candidates": 4,
+     "best_score": -4.52,
+     "title": "LEGO Minifigure Series 18: Party - 1 Figure Building Kit 7 pieces",
+     "price": 4.95,
+     "misses": []
+    },
+    {
+     "rung": "brand",
+     "candidates": 66,
+     "best_score": -4.52,
+     "title": "LEGO Minifigure Series 18: Party - 1 Figure Building Kit 7 pieces",
+     "price": 4.95,
+     "misses": []
+    },
+    {
+     "rung": "budget_stretched",
+     "candidates": 69,
+     "best_score": -1.86,
+     "title": "LEGO Creator 3in1 Propeller Plane 31099 Flying Toy Building Kit, New 2020 (128 P",
+     "price": 9.84,
+     "misses": [
+      "$9.84 is above the $8.00 budget"
+     ]
+    },
+    {
+     "rung": "budget_removed",
+     "candidates": 65,
+     "best_score": 8.87,
+     "title": "Creative LEGO DUPLO Brick Set by LEGO Education",
+     "price": 64.53,
+     "misses": [
+      "$64.53 is above the $8.00 budget",
+      "different brand than requested"
+     ]
+    }
+   ]
+  },
+  {
+   "source": "recorded",
+   "runs": [
+    "run2"
+   ],
+   "query": "Zentrix Hoverboard Pro self-balancing hoverboard",
+   "filters": {
+    "age_years": 6.0,
+    "brand": "Zentrix"
+   },
+   "today": {
+    "relaxed": [],
+    "best_score": -10.4729,
+    "top": "Ultra Pro Binder: 9pkt: PRO: Dark GR 82975"
+   },
+   "weak_today": true,
+   "first_relevant_rung": "age_unknown_allowed",
+   "ladder": [
+    {
+     "rung": "strict",
+     "candidates": 77,
+     "best_score": -10.21,
+     "title": "Ultra Pro 50ct Pro-Matte Light Blue Standard Deck Protectors",
+     "price": 5.49,
+     "misses": []
+    },
+    {
+     "rung": "age_unknown_allowed",
+     "candidates": 53,
+     "best_score": -0.8,
+     "title": "MightySkins Skin Compatible with Self Balancing Mini Scooter Hover Board - Eagle",
+     "price": 16.99,
+     "misses": [
+      "the listing states no recommended age"
+     ]
+    }
+   ]
+  },
+  {
+   "source": "recorded",
+   "runs": [
+    "run2"
+   ],
+   "query": "scrub brush for cleaning bathroom tile and tub",
+   "filters": {
+    "category": "Home & Kitchen"
+   },
+   "today": {
+    "relaxed": [],
+    "best_score": -9.0569,
+    "top": "PATIFIX Window Film self Adhesive Gray"
+   },
+   "weak_today": true,
+   "first_relevant_rung": "category",
+   "ladder": [
+    {
+     "rung": "strict",
+     "candidates": 69,
+     "best_score": -9.06,
+     "title": "PATIFIX Window Film self Adhesive Gray",
+     "price": 8.65,
+     "misses": []
+    },
+    {
+     "rung": "category",
+     "candidates": 75,
+     "best_score": -2.1,
+     "title": "Crayola Scribble Scrubbie Pets Scrub Tub Animal Toy Set, Gift Age 3+",
+     "price": 19.97,
+     "misses": [
+      "outside the requested category"
+     ]
+    }
+   ]
+  },
+  {
+   "source": "recorded",
+   "runs": [
+    "run3"
+   ],
+   "query": "Zentrix Hoverboard Pro self-balancing hoverboard",
+   "filters": {
+    "age_years": 7.0
+   },
+   "today": {
+    "relaxed": [],
+    "best_score": -10.4729,
+    "top": "DJECO Butterfly Twirl Paper Mobile Room Decoration"
+   },
+   "weak_today": true,
+   "first_relevant_rung": "age_unknown_allowed",
+   "ladder": [
+    {
+     "rung": "strict",
+     "candidates": 77,
+     "best_score": -10.21,
+     "title": "Ultra Pro 50ct Pro-Matte Light Blue Standard Deck Protectors",
+     "price": 5.49,
+     "misses": []
+    },
+    {
+     "rung": "age_unknown_allowed",
+     "candidates": 53,
+     "best_score": 0.27,
+     "title": "EPIKGO Sport Balance Board Self Balance Scooter Hover Balancing Board -UL2272 Ce",
+     "price": 199.0,
+     "misses": [
+      "the listing states no recommended age"
+     ]
+    }
+   ]
+  },
+  {
+   "source": "recorded",
+   "runs": [
+    "run4"
+   ],
+   "query": "DJECO Safari Pets wooden puzzle chunky wood pieces",
+   "filters": {
+    "age_years": 1.5,
+    "brand": "Melissa & Doug",
+    "materials": [
+     "wood"
+    ]
+   },
+   "today": {
+    "relaxed": [
+     "materials"
+    ],
+    "best_score": -11.2132,
+    "top": "Melissa & Doug Giddy-Up & Play Baby Activity Toy (Multi-Sensory Horse, Great Gif"
+   },
+   "weak_today": true,
+   "first_relevant_rung": "brand",
+   "ladder": [
+    {
+     "rung": "strict",
+     "candidates": 0,
+     "best_score": null
+    },
+    {
+     "rung": "materials",
+     "candidates": 7,
+     "best_score": -11.21,
+     "title": "Melissa & Doug Giddy-Up & Play Baby Activity Toy (Multi-Sensory Horse, Great Gif",
+     "price": 57.5,
+     "misses": [
+      "the listing does not state the requested material"
+     ]
+    },
+    {
+     "rung": "brand",
+     "candidates": 57,
+     "best_score": 4.91,
+     "title": "DJECO BigaBasic Wooden Puzzle",
+     "price": 13.99,
+     "misses": [
+      "different brand than requested"
+     ]
+    }
+   ]
+  },
+  {
+   "source": "recorded",
+   "runs": [
+    "run4"
+   ],
+   "query": "wooden marble run toddler",
+   "filters": {
+    "age_years": 1.5,
+    "allow_unknown_age": true,
+    "brand": "Melissa & Doug"
+   },
+   "today": {
+    "relaxed": [],
+    "best_score": -10.1062,
+    "top": "Melissa & Doug Bubbles Clown Fish (Great Gift for Girls and Boys - Best for Babi"
+   },
+   "weak_today": true,
+   "first_relevant_rung": "brand",
+   "ladder": [
+    {
+     "rung": "strict",
+     "candidates": 7,
+     "best_score": -10.11,
+     "title": "Melissa & Doug Giddy-Up & Play Baby Activity Toy (Multi-Sensory Horse, Great Gif",
+     "price": 57.5,
+     "misses": []
+    },
+    {
+     "rung": "brand",
+     "candidates": 62,
+     "best_score": 0.91,
+     "title": "Manhattan Toy Playful Pony Wooden Toddler Activity Center",
+     "price": 49.89,
+     "misses": [
+      "different brand than requested"
+     ]
+    }
+   ]
+  },
+  {
+   "source": "probe",
+   "runs": null,
+   "query": "wooden puzzle",
+   "filters": {
+    "price_max": 5,
+    "age_years": 3,
+    "materials": [
+     "wood"
+    ]
+   },
+   "today": {
+    "relaxed": [
+     "materials"
+    ],
+    "best_score": -6.6225,
+    "top": "Fisher-Price Thomas & Friends Wood, Percy"
+   },
+   "weak_today": true,
+   "first_relevant_rung": "age_unknown_allowed",
+   "ladder": [
+    {
+     "rung": "strict",
+     "candidates": 2,
+     "best_score": -6.62,
+     "title": "Fisher-Price Thomas & Friends Wood, Percy",
+     "price": 4.99,
+     "misses": []
+    },
+    {
+     "rung": "materials",
+     "candidates": 40,
+     "best_score": -6.62,
+     "title": "Fisher-Price Thomas & Friends Wood, Percy",
+     "price": 4.99,
+     "misses": []
+    },
+    {
+     "rung": "age_unknown_allowed",
+     "candidates": 40,
+     "best_score": -2.92,
+     "title": "Darice 9186-J Wood Letters, Baby Font J, White, 5-Inch",
+     "price": 2.64,
+     "misses": [
+      "the listing states no recommended age"
+     ]
+    },
+    {
+     "rung": "budget_stretched",
+     "candidates": 46,
+     "best_score": 3.99,
+     "title": "Bigjigs Toys BJ756 Inset Puzzle Numbers",
+     "price": 5.99,
+     "misses": [
+      "$5.99 is above the $5.00 budget"
+     ]
+    },
+    {
+     "rung": "budget_removed",
+     "candidates": 57,
+     "best_score": 7.29,
+     "title": "Melissa & Doug Safari Wooden Chunky Puzzle (Preschool, Chunky Wooden Pieces, Ful",
+     "price": 9.99,
+     "misses": [
+      "$9.99 is above the $5.00 budget"
+     ]
+    }
+   ]
+  },
+  {
+   "source": "probe",
+   "runs": null,
+   "query": "remote control car",
+   "filters": {
+    "price_max": 8,
+    "age_years": 6
+   },
+   "today": {
+    "relaxed": [],
+    "best_score": -10.7889,
+    "top": "Hot Wheels Star Wars Rogue One Character Car, First Order Flametrooper (Clean)"
+   },
+   "weak_today": true,
+   "first_relevant_rung": "budget_stretched",
+   "ladder": [
+    {
+     "rung": "strict",
+     "candidates": 68,
+     "best_score": -10.79,
+     "title": "Hyper Cluster Yo-Yo Starter Pack, Diamond Eyes Speed/Control",
+     "price": 6.97,
+     "misses": []
+    },
+    {
+     "rung": "age_unknown_allowed",
+     "candidates": 67,
+     "best_score": -10.89,
+     "title": "Redcat Racing 08005 Plastic Front Lower Suspension Arm, 2Piece",
+     "price": 7.45,
+     "misses": [
+      "the listing states no recommended age"
+     ]
+    },
+    {
+     "rung": "budget_stretched",
+     "candidates": 63,
+     "best_score": -1.96,
+     "title": "uxcell RC Remote Control Airplane Aircraft Prop Propeller Spinner 89mm/3.5\"",
+     "price": 9.45,
+     "misses": [
+      "$9.45 is above the $8.00 budget",
+      "the listing states no recommended age"
+     ]
+    },
+    {
+     "rung": "budget_removed",
+     "candidates": 68,
+     "best_score": 5.59,
+     "title": "NKOK Sonic and Sega All Stars Racing Remote Controlled Car - Sonic The Hedgehog",
+     "price": 26.99,
+     "misses": [
+      "$26.99 is above the $8.00 budget"
+     ]
+    }
+   ]
+  },
+  {
+   "source": "probe",
+   "runs": null,
+   "query": "chess set",
+   "filters": {
+    "price_max": 5
+   },
+   "today": {
+    "relaxed": [],
+    "best_score": -7.1691,
+    "top": "Battlefront Miniature Tanks: Soviet Dice Set (6) Board Game"
+   },
+   "weak_today": true,
+   "first_relevant_rung": "budget_stretched",
+   "ladder": [
+    {
+     "rung": "strict",
+     "candidates": 67,
+     "best_score": -7.17,
+     "title": "Battlefront Miniature Tanks: Soviet Dice Set (6) Board Game",
+     "price": 4.9,
+     "misses": []
+    },
+    {
+     "rung": "budget_stretched",
+     "candidates": 70,
+     "best_score": 5.1,
+     "title": "Chessex CHX25311 Dice-Speckled Arctic Camo Set",
+     "price": 5.95,
+     "misses": [
+      "$5.95 is above the $5.00 budget"
+     ]
+    },
+    {
+     "rung": "budget_removed",
+     "candidates": 65,
+     "best_score": 8.11,
+     "title": "Classic Wood Chess Set",
+     "price": 18.99,
+     "misses": [
+      "$18.99 is above the $5.00 budget"
+     ]
+    }
+   ]
+  },
+  {
+   "source": "probe",
+   "runs": null,
+   "query": "microscope",
+   "filters": {
+    "price_max": 15,
+    "age_years": 9
+   },
+   "today": {
+    "relaxed": [],
+    "best_score": -8.8274,
+    "top": "Educational Insights Nancy B's Science Club Binoculars and Wildlife Activity Jou"
+   },
+   "weak_today": true,
+   "first_relevant_rung": "age_unknown_allowed",
+   "ladder": [
+    {
+     "rung": "strict",
+     "candidates": 40,
+     "best_score": -8.83,
+     "title": "Educational Insights Nancy B's Science Club Binoculars and Wildlife Activity Jou",
+     "price": 11.24,
+     "misses": []
+    },
+    {
+     "rung": "age_unknown_allowed",
+     "candidates": 41,
+     "best_score": 1.59,
+     "title": "American Educational Glass Microscope Cover Slip, 18mm Length, 18mm Width, #2 Th",
+     "price": 8.5,
+     "misses": [
+      "the listing states no recommended age"
+     ]
+    },
+    {
+     "rung": "budget_stretched",
+     "candidates": 41,
+     "best_score": 1.59,
+     "title": "American Educational Glass Microscope Cover Slip, 18mm Length, 18mm Width, #2 Th",
+     "price": 8.5,
+     "misses": [
+      "the listing states no recommended age"
+     ]
+    },
+    {
+     "rung": "budget_removed",
+     "candidates": 42,
+     "best_score": 3.74,
+     "title": "Learning Resources Primary Microscope with 10X, 30X, 50X Magnification, Stem, Sc",
+     "price": 25.33,
+     "misses": [
+      "$25.33 is above the $15.00 budget"
+     ]
+    }
+   ]
+  },
+  {
+   "source": "probe",
+   "runs": null,
+   "query": "trampoline",
+   "filters": {
+    "price_max": 40,
+    "age_years": 5
+   },
+   "today": {
+    "relaxed": [],
+    "best_score": -10.7059,
+    "top": "Black & White Dog Bounce & Ride-on Inflatable Hopper Toddler Toy with Pump"
+   },
+   "weak_today": true,
+   "first_relevant_rung": "age_unknown_allowed",
+   "ladder": [
+    {
+     "rung": "strict",
+     "candidates": 40,
+     "best_score": -10.71,
+     "title": "Black & White Dog Bounce & Ride-on Inflatable Hopper Toddler Toy with Pump",
+     "price": 25.9,
+     "misses": []
+    },
+    {
+     "rung": "age_unknown_allowed",
+     "candidates": 40,
+     "best_score": 5.75,
+     "title": "Upper Bounce Trampoline Weather Resistant Protective Cover",
+     "price": 19.99,
+     "misses": [
+      "the listing states no recommended age"
+     ]
+    },
+    {
+     "rung": "budget_stretched",
+     "candidates": 40,
+     "best_score": 5.75,
+     "title": "Upper Bounce Trampoline Weather Resistant Protective Cover",
+     "price": 19.99,
+     "misses": [
+      "the listing states no recommended age"
+     ]
+    },
+    {
+     "rung": "budget_removed",
+     "candidates": 40,
+     "best_score": 6.33,
+     "title": "Propel Trampolines PTS55-RE Junior Trampoline with Enclosure, 55\", Red",
+     "price": 129.99,
+     "misses": [
+      "$129.99 is above the $40.00 budget",
+      "the listing states no recommended age"
+     ]
+    }
+   ]
+  },
+  {
+   "source": "probe",
+   "runs": null,
+   "query": "scrub brush",
+   "filters": {
+    "price_max": 10
+   },
+   "today": {
+    "relaxed": [],
+    "best_score": -4.4144,
+    "top": "Vallejo Kolinsky Sable Brush 3/0 Model Kit"
+   },
+   "weak_today": true,
+   "first_relevant_rung": "budget_removed",
+   "ladder": [
+    {
+     "rung": "strict",
+     "candidates": 64,
+     "best_score": -4.41,
+     "title": "Vallejo Kolinsky Sable Brush 3/0 Model Kit",
+     "price": 4.4,
+     "misses": []
+    },
+    {
+     "rung": "budget_stretched",
+     "candidates": 63,
+     "best_score": -4.41,
+     "title": "Vallejo Kolinsky Sable Brush 3/0 Model Kit",
+     "price": 4.4,
+     "misses": []
+    },
+    {
+     "rung": "budget_removed",
+     "candidates": 65,
+     "best_score": 2.56,
+     "title": "Crayola Scribble Scrubbie Pets Scrub Tub Animal Toy Set, Gift Age 3+",
+     "price": 19.97,
+     "misses": [
+      "$19.97 is above the $10.00 budget"
+     ]
+    }
+   ]
+  }
+ ]
+}

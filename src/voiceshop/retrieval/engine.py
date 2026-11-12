@@ -264,7 +264,7 @@ class SearchEngine:
         return SearchResponse(
             query=query,
             results=results,
-            applied_filters={k: v for k, v in active.model_dump().items() if v not in (None, [], False, {}) and k != "unmatched"},
+            applied_filters=self.describe_filters(active),
             unmatched_filters=original.unmatched,
             relaxed=relaxed,
             safety_rules=original.safety_rules,
@@ -278,6 +278,15 @@ class SearchEngine:
         )
 
     # ------------------------------------------------------------------ helpers
+    @staticmethod
+    def describe_filters(f: ResolvedFilters) -> dict[str, Any]:
+        """The filters as reported in a response: "category" names the widest matching catalog category and
+        "category_matches" says how many categories were matched when it is more than that one."""
+        out = {k: v for k, v in f.model_dump().items() if v not in (None, [], False, {}) and k not in ("unmatched", "category_any")}
+        if len(f.category_any) > 1:
+            out["category_matches"] = len(f.category_any)
+        return out
+
     @staticmethod
     def _same_listing(a: dict[str, Any], b: dict[str, Any]) -> bool:
         """Colour / size variants of one product: same brand and near-identical titles."""
@@ -400,6 +409,7 @@ def build_index(settings: Settings | None = None, embedder: Embedder | None = No
         "embedding_model": embedder.name,
         "embedding_dim": embedder.dim,
         "embedding_max_tokens": getattr(embedder, "max_tokens", None),
+        "query_instruction": getattr(embedder, "query_instruction", None),   # query side only; recorded, not checked on load
         "vector_store": "qdrant (server)" if s.qdrant_url else "qdrant (embedded)",
         "lexical": "bm25s (lucene variant, English stemming)",
         "products_sha256": file_sha256(products_path),

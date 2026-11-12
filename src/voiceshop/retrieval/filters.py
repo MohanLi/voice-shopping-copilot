@@ -7,8 +7,10 @@ and as a boolean mask for BM25 — and the two implementations are tested to
 select the same documents.
 
 Free-text values (category, brand) are mapped onto the catalog's own vocabulary
-first, so "toys" finds "Toys & Games" and a brand that is not in the catalog is
-reported instead of silently returning nothing.
+first. A named category selects every catalog category whose name contains its
+words, so "toys" finds "Toys & Games" and "puzzle" finds "Puzzles" and "Jigsaw
+Puzzles"; a brand or category that is not in the catalog is reported and kept as
+query text instead of silently returning nothing.
 
 When too few products satisfy every constraint, :func:`relaxation_ladder`
 loosens them one at a time in a fixed order, cheapest concession first and the
@@ -23,6 +25,7 @@ warning is excluded. None of this is ever relaxed.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from typing import Any
 
@@ -76,11 +79,32 @@ class SearchFilters(BaseModel):
 
 
 # ------------------------------------------------------------------ vocabulary
+_WORD = re.compile(r"[a-z0-9]+")
+_CONNECTIVES = frozenset({"and", "or", "for", "the", "of", "a", "an", "in", "with", "to"})
+
+
+def _singular(word: str) -> str:
+    """A crude singular, applied to both sides of a comparison, so it only has to be consistent."""
+    if len(word) > 3 and word.endswith("ies"):
+        return word[:-3] + "y"
+    if len(word) > 4 and word.endswith(("ches", "shes", "xes", "sses")):
+        return word[:-2]
+    if len(word) > 3 and word.endswith("s") and not word.endswith(("ss", "us", "is")):
+        return word[:-1]
+    return word
+
+
+def category_words(name: str) -> frozenset[str]:
+    """The words of a category name, singular and without connectives: "Toys & Games" -> {toy, game}."""
+    return frozenset(_singular(w) for w in _WORD.findall(name.lower()) if w not in _CONNECTIVES)
+
+
 class Vocabulary:
     """The catalog's own category, brand, material and claim names, with document counts."""
 
     def __init__(self, categories: dict[str, int], brands: dict[str, int], materials: dict[str, int], claims: dict[str, int]) -> None:
         self.categories, self.brands, self.materials, self.claims = categories, brands, materials, claims
+        self._category_words = {name: category_words(name) for name in categories}
 
     @classmethod
     def from_payloads(cls, payloads: list[dict[str, Any]]) -> Vocabulary:
@@ -122,14 +146,36 @@ class Vocabulary:
         near = [name for name, score, _ in found if score >= top - 2]
         return max(near, key=lambda name: choices[name])
 
-    def resolve_category(self, text: str | None) -> str | None:
+    def resolve_categories(self, text: str | None) -> list[str]:
+        """Every catalog category whose name contains all the words asked for, the one with most products first.
+
+        A category level is matched by name wherever it sits in the tree, and the same name is used for unrelated
+        things: the full catalog has a level called "Toys" with three pet toys in it and one called "Games" with
+        nine video games, next to "Toys & Games" with 6,521 products. Taking the exact name would hide what the
+        shopper meant, and so would any single choice ("Baby" is a costume size, a toy group and a department).
+        So a named category selects all of them: too wide a filter costs nothing, because the query still ranks
+        the results; too narrow a one hides products. Words are compared whole and in the singular ("puzzle" is
+        "Puzzles", "books" is not "Notebooks"). A misspelt name falls back to the closest category name; anything
+        else is not a category of this catalog, and the caller keeps it as query text.
+        """
         if not text:
-            return None
-        q = norm(text)
-        if q in self.categories:
-            return q
-        # token_set_ratio gives 100 to "toys" vs "toys & games"; require a real word overlap, not a fuzzy typo match only
-        return self._best(q, self.categories, fuzz.token_set_ratio, 88) or self._best(q, self.categories, fuzz.WRatio, 90)
+            return []
+        asked = category_words(text)
+        if not asked:
+            return []
+        names = [name for name, words in self._category_words.items() if asked <= words]
+        if not names:
+            typo = self._best(text, self.categories, fuzz.ratio, 88)
+            if typo is None:
+                return []
+            asked = self._category_words[typo]
+            names = [name for name, words in self._category_words.items() if asked <= words] or [typo]
+        return sorted(names, key=lambda name: (-self.categories[name], name))
+
+    def resolve_category(self, text: str | None) -> str | None:
+        """The widest of :meth:`resolve_categories` (the name shown as the applied filter), or None."""
+        names = self.resolve_categories(text)
+        return names[0] if names else None
 
     def resolve_brand(self, text: str | None) -> str | None:
         return self._best(text, self.brands, fuzz.ratio, 86) if text else None
@@ -151,7 +197,8 @@ class ResolvedFilters(BaseModel):
 
     price_min: float | None = None
     price_max: float | None = None
-    category: str | None = None
+    category: str | None = Field(default=None, description="The widest catalog category matching the requested one")
+    category_any: list[str] = Field(default_factory=list, description="Every catalog category matching the requested one; a product in any of them passes")
     brand: str | None = None
     age_months: int | None = None
     allow_unknown_age: bool = False
@@ -160,6 +207,11 @@ class ResolvedFilters(BaseModel):
     exclude_safety_flags: list[str] = Field(default_factory=list)
     under_3: bool = Field(default=False, description="The under-three rule is in force (set automatically from the age)")
     unmatched: dict[str, str] = Field(default_factory=dict, description="Values that are not in the catalog vocabulary")
+
+    @property
+    def category_names(self) -> list[str]:
+        """The category names a product may be filed under (empty: no category constraint)."""
+        return self.category_any or ([self.category] if self.category else [])
 
     def is_empty(self) -> bool:
         return not any([
@@ -186,7 +238,8 @@ def resolve(filters: SearchFilters, vocab: Vocabulary) -> ResolvedFilters:
         out.allow_unknown_age = False
         out.exclude_safety_flags = list(dict.fromkeys([*out.exclude_safety_flags, *UNDER_3_EXCLUDED_FLAGS]))
     if filters.category:
-        out.category = vocab.resolve_category(filters.category)
+        out.category_any = vocab.resolve_categories(filters.category)
+        out.category = out.category_any[0] if out.category_any else None
         if out.category is None:
             out.unmatched["category"] = filters.category
     if filters.brand:
@@ -217,8 +270,8 @@ def to_qdrant(f: ResolvedFilters) -> qm.Filter | None:
     must_not: list[Any] = []
     if f.price_min is not None or f.price_max is not None:
         must.append(qm.FieldCondition(key="price", range=qm.Range(gte=f.price_min, lte=f.price_max)))
-    if f.category:
-        must.append(qm.FieldCondition(key="category_norm", match=qm.MatchValue(value=f.category)))
+    if f.category_names:
+        must.append(qm.FieldCondition(key="category_norm", match=qm.MatchAny(any=f.category_names)))
     if f.brand:
         must.append(qm.FieldCondition(key="brand_norm", match=qm.MatchValue(value=f.brand)))
     if f.age_months is not None:
@@ -280,8 +333,11 @@ class FilterIndex:
             m &= self.price >= f.price_min
         if f.price_max is not None:
             m &= self.price <= f.price_max
-        if f.category:
-            m &= self._members("category_norm", f.category)
+        if f.category_names:
+            any_category = np.zeros(self.n, dtype=bool)
+            for name in f.category_names:
+                any_category |= self._members("category_norm", name)
+            m &= any_category
         if f.brand:
             m &= self._members("brand_norm", f.brand)
         if f.age_months is not None:
@@ -323,8 +379,8 @@ def relaxation_ladder(f: ResolvedFilters, budget_stretch: float = 1.25) -> Itera
     if current.brand:
         current = current.model_copy(update={"brand": None})
         yield "brand", current
-    if current.category:
-        current = current.model_copy(update={"category": None})
+    if current.category_names:
+        current = current.model_copy(update={"category": None, "category_any": []})
         yield "category", current
     if current.price_max is not None:
         current = current.model_copy(update={"price_max": round(current.price_max * budget_stretch, 2)})
@@ -344,7 +400,7 @@ def constraint_notes(pl: dict[str, Any], original: ResolvedFilters) -> list[str]
         notes.append(f"${price:.2f} is below the ${original.price_min:.2f} minimum")
     if original.brand and pl.get("brand_norm") != original.brand:
         notes.append("different brand than requested")
-    if original.category and original.category not in (pl.get("category_norm") or []):
+    if original.category_names and not set(original.category_names) & set(pl.get("category_norm") or []):
         notes.append("outside the requested category")
     if original.age_months is not None:
         if not pl.get("has_age"):

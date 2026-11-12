@@ -16,6 +16,18 @@ the target product always satisfies them. The model only has to phrase them.
 Known limitation, stated wherever the numbers are quoted: other products can
 also be good answers to a request, so "the target is in the top k" is a lower
 bound on quality. It is still a fair way to compare retrieval variants.
+
+A second set tests the case the first one flatters. The requests above are
+written from the listing and share its words, which is how most people ask
+("a wooden puzzle") and also what a lexical index is best at. So
+
+    voiceshop eval make-queries --paraphrase
+
+writes, for the same products and the same constraints, one request that uses
+*none of the words of the title* (prompt: ``prompts/eval_paraphrase_generation.md``).
+The rule is checked by code with the lexical index's own tokeniser; a request
+that breaks it goes back to the model with the offending words, and a product
+for which eight attempts fail is left out and counted.
 """
 
 from __future__ import annotations
@@ -25,6 +37,8 @@ import json
 import logging
 import math
 import random
+import re
+import statistics
 import time
 from pathlib import Path
 from typing import Any
@@ -196,6 +210,160 @@ async def generate_async(products: pd.DataFrame, out_path: Path, seed: int = 7, 
 
 def generate(products: pd.DataFrame, out_path: Path, **kwargs: Any) -> dict[str, Any]:
     return asyncio.run(generate_async(products, out_path, **kwargs))
+
+
+# ---------------------------------------------------------------- paraphrases
+class Paraphrase(BaseModel):
+    id: str
+    request: str = Field(description="One spoken request that uses none of the forbidden words")
+
+
+class ParaphraseBatch(BaseModel):
+    items: list[Paraphrase]
+
+
+_SURFACE_WORD = re.compile(r"[A-Za-z][A-Za-z'’\-]*")
+# Words a request needs to state its constraints; they are allowed even when the title has them ("Ages 3 Years and Up").
+_CONSTRAINT_WORDS = (
+    "dollar dollars budget year years old month months one two three four five six seven eight nine ten eleven twelve "
+    "thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty sixty seventy eighty ninety hundred"
+)
+
+
+def stems(text: str) -> set[str]:
+    """Content words as the lexical index sees them: lower case, stop words dropped, stemmed. Bare numbers are left out."""
+    from voiceshop.retrieval.lexical import tokenize
+
+    tokens = tokenize(text)
+    return {t for t in (tokens[0] if tokens else []) if not t.isdigit()}
+
+
+def title_text(row: dict[str, Any]) -> str:
+    """What a paraphrase may not borrow from: the title, the brand, the product type and the short spoken name."""
+    return " ".join(str(row.get(key) or "") for key in ("title", "brand", "product_type", "spoken_name"))
+
+
+def surface_words(text: str, of_stems: set[str]) -> list[str]:
+    """The words of ``text`` whose stem is in ``of_stems``, lower case, each stem once, in order of appearance."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for word in _SURFACE_WORD.findall(text):
+        hit = stems(word) & of_stems
+        if hit and not hit <= seen:
+            seen |= hit
+            out.append(word.lower())
+    return out
+
+
+def borrowed_words(request: str, row: dict[str, Any]) -> list[str]:
+    """Words of the request that the product's title also uses, in any form; an empty list means the request passes."""
+    forbidden = stems(title_text(row)) - stems(_CONSTRAINT_WORDS)
+    return surface_words(request, forbidden)
+
+
+def mention_phrases(filters: dict[str, Any]) -> list[str]:
+    """The constraints of a benchmark request, as the phrases the model is asked to work in (same wording as above)."""
+    out: list[str] = []
+    if "price_max" in filters:
+        out.append(f"a budget of under {filters['price_max']:.0f} dollars")
+    if "age_years" in filters:
+        months = round(filters["age_years"] * 12)
+        out.append(f"it is for a {months} month old" if months < 24 else f"it is for a {months // 12} year old")
+    return out
+
+
+async def generate_paraphrases_async(
+    queries: list[dict[str, Any]], products: pd.DataFrame, out_path: Path, batch_size: int = 5, concurrency: int = 6, attempts: int = 8
+) -> dict[str, Any]:
+    """One request per target product of ``queries`` that shares no word with the product's title. Same gold filters."""
+    from voiceshop.retrieval import documents as docs
+
+    prompt = load_prompt("eval_paraphrase_generation")
+    rows = {r["id"]: docs.row_to_dict(r) for r in products.to_dict(orient="records")}
+    targets: dict[str, dict[str, Any]] = {}
+    for q in queries:                                        # one entry per product, in the order of the first benchmark
+        if q["source_doc_id"] in rows:
+            targets.setdefault(q["source_doc_id"], {"n": q["qid"].split("-")[0], "filters": q["filters"], "rejected": [], "tries": 0})
+    for doc_id, target in targets.items():
+        row = rows[doc_id]
+        target["forbidden"] = surface_words(title_text(row), stems(title_text(row)) - stems(_CONSTRAINT_WORDS))
+
+    spec = spec_for("router")
+    llm = get_chat_model("eval_queries", spec=str(spec), max_tokens=2500)
+    runnable = llm.with_structured_output(ParaphraseBatch, method="function_calling")
+    sem = asyncio.Semaphore(concurrency)
+    ledger = get_ledger()
+    start_cost, started = ledger.total_usd, time.time()
+    accepted: dict[str, str] = {}
+
+    def payload(doc_id: str) -> dict[str, Any]:
+        row, target = rows[doc_id], targets[doc_id]
+        item = {
+            "id": doc_id, "title": row["title"][:220], "product_type": row.get("product_type"),
+            "features": [str(f)[:180] for f in (row.get("features") or [])][:4], "description": (row.get("description") or "")[:300],
+            "forbidden": target["forbidden"], "must_mention": mention_phrases(target["filters"]) or ["(no extra constraint)"],
+        }
+        if target["rejected"]:
+            item["rejected_words"] = target["rejected"]
+        return item
+
+    async def work(batch: list[str]) -> None:
+        async with sem:
+            try:
+                out: ParaphraseBatch = await runnable.ainvoke(
+                    [SystemMessage(content=prompt.text), HumanMessage(content=json.dumps([payload(d) for d in batch], ensure_ascii=False))]
+                )
+            except Exception as exc:
+                log.warning("paraphrase batch failed: %s", str(exc)[:160])
+                return
+            for item in out.items:
+                if item.id not in targets or item.id in accepted:
+                    continue
+                text = " ".join(item.request.split())
+                borrowed = borrowed_words(text, rows[item.id])
+                if not borrowed and len(text.split()) >= 6:
+                    accepted[item.id] = text
+                else:
+                    targets[item.id]["rejected"] = list(dict.fromkeys([*targets[item.id]["rejected"], *borrowed]))
+
+    pending = list(targets)
+    for _ in range(attempts):
+        if not pending:
+            break
+        for doc_id in pending:
+            targets[doc_id]["tries"] += 1
+        await asyncio.gather(*(work(pending[i: i + batch_size]) for i in range(0, len(pending), batch_size)))
+        pending = [d for d in pending if d not in accepted]
+
+    records: list[dict[str, Any]] = []
+    for doc_id, target in targets.items():
+        if doc_id not in accepted:
+            continue
+        row, text = rows[doc_id], accepted[doc_id]
+        words = stems(text) - stems(_CONSTRAINT_WORDS)
+        in_listing = words & stems(docs.lexical_text(row))
+        records.append({
+            "qid": f"{target['n']}-paraphrase", "type": "paraphrase", "query": text, "source_doc_id": doc_id, "filters": target["filters"],
+            "category": row.get("category"), "price": float(row["price"]), "title": row["title"],
+            "listing_overlap": round(len(in_listing) / len(words), 3) if words else 0.0, "attempts": target["tries"],
+        })
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", encoding="utf-8") as f:
+        for rec in records:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    return {
+        "products": len(targets), "queries": len(records), "left_out": len(targets) - len(records),
+        "written_at_attempt": {str(k): sum(1 for r in records if r["attempts"] == k) for k in range(1, attempts + 1)},
+        "with_budget": sum(1 for r in records if "price_max" in r["filters"]), "with_age": sum(1 for r in records if "age_years" in r["filters"]),
+        "words_shared_with_title": 0,
+        "median_share_of_words_found_elsewhere_in_listing": round(statistics.median(r["listing_overlap"] for r in records), 3) if records else None,
+        "cost_usd": round(ledger.total_usd - start_cost, 4), "seconds": round(time.time() - started, 1),
+        "model": str(spec), "prompt_version": prompt.version,
+    }
+
+
+def generate_paraphrases(queries: list[dict[str, Any]], products: pd.DataFrame, out_path: Path, **kwargs: Any) -> dict[str, Any]:
+    return asyncio.run(generate_paraphrases_async(queries, products, out_path, **kwargs))
 
 
 def load_queries(path: Path) -> list[dict[str, Any]]:

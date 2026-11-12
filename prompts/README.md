@@ -17,7 +17,8 @@ the system ever gave you can see exactly which wording produced it.
 | [`critic.md`](critic.md) | `critic` — `voiceshop/agents/answerer.py` | findings that must be fixed before the answer is spoken: unsupported, constraint, unfit, safety, unanswered | `CriticReport` |
 | [`safety_policy.md`](safety_policy.md) | **guardrail instructions**, included verbatim in `router`, `answerer` and `critic` | – (policy text) | – |
 | [`catalog_enrichment.md`](catalog_enrichment.md) | offline data step `voiceshop enrich` — `voiceshop/data/enrich.py` | brand, product type, spoken name, materials, each verified against the listing text before it is kept | `AttributeBatch` |
-| [`eval_query_generation.md`](eval_query_generation.md) | offline evaluation step — `voiceshop/evals/retrieval_queries.py` | three spoken-style requests per sampled product for the retrieval benchmark | `QueryBatch` |
+| [`eval_query_generation.md`](eval_query_generation.md) | offline evaluation step `voiceshop eval make-queries` — `voiceshop/evals/retrieval_queries.py` | three spoken-style requests per sampled product for the retrieval benchmark | `QueryBatch` |
+| [`eval_paraphrase_generation.md`](eval_paraphrase_generation.md) | offline evaluation step `voiceshop eval make-queries --paraphrase` — same module | one request per product that uses no word of the product's title (checked by code, sent back with the offending words when it does) | `ParaphraseBatch` |
 
 There is no separate "system prompt" for the assistant as a whole: each agent has its own, listed above. The
 few-shot examples used are inside the files that use them (`router.md` has seventeen routing examples, `critic.md`

@@ -36,6 +36,7 @@ VARIANTS: dict[str, dict[str, Any]] = {
     "bm25": {"mode": "lexical", "rerank": False, "filters": False},
     "dense": {"mode": "dense", "rerank": False, "filters": False},
     "hybrid (rrf)": {"mode": "hybrid", "rerank": False, "filters": False},
+    "bm25 + filters": {"mode": "lexical", "rerank": False, "filters": True},
     "dense + filters": {"mode": "dense", "rerank": False, "filters": True},
     "hybrid + filters": {"mode": "hybrid", "rerank": False, "filters": True},
     # The cross-encoder used two ways: as the only judge of all 40 candidates, or as one more voter on the first 10.
@@ -150,6 +151,7 @@ def run(
         "queries_with_budget": sum("price_max" in q["filters"] for q in queries),
         "queries_with_age": sum("age_years" in q["filters"] for q in queries),
         "index": engine.manifest,
+        "query_instruction": getattr(engine.embedder, "query_instruction", None),
         "reranker": engine.reranker.name if engine.reranker else None,
         "variants": results,
     }
@@ -163,7 +165,8 @@ def to_markdown(report: dict[str, Any]) -> str:
     lines = [
         f"Retrieval benchmark — {report['queries']} spoken-style queries, one known target product each "
         f"({report['queries_with_budget']} state a budget, {report['queries_with_age']} an age). "
-        f"Index: {report['index'].get('n_docs')} products, {report['index'].get('embedding_model')}. "
+        f"Index: {report['index'].get('n_docs')} products, {report['index'].get('embedding_model')}"
+        f"{' with its query instruction' if report.get('query_instruction') else ''}. "
         f"Re-ranker: {report.get('reranker') or 'off'}. Latency measured on {report.get('machine', 'n/a')}.",
         "",
         "| Variant | queries | hit@1 | hit@3 | hit@5 | hit@10 | MRR@10 | in budget@3 | age ok@3 | p50 ms | p95 ms |",

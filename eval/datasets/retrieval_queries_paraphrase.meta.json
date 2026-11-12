@@ -1,0 +1,23 @@
+{
+ "products": 200,
+ "queries": 165,
+ "left_out": 35,
+ "written_at_attempt": {
+  "1": 53,
+  "2": 47,
+  "3": 25,
+  "4": 8,
+  "5": 13,
+  "6": 9,
+  "7": 6,
+  "8": 4
+ },
+ "with_budget": 105,
+ "with_age": 66,
+ "words_shared_with_title": 0,
+ "median_share_of_words_found_elsewhere_in_listing": 0.333,
+ "cost_usd": 0.0738,
+ "seconds": 71.7,
+ "model": "anthropic:claude-haiku-5-5",
+ "prompt_version": "1"
+}

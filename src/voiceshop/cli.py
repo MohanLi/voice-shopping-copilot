@@ -133,9 +133,11 @@ def search(
         return
     console.print(f"filters applied: {res.applied_filters or '-'}   relaxed: {res.relaxed or '-'}   "
                   f"unmatched: {res.unmatched_filters or '-'}   strict matches: {res.strict_matches:,}   {res.timings_ms}")
-    table = Table("#", "doc_id", "price", "brand", "title", "age", "notes")
+    table = Table("#", "doc_id", "price", "brand", "title", "age", "dense", "bm25", "re-rank", "notes")
     for i, h in enumerate(res.results, 1):
-        table.add_row(str(i), h.doc_id, f"${h.price:.2f}", h.brand or "-", h.title[:60], h.age_label or "-", "; ".join(h.constraint_notes) or "-")
+        table.add_row(str(i), h.doc_id, f"${h.price:.2f}", h.brand or "-", h.title[:60], h.age_label or "-",
+                      str(h.dense_rank or "-"), str(h.lexical_rank or "-"), f"{h.rerank_score:.1f}" if h.rerank_score is not None else "-",
+                      "; ".join(h.constraint_notes) or "-")
     console.print(table)
 
 
@@ -412,6 +414,7 @@ def eval_retrieval(
     sample: Annotated[int | None, typer.Option(help="Score only this many queries (a seeded sample)")] = None,
     slow_sample: Annotated[int | None, typer.Option(help="Queries for the variant that re-ranks all 40 candidates (slow on a small CPU)")] = None,
     out: Annotated[Path | None, typer.Option(help="Output folder (default: eval/results/retrieval)")] = None,
+    queries: Annotated[Path | None, typer.Option(help="Another query file (default: eval/datasets/retrieval_queries.jsonl)")] = None,
 ) -> None:
     """Score every retrieval variant on the benchmark queries and write benchmark.json / benchmark.md."""
     from voiceshop.evals import retrieval_eval as ev
@@ -424,11 +427,41 @@ def eval_retrieval(
     try:
         if engine.reranker is None:
             console.print("[yellow]The re-ranker is not available (RERANKER_ENABLED or model files); its variants are skipped.[/yellow]")
-        report = ev.run(engine, root / "eval" / "datasets" / "retrieval_queries.jsonl", out or (root / "eval" / "results" / "retrieval"),
+        report = ev.run(engine, queries or (root / "eval" / "datasets" / "retrieval_queries.jsonl"), out or (root / "eval" / "results" / "retrieval"),
                         max_queries=sample, rerank_max_queries=slow_sample)
     finally:
         engine.close()
     console.print(ev.to_markdown(report), highlight=False, markup=False)
+
+
+@eval_app.command("make-queries")
+def eval_make_queries(
+    products: Annotated[int, typer.Option(help="Catalog products to write requests for (three requests each)")] = 200,
+    seed: Annotated[int, typer.Option(help="Seed of the product sample and of the chosen constraints")] = 7,
+    out: Annotated[Path | None, typer.Option(help="Where to write (default: eval/datasets/retrieval_queries[_paraphrase].jsonl)")] = None,
+    force: Annotated[bool, typer.Option("--force", help="Overwrite an existing file")] = False,
+    paraphrase: Annotated[bool, typer.Option("--paraphrase", help="Write the second set instead: for the products and constraints of the "
+                                                                   "first, one request each that uses no word of the product's title")] = False,
+) -> None:
+    """Write the retrieval benchmark: spoken-style requests with one known target product each (needs a model key)."""
+    from voiceshop.data.ingest import load_products
+    from voiceshop.evals import retrieval_queries as rq
+    from voiceshop.paths import project_root
+
+    _logging()
+    datasets = project_root() / "eval" / "datasets"
+    path = out or (datasets / ("retrieval_queries_paraphrase.jsonl" if paraphrase else "retrieval_queries.jsonl"))
+    if path.exists() and not force:
+        console.print(f"[red]{path} exists.[/red] The model words the requests anew on every run, so the benchmark of record would "
+                      "change: write somewhere else with --out, or pass --force.")
+        raise typer.Exit(1)
+    frame = load_products(get_settings().data_dir / "processed" / "products.parquet")
+    if paraphrase:
+        meta = rq.generate_paraphrases(rq.load_queries(datasets / "retrieval_queries.jsonl"), frame, path)
+    else:
+        meta = rq.generate(rq.sample_products(frame, products, seed=seed), path, seed=seed)
+    path.with_suffix(".meta.json").write_text(json.dumps(meta, indent=1))
+    console.print_json(json.dumps(meta))
 
 
 @eval_app.command("speech")
