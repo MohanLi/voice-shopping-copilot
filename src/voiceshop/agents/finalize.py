@@ -372,7 +372,7 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
         # Said only when a product in the table misses something, and with the number that did not. The search loosens a
         # constraint when fewer than five products meet all of them, to fill its list; in the third live run four LEGO sets
         # were within the budget, the three in the table were among them, and the note under the table still read "No
-        # product met every constraint". Half the jury took that for the answer's own doubt.
+        # product met every constraint". No check was lost to it; one juror quoted it as the reply stating its uncertainty.
         met = evidence.strict_matches
         lead = ("Too few products met every constraint" if met is None else "No product met every constraint" if met == 0
                 else f"Only {met} product{'s' if met != 1 else ''} met every constraint")

@@ -1,16 +1,16 @@
 {
- "created": "2026-11-11T02:16:53",
+ "created": "2026-11-12T05:28:58",
  "machine": "Linux x86_64, 2 CPUs, Python 3.12.13",
  "queries": 150,
  "candidates": 40,
  "reranker": "Xenova/ms-marco-MiniLM-L-6-v2",
  "orderings": {
   "hybrid": {
-   "hit@1": 82.0,
-   "hit@3": 88.7,
-   "hit@5": 89.3,
-   "hit@10": 93.3,
-   "mrr@10": 0.857
+   "hit@1": 80.0,
+   "hit@3": 90.0,
+   "hit@5": 90.0,
+   "hit@10": 92.7,
+   "mrr@10": 0.85
   },
   "rerank (all 40)": {
    "hit@1": 84.0,
@@ -20,56 +20,56 @@
    "mrr@10": 0.88
   },
   "fused, re-ranker weight 0.5": {
-   "hit@1": 82.0,
-   "hit@3": 88.7,
+   "hit@1": 81.3,
+   "hit@3": 90.0,
    "hit@5": 94.0,
-   "hit@10": 95.3,
-   "mrr@10": 0.865
+   "hit@10": 96.7,
+   "mrr@10": 0.868
   },
   "fused, re-ranker weight 1.0": {
-   "hit@1": 80.7,
-   "hit@3": 92.7,
-   "hit@5": 94.7,
-   "hit@10": 96.7,
-   "mrr@10": 0.865
+   "hit@1": 82.0,
+   "hit@3": 92.0,
+   "hit@5": 94.0,
+   "hit@10": 96.0,
+   "mrr@10": 0.871
   },
   "fused, re-ranker weight 2.0": {
-   "hit@1": 85.3,
-   "hit@3": 94.0,
-   "hit@5": 95.3,
-   "hit@10": 96.7,
-   "mrr@10": 0.892
+   "hit@1": 86.0,
+   "hit@3": 93.3,
+   "hit@5": 96.0,
+   "hit@10": 96.0,
+   "mrr@10": 0.897
   },
   "rerank top 10 only": {
    "hit@1": 84.0,
-   "hit@3": 90.0,
-   "hit@5": 92.7,
-   "hit@10": 93.3,
-   "mrr@10": 0.873
+   "hit@3": 88.7,
+   "hit@5": 92.0,
+   "hit@10": 92.7,
+   "mrr@10": 0.871
   },
   "fused top 10, weight 1.0": {
-   "hit@1": 80.0,
+   "hit@1": 82.7,
    "hit@3": 89.3,
    "hit@5": 92.0,
-   "hit@10": 93.3,
-   "mrr@10": 0.851
+   "hit@10": 92.7,
+   "mrr@10": 0.864
   },
   "rerank top 20 only": {
    "hit@1": 85.3,
-   "hit@3": 90.7,
-   "hit@5": 94.7,
-   "hit@10": 96.0,
-   "mrr@10": 0.887
+   "hit@3": 91.3,
+   "hit@5": 95.3,
+   "hit@10": 97.3,
+   "mrr@10": 0.89
   },
   "fused top 20, weight 1.0": {
-   "hit@1": 80.7,
-   "hit@3": 89.3,
-   "hit@5": 94.7,
-   "hit@10": 96.0,
-   "mrr@10": 0.861
+   "hit@1": 82.7,
+   "hit@3": 90.7,
+   "hit@5": 94.0,
+   "hit@10": 96.7,
+   "mrr@10": 0.873
   }
  },
- "rerank_ms_p50": 5497.3,
+ "rerank_ms_p50": 4744.5,
  "top_score": {
   "in_catalog": {
    "p05": -3.622,
@@ -135,8 +135,8 @@
   {
    "query": "laundry detergent pods for sensitive skin",
    "kind": "absent",
-   "top_score": -9.573,
-   "top_title": "LAB SERIES Max Ls Daily Renewing Cleanser, 5 Ounce"
+   "top_score": -9.801,
+   "top_title": "oogaa Home Octopus Teether Easy Clean, Baby Safe High-Grade Silicone, Green"
   },
   {
    "query": "dishwasher detergent tablets",
@@ -148,7 +148,7 @@
    "query": "bleach free bathroom tile cleaner",
    "kind": "absent",
    "top_score": -9.846,
-   "top_title": "PATIFIX Window Film self Adhesive, Gray"
+   "top_title": "Green Toys Submarine in Yellow & blue - BPA Free, Phthalate Free, Bath Toy with Spinning R"
   },
   {
    "query": "wireless noise cancelling headphones",
@@ -165,8 +165,8 @@
   {
    "query": "4k smart television 55 inch",
    "kind": "absent",
-   "top_score": -9.141,
-   "top_title": "MZ GS1004 1/18 2.4G 4WD 390 Brushed Rc Car 55km/h High Speed Drift Buggy Off-Road Truck RT"
+   "top_score": -9.18,
+   "top_title": "DJI Smart Controller"
   },
   {
    "query": "android smartphone with a good camera",

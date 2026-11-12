@@ -1,183 +1,183 @@
 {
- "created": "2026-11-11T04:49:15",
+ "created": "2026-11-12T05:35:27",
  "machine": "Linux x86_64, 2 CPUs, Python 3.12.13",
  "queries": 600,
  "top": 10,
  "reranker": "Xenova/ms-marco-MiniLM-L-6-v2",
  "results": {
   "hybrid + filters, ties by index": {
-   "hit@1": 83.7,
-   "hit@3": 92.0,
-   "hit@5": 94.8,
-   "mrr@10": 0.8825
+   "hit@1": 84.7,
+   "hit@3": 93.0,
+   "hit@5": 94.7,
+   "mrr@10": 0.8902
   },
   "hybrid + filters, ties by dense": {
-   "hit@1": 83.0,
-   "hit@3": 92.0,
-   "hit@5": 95.0,
-   "mrr@10": 0.8794
+   "hit@1": 84.0,
+   "hit@3": 93.0,
+   "hit@5": 94.7,
+   "mrr@10": 0.8869
   },
   "hybrid + filters, ties by lexical": {
-   "hit@1": 83.7,
-   "hit@3": 92.0,
-   "hit@5": 94.8,
-   "mrr@10": 0.8825
+   "hit@1": 84.5,
+   "hit@3": 93.0,
+   "hit@5": 94.7,
+   "mrr@10": 0.89
   },
   "re-rank top 10 on hybrid(index), weight 1, ties by index": {
-   "hit@1": 84.5,
-   "hit@3": 93.3,
+   "hit@1": 85.7,
+   "hit@3": 92.7,
    "hit@5": 95.5,
-   "mrr@10": 0.8894
+   "mrr@10": 0.8952
   },
   "re-rank top 10 on hybrid(index), weight 1, ties by retrieval": {
-   "hit@1": 84.7,
-   "hit@3": 93.7,
+   "hit@1": 85.5,
+   "hit@3": 93.0,
    "hit@5": 95.5,
-   "mrr@10": 0.8908
+   "mrr@10": 0.8947
   },
   "re-rank top 10 on hybrid(index), weight 1, ties by reranker": {
-   "hit@1": 83.8,
-   "hit@3": 93.2,
+   "hit@1": 85.0,
+   "hit@3": 92.7,
    "hit@5": 95.5,
-   "mrr@10": 0.8862
+   "mrr@10": 0.8917
   },
   "re-rank top 10 on hybrid(index), weight 1.5, ties by index": {
-   "hit@1": 83.7,
+   "hit@1": 84.2,
    "hit@3": 93.3,
    "hit@5": 95.5,
-   "mrr@10": 0.8857
+   "mrr@10": 0.8872
   },
   "re-rank top 10 on hybrid(index), weight 1.5, ties by retrieval": {
-   "hit@1": 83.7,
+   "hit@1": 84.2,
    "hit@3": 93.3,
    "hit@5": 95.5,
-   "mrr@10": 0.8857
+   "mrr@10": 0.8872
   },
   "re-rank top 10 on hybrid(index), weight 1.5, ties by reranker": {
-   "hit@1": 83.7,
+   "hit@1": 84.2,
    "hit@3": 93.3,
    "hit@5": 95.5,
-   "mrr@10": 0.8857
+   "mrr@10": 0.8872
   },
   "re-rank top 10 on hybrid(index), weight 2, ties by index": {
-   "hit@1": 83.7,
-   "hit@3": 93.3,
-   "hit@5": 95.5,
-   "mrr@10": 0.8855
-  },
-  "re-rank top 10 on hybrid(index), weight 2, ties by retrieval": {
-   "hit@1": 83.7,
-   "hit@3": 93.3,
-   "hit@5": 95.5,
-   "mrr@10": 0.8855
-  },
-  "re-rank top 10 on hybrid(index), weight 2, ties by reranker": {
-   "hit@1": 83.7,
-   "hit@3": 93.3,
-   "hit@5": 95.5,
-   "mrr@10": 0.8855
-  },
-  "re-rank top 10 on hybrid(index), weight 3, ties by index": {
-   "hit@1": 84.0,
-   "hit@3": 93.2,
-   "hit@5": 94.8,
-   "mrr@10": 0.8865
-  },
-  "re-rank top 10 on hybrid(index), weight 3, ties by retrieval": {
-   "hit@1": 84.0,
-   "hit@3": 93.2,
-   "hit@5": 94.8,
-   "mrr@10": 0.8865
-  },
-  "re-rank top 10 on hybrid(index), weight 3, ties by reranker": {
-   "hit@1": 84.0,
-   "hit@3": 93.2,
-   "hit@5": 94.8,
-   "mrr@10": 0.8865
-  },
-  "re-rank top 10 on hybrid(index), replace": {
-   "hit@1": 83.3,
-   "hit@3": 91.8,
-   "hit@5": 94.3,
-   "mrr@10": 0.8786
-  },
-  "re-rank top 10 on hybrid(lexical), weight 1, ties by index": {
    "hit@1": 84.5,
    "hit@3": 93.3,
+   "hit@5": 95.2,
+   "mrr@10": 0.889
+  },
+  "re-rank top 10 on hybrid(index), weight 2, ties by retrieval": {
+   "hit@1": 84.5,
+   "hit@3": 93.3,
+   "hit@5": 95.2,
+   "mrr@10": 0.889
+  },
+  "re-rank top 10 on hybrid(index), weight 2, ties by reranker": {
+   "hit@1": 84.5,
+   "hit@3": 93.3,
+   "hit@5": 95.2,
+   "mrr@10": 0.889
+  },
+  "re-rank top 10 on hybrid(index), weight 3, ties by index": {
+   "hit@1": 83.8,
+   "hit@3": 92.5,
+   "hit@5": 94.7,
+   "mrr@10": 0.8833
+  },
+  "re-rank top 10 on hybrid(index), weight 3, ties by retrieval": {
+   "hit@1": 83.8,
+   "hit@3": 92.5,
+   "hit@5": 94.7,
+   "mrr@10": 0.8833
+  },
+  "re-rank top 10 on hybrid(index), weight 3, ties by reranker": {
+   "hit@1": 83.8,
+   "hit@3": 92.5,
+   "hit@5": 94.7,
+   "mrr@10": 0.8833
+  },
+  "re-rank top 10 on hybrid(index), replace": {
+   "hit@1": 83.2,
+   "hit@3": 91.5,
+   "hit@5": 94.3,
+   "mrr@10": 0.8766
+  },
+  "re-rank top 10 on hybrid(lexical), weight 1, ties by index": {
+   "hit@1": 85.8,
+   "hit@3": 93.0,
    "hit@5": 95.5,
-   "mrr@10": 0.8894
+   "mrr@10": 0.8963
   },
   "re-rank top 10 on hybrid(lexical), weight 1, ties by retrieval": {
-   "hit@1": 84.0,
-   "hit@3": 93.7,
+   "hit@1": 84.7,
+   "hit@3": 93.0,
    "hit@5": 95.5,
-   "mrr@10": 0.8875
+   "mrr@10": 0.8905
   },
   "re-rank top 10 on hybrid(lexical), weight 1, ties by reranker": {
-   "hit@1": 83.8,
-   "hit@3": 93.2,
+   "hit@1": 84.8,
+   "hit@3": 93.0,
    "hit@5": 95.5,
-   "mrr@10": 0.8862
+   "mrr@10": 0.8911
   },
   "re-rank top 10 on hybrid(lexical), weight 1.5, ties by index": {
-   "hit@1": 83.7,
-   "hit@3": 93.2,
-   "hit@5": 95.7,
-   "mrr@10": 0.8859
+   "hit@1": 84.2,
+   "hit@3": 93.7,
+   "hit@5": 95.5,
+   "mrr@10": 0.8878
   },
   "re-rank top 10 on hybrid(lexical), weight 1.5, ties by retrieval": {
-   "hit@1": 83.7,
-   "hit@3": 93.2,
-   "hit@5": 95.7,
-   "mrr@10": 0.8859
+   "hit@1": 84.2,
+   "hit@3": 93.7,
+   "hit@5": 95.5,
+   "mrr@10": 0.8878
   },
   "re-rank top 10 on hybrid(lexical), weight 1.5, ties by reranker": {
-   "hit@1": 83.7,
-   "hit@3": 93.2,
-   "hit@5": 95.7,
-   "mrr@10": 0.8859
+   "hit@1": 84.2,
+   "hit@3": 93.7,
+   "hit@5": 95.5,
+   "mrr@10": 0.8878
   },
   "re-rank top 10 on hybrid(lexical), weight 2, ties by index": {
-   "hit@1": 83.8,
-   "hit@3": 93.3,
-   "hit@5": 95.5,
-   "mrr@10": 0.8863
+   "hit@1": 84.7,
+   "hit@3": 93.7,
+   "hit@5": 95.2,
+   "mrr@10": 0.8902
   },
   "re-rank top 10 on hybrid(lexical), weight 2, ties by retrieval": {
-   "hit@1": 83.8,
-   "hit@3": 93.3,
-   "hit@5": 95.5,
-   "mrr@10": 0.8863
+   "hit@1": 84.7,
+   "hit@3": 93.7,
+   "hit@5": 95.2,
+   "mrr@10": 0.8902
   },
   "re-rank top 10 on hybrid(lexical), weight 2, ties by reranker": {
-   "hit@1": 83.8,
-   "hit@3": 93.3,
-   "hit@5": 95.5,
-   "mrr@10": 0.8863
+   "hit@1": 84.7,
+   "hit@3": 93.7,
+   "hit@5": 95.2,
+   "mrr@10": 0.8902
   },
   "re-rank top 10 on hybrid(lexical), weight 3, ties by index": {
-   "hit@1": 84.0,
-   "hit@3": 93.2,
-   "hit@5": 94.8,
-   "mrr@10": 0.8862
+   "hit@1": 83.8,
+   "hit@3": 92.5,
+   "hit@5": 94.7,
+   "mrr@10": 0.8833
   },
   "re-rank top 10 on hybrid(lexical), weight 3, ties by retrieval": {
-   "hit@1": 84.0,
-   "hit@3": 93.2,
-   "hit@5": 94.8,
-   "mrr@10": 0.8862
+   "hit@1": 83.8,
+   "hit@3": 92.5,
+   "hit@5": 94.7,
+   "mrr@10": 0.8833
   },
   "re-rank top 10 on hybrid(lexical), weight 3, ties by reranker": {
-   "hit@1": 84.0,
-   "hit@3": 93.2,
-   "hit@5": 94.8,
-   "mrr@10": 0.8862
+   "hit@1": 83.8,
+   "hit@3": 92.5,
+   "hit@5": 94.7,
+   "mrr@10": 0.8833
   },
   "re-rank top 10 on hybrid(lexical), replace": {
-   "hit@1": 83.3,
-   "hit@3": 91.8,
+   "hit@1": 83.2,
+   "hit@3": 91.5,
    "hit@5": 94.3,
-   "mrr@10": 0.8789
+   "mrr@10": 0.8768
   }
  }
 }

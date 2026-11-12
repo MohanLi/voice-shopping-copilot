@@ -8,12 +8,12 @@ three-way comparison on screen where every cell can be traced to a source.
 
 ![The assistant after a spoken request: what was heard, the spoken reply, the comparison table, and the list of agent steps with their times](docs/images/ui-voice.png)
 
-> **Status (12 November 2026): the system runs end to end and has been evaluated six times with ProofAgent,
-> the last two times on a laptop against live web search.**
+> **Status (12 November 2026): the system runs end to end and has been evaluated seven times with ProofAgent,
+> the last three times on a laptop against live web search.**
 > Built and tested: data pipeline, hybrid retrieval, the MCP server, the agents, speech in and out, the API, the
-> web UI, and the evaluation with its scorecards and twenty-one failure analyses
-> ([docs/evaluation.md](docs/evaluation.md)). What the last run found is fixed, including a fallback to the live
-> web when the catalog has nothing suitable; those changes are tested and have not been before a jury yet.
+> web UI, and the evaluation with its scorecards and twenty-three failure analyses
+> ([docs/evaluation.md](docs/evaluation.md)). The last run lost five turns to one line of my own code; that is
+> fixed and tested, and has not been before a jury yet.
 > Not done yet: the presentation and part of the written documentation. [PROGRESS.md](PROGRESS.md) is the build log; [docs/objectives.md](docs/objectives.md) lists
 > every requirement of the assignment with where it is met.
 
@@ -90,7 +90,7 @@ voiceshop voice question.m4a         # voice in, voice out; the reply is kept in
 voiceshop mcp tools                  # what the agents discover on the MCP server
 voiceshop eval retrieval             # the retrieval benchmark below
 voiceshop eval proofagent --label my-run --fallback-llm anthropic/claude-sonnet-5-5   # the ProofAgent evaluation below (15 min, $0.50 to $0.90)
-python -m pytest tests -q            # 619 tests, about 20 s, no key or network needed
+python -m pytest tests -q            # 634 tests, about 20 s, no key or network needed
 ```
 
 `LLM_MODEL=fake:rules` runs every agent on rules only (no key, no cost); `LLM_MODEL=ollama:<model>` or any other
@@ -102,23 +102,23 @@ provider LangChain supports swaps the model without code changes.
 assistant (two turns through real audio), and a jury of model calls votes on 46 checks per turn. Sixteen scenarios
 written for this project come first (discovery, constraints, comparison, live prices, conflicting sources,
 unsupported claims, a child under three, a recalled product, an instruction planted in a tool result, an unsafe
-request), then fourteen attacks the harness chooses itself. Six runs, each followed by fixes for what it found:
-four in the build workspace against recorded search results, so that they can be compared, and two on the laptop
-against live web search with the real speech models
-([scorecards, stage-by-stage attribution and twenty-one failure analyses](docs/evaluation.md)):
+request), then fourteen attacks the harness chooses itself. Seven runs, each followed by fixes for what it found:
+four in the build workspace against recorded search results, so that they can be compared, and three on the
+laptop against live web search with the real speech models
+([scorecards, stage-by-stage attribution and twenty-three failure analyses](docs/evaluation.md)):
 
-| | Run 1 | Run 2 | Run 3 | Run 4 | Live 1 | Live 2 |
-|---|---:|---:|---:|---:|---:|---:|
-| Task Success | 66% | 85% | 83% | 86% | 82% | 78% |
-| Hallucination Resistance / Grounding | 86% | 87% | 91% | 90% | 88% | 95% |
-| Tool-Use Correctness | 100% | 100% | 100% | 100% | 100% | 100% |
-| Safety and Guardrail Compliance | 84% | 99% | 98% | 93% | 97% | 95% |
-| Response Quality (Instruction Following) | 88% | 99% | 98% | 95% | 98% | 96% |
-| **Behavioural score** | **87%** | **95%** | **95%** | **94%** | **94%** | **94%** |
-| Certification | NEEDS_ENHANCEMENT | SILVER | SILVER | SILVER | SILVER | SILVER |
-| ProofAgent Index (0-100) | 74.8 | 77.0 | 78.1 | 79.1 | 80.0 | 78.2 |
-| Spoken replies within 15 s | 100% | 100% | 100% | 100% | 100% | 100% |
-| Median time per turn | 10.2 s | 14.1 s | 14.6 s | 13.5 s | 8.4 s | 8.4 s |
+| | Run 1 | Run 2 | Run 3 | Run 4 | Live 1 | Live 2 | Live 3 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Task Success | 66% | 85% | 83% | 86% | 82% | 78% | 71% |
+| Hallucination Resistance / Grounding | 86% | 87% | 91% | 90% | 88% | 95% | 96% |
+| Tool-Use Correctness | 100% | 100% | 100% | 100% | 100% | 100% | 100% |
+| Safety and Guardrail Compliance | 84% | 99% | 98% | 93% | 97% | 95% | 100% |
+| Response Quality (Instruction Following) | 88% | 99% | 98% | 95% | 98% | 96% | 99% |
+| **Behavioural score** | **87%** | **95%** | **95%** | **94%** | **94%** | **94%** | **94%** |
+| Certification | NEEDS_ENHANCEMENT | SILVER | SILVER | SILVER | SILVER | SILVER | NEEDS_ENHANCEMENT |
+| ProofAgent Index (0-100) | 74.8 | 77.0 | 78.1 | 79.1 | 80.0 | 78.2 | 76.8 |
+| Spoken replies within 15 s | 100% | 100% | 100% | 100% | 100% | 100% | 100% |
+| Median time per turn | 10.2 s | 14.1 s | 14.6 s | 13.5 s | 8.4 s | 8.4 s | 6.0 s |
 
 What that table does and does not show: the step from run 1 to run 2 is real (in run 1, 17 of 30 replies were
 fixed text or a fallback template, often a refusal of a whole message of which one part had to be declined; since
@@ -130,26 +130,37 @@ began at the microphone: "no wait, under twelve dollars" was heard as "no weight
 was used. In the second, a third of the loss came from the repair step that rebuilds a spoken sentence from names
 and prices: twice it replaced a sentence that had answered the question. Between a fifth and a third of the
 credit lost in runs 2 to 4 belongs to ballots that the jury cast identically turn after turn, whatever the reply
-said; the scorecards report that part separately. The failures still open are named in the evaluation document,
-not hidden in the average. The one that mattered most, that the web was not searched when the catalog returned
-results of the wrong kind, was closed after the last run (the fallback above); the table does not include it,
-and its measurement is the next run. Run 4 and both live runs are on the ProofAgent dashboard (release gate: pass).
+said; the scorecards report that part separately. The third live run is the one column that can be read on its
+own: on five turns the Router model understood the message and restated its product question, and a backstop I
+had written for another case relabelled each turn "not a shopping request". Those five turns are the 71%, and
+the grade drops to NEEDS_ENHANCEMENT at an unchanged 94% because one metric fell below the harness's warning
+level. The same run has the best Safety (100%) and grounding (96%) of the seven, and the fallback to the live web
+(when the catalog has nothing suitable) fired on two turns without losing credit. The line is fixed and the five
+recorded Router outputs are its test; replays of the run's questions then showed that a unit-price comparison
+needs its arithmetic done by code, which it now is. None of that has been before a jury. The failures still
+open are named in the evaluation document, not hidden in the average. Run 4 and the three live runs are on the
+ProofAgent dashboard (release gate: pass).
 
-**Retrieval** — 600 spoken-style queries with one known target each, on an M2 Max
-([full table](eval/results/retrieval/benchmark.md)):
+**Retrieval** — two benchmarks on the full index of 9,740 products, one known target per request
+([how they were made and what they show](docs/retrieval.md)). 600 requests written from the listings, and 165
+paraphrases that code checked to share no word with the product's title:
 
-| Variant | hit@1 | hit@3 | MRR@10 | in budget@3 | age ok@3 | p50 |
-|---|---:|---:|---:|---:|---:|---:|
-| BM25 | 81.0 | 91.0 | 0.866 | 77.9 | 76.5 | 0.3 ms |
-| dense (bge-small) | 69.0 | 82.2 | 0.763 | 77.6 | 77.2 | 12 ms |
-| hybrid (reciprocal-rank fusion) | 80.5 | 90.3 | 0.859 | 78.3 | 79.6 | 12 ms |
-| hybrid + metadata filters | 83.3 | 92.2 | 0.881 | 100 | 100 | 58 ms |
-| + re-rank all 40 candidates | 83.3 | 90.7 | 0.876 | 100 | 100 | 541 ms |
-| + re-rank the first 10, fused (default) | 83.8 | 93.7 | 0.886 | 100 | 100 | 164 ms |
+| hit@3 (hit@1) | 600 from the listings | 165 paraphrases | budget and age kept in the top 3 |
+|---|---:|---:|---|
+| BM25 | 91.0 (81.2) | 32.7 (23.6) | no: 64-78% |
+| dense (bge-small) | 85.3 (74.8) | 35.8 (24.2) | no: 67-80% |
+| BM25 + metadata filters | 92.0 (84.2) | 41.2 (27.9) | 100% |
+| dense + metadata filters | 88.7 (79.2) | 40.6 (28.5) | 100% |
+| hybrid (reciprocal-rank fusion) + filters | 93.0 (84.5) | 49.1 (28.5) | 100% |
+| + cross-encoder on the first 10, fused (default) | 93.0 (84.7) | 49.7 (27.3) | 100% |
 
-Two honest readings of that table: filters, not embeddings, are what guarantee the budget and the age; and the
-cross-encoder is worth about one point, which is within the noise of 600 queries. It is kept because the score of
-its best candidate flags 84% of requests the catalog cannot answer while wrongly flagging 2-3% of those it can.
+Three honest readings: filters, not embeddings, are what guarantee the budget and the age. When a request reuses
+the listing's words, BM25 with the filters is as good as the whole pipeline; the dense index earns its place on
+the paraphrases, where the two fused find 49% in the first three and either alone 41%. And the cross-encoder
+adds nothing measurable to the ranking; it is kept because the score of its best candidate flags 84% of requests
+the catalog cannot answer while wrongly flagging 3% of those it can, and that flag is what sends a search to the
+live web. These hit rates are from the build machine ([tables](eval/results/retrieval/linux-2cpu/)); on the M2
+Max a search with the default settings took 165 ms at the median when last measured there.
 
 **Speech** — on the same machine ([recognition](eval/results/speech/asr_accents.md),
 [spoken replies](eval/results/speech/tts_duration.md)): 10 shopping requests read by 17 synthetic voices in nine
@@ -192,8 +203,22 @@ prompts/        every prompt, versioned, with a map of which node uses it     fr
 eval/           datasets, experiments, results; proofagent/ holds the         tests/       unit and end-to-end tests
                 scenarios, planted tool faults and governance profile
 docs/           objectives (requirement matrix), evaluation (scorecards and failure analyses), safety,
-                architecture, decisions (dated, with the evidence), the MCP reference
+                architecture, data, retrieval, related work, decisions (dated, with the evidence), the MCP reference
+notebooks/      01_data_ingestion.ipynb: the data work, executed, every count checked against the ingest report
 ```
+
+| To read about | Open |
+|---|---|
+| every requirement of the assignment and where it is met | [docs/objectives.md](docs/objectives.md) |
+| the agents, the graph and what each step may do | [docs/architecture.md](docs/architecture.md) |
+| the dataset, what was cleaned, what was refused | [docs/data.md](docs/data.md), [the notebook](notebooks/01_data_ingestion.ipynb) |
+| retrieval: stages, filters, two benchmarks, limits | [docs/retrieval.md](docs/retrieval.md) |
+| the MCP server and its two tool schemas | [docs/mcp.md](docs/mcp.md) |
+| the evaluation: seven runs, twenty-three failures | [docs/evaluation.md](docs/evaluation.md) |
+| safety: risks, layers, tests, what is not covered | [docs/safety.md](docs/safety.md) |
+| shopping assistants that exist, and what was taken from them | [docs/related-work.md](docs/related-work.md) |
+| the two course checkpoints | [docs/checkpoints/](docs/checkpoints/) |
+| what was decided, when, on what evidence | [docs/decisions.md](docs/decisions.md) |
 
 ## Safety
 

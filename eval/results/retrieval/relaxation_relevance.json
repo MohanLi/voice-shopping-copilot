@@ -1,15 +1,15 @@
 {
- "created": "2026-11-12T03:58:44",
+ "created": "2026-11-12T05:45:34",
  "machine": "Linux x86_64, 2 CPUs, Python 3.12.13",
- "seconds": 152,
+ "seconds": 164,
  "weak_match_score": -4.0,
  "index": {
   "n_docs": 9740,
-  "products_sha256": "7d8e47f9564cb4fbf61e38bc71a3f3ac3396a6b3577b7132facdfd4cd3141a86"
+  "products_sha256": "a40f3d658244f2b801fc83e80652a2f20c0d50e61c42a0c1a9e0e13d81aaf1e1"
  },
  "recorded": {
-  "searches": 62,
-  "weak_today": 23,
+  "searches": 69,
+  "weak_today": 24,
   "relevant_at_a_looser_rung": 10,
   "by_rung": {
    "age_unknown_allowed": 5,
@@ -48,7 +48,7 @@
    "ladder": [
     {
      "rung": "strict",
-     "candidates": 62,
+     "candidates": 59,
      "best_score": -8.9,
      "title": "Ultra Pro 50ct Pro-Matte Light Blue Standard Deck Protectors",
      "price": 5.49,
@@ -56,7 +56,7 @@
     },
     {
      "rung": "age_unknown_allowed",
-     "candidates": 70,
+     "candidates": 67,
      "best_score": -1.17,
      "title": "HOVER-1 Chrome Electric Hoverboard Scooter",
      "price": 199.0,
@@ -116,11 +116,11 @@
     {
      "rung": "budget_removed",
      "candidates": 68,
-     "best_score": -2.48,
-     "title": "HOVER-1 Chrome Electric Hoverboard Scooter",
-     "price": 199.0,
+     "best_score": -3.27,
+     "title": "Hover-1 Helix Electric Hoverboard Scooter, Iridescent",
+     "price": 128.0,
      "misses": [
-      "$199.00 is above the $8.00 budget",
+      "$128.00 is above the $8.00 budget",
       "the listing states no recommended age"
      ]
     }
@@ -153,7 +153,7 @@
     },
     {
      "rung": "category",
-     "candidates": 65,
+     "candidates": 63,
      "best_score": 2.56,
      "title": "Crayola Scribble Scrubbie Pets Scrub Tub Animal Toy Set, Gift Age 3+",
      "price": 19.97,
@@ -182,7 +182,7 @@
    "ladder": [
     {
      "rung": "strict",
-     "candidates": 79,
+     "candidates": 77,
      "best_score": -6.84,
      "title": "Huffy 18\" Glimmer Girls Bike, Amethyst",
      "price": 119.99,
@@ -190,7 +190,7 @@
     },
     {
      "rung": "age_unknown_allowed",
-     "candidates": 74,
+     "candidates": 73,
      "best_score": -3.91,
      "title": "Skechers Kids Skechers Twinkle Toes Glimmer Backpack Accessory",
      "price": 12.16,
@@ -238,7 +238,7 @@
     },
     {
      "rung": "budget_stretched",
-     "candidates": 69,
+     "candidates": 72,
      "best_score": -1.86,
      "title": "LEGO Creator 3in1 Propeller Plane 31099 Flying Toy Building Kit, New 2020 (128 P",
      "price": 9.84,
@@ -248,7 +248,7 @@
     },
     {
      "rung": "budget_removed",
-     "candidates": 65,
+     "candidates": 62,
      "best_score": 8.87,
      "title": "Creative LEGO DUPLO Brick Set by LEGO Education",
      "price": 64.53,
@@ -272,7 +272,7 @@
    "today": {
     "relaxed": [],
     "best_score": -10.4729,
-    "top": "Ultra Pro Binder: 9pkt: PRO: Dark GR 82975"
+    "top": "Learning Resources Pan Balance"
    },
    "weak_today": true,
    "first_relevant_rung": "age_unknown_allowed",
@@ -345,7 +345,7 @@
    },
    "today": {
     "relaxed": [],
-    "best_score": -10.4729,
+    "best_score": -10.9235,
     "top": "DJECO Butterfly Twirl Paper Mobile Room Decoration"
    },
    "weak_today": true,
@@ -353,15 +353,15 @@
    "ladder": [
     {
      "rung": "strict",
-     "candidates": 77,
-     "best_score": -10.21,
-     "title": "Ultra Pro 50ct Pro-Matte Light Blue Standard Deck Protectors",
-     "price": 5.49,
+     "candidates": 76,
+     "best_score": -10.47,
+     "title": "Ultra Pro Binder: 9pkt: PRO: Dark GR 82975",
+     "price": 22.48,
      "misses": []
     },
     {
      "rung": "age_unknown_allowed",
-     "candidates": 53,
+     "candidates": 52,
      "best_score": 0.27,
      "title": "EPIKGO Sport Balance Board Self Balance Scooter Hover Balancing Board -UL2272 Ce",
      "price": 199.0,
@@ -388,30 +388,31 @@
     "relaxed": [
      "materials"
     ],
-    "best_score": -11.2132,
-    "top": "Melissa & Doug Giddy-Up & Play Baby Activity Toy (Multi-Sensory Horse, Great Gif"
+    "best_score": -7.9077,
+    "top": "Melissa & Doug Playful Puppy Wooden Pull Toy for Beginner Walkers"
    },
    "weak_today": true,
    "first_relevant_rung": "brand",
    "ladder": [
     {
      "rung": "strict",
-     "candidates": 0,
-     "best_score": null
+     "candidates": 1,
+     "best_score": -7.91,
+     "title": "Melissa & Doug Playful Puppy Wooden Pull Toy for Beginner Walkers",
+     "price": 21.0,
+     "misses": []
     },
     {
      "rung": "materials",
-     "candidates": 7,
-     "best_score": -11.21,
-     "title": "Melissa & Doug Giddy-Up & Play Baby Activity Toy (Multi-Sensory Horse, Great Gif",
-     "price": 57.5,
-     "misses": [
-      "the listing does not state the requested material"
-     ]
+     "candidates": 8,
+     "best_score": -7.91,
+     "title": "Melissa & Doug Playful Puppy Wooden Pull Toy for Beginner Walkers",
+     "price": 21.0,
+     "misses": []
     },
     {
      "rung": "brand",
-     "candidates": 57,
+     "candidates": 55,
      "best_score": 4.91,
      "title": "DJECO BigaBasic Wooden Puzzle",
      "price": 13.99,
@@ -434,23 +435,23 @@
    },
    "today": {
     "relaxed": [],
-    "best_score": -10.1062,
-    "top": "Melissa & Doug Bubbles Clown Fish (Great Gift for Girls and Boys - Best for Babi"
+    "best_score": -7.4048,
+    "top": "Melissa & Doug Playful Puppy Wooden Pull Toy for Beginner Walkers"
    },
    "weak_today": true,
    "first_relevant_rung": "brand",
    "ladder": [
     {
      "rung": "strict",
-     "candidates": 7,
-     "best_score": -10.11,
-     "title": "Melissa & Doug Giddy-Up & Play Baby Activity Toy (Multi-Sensory Horse, Great Gif",
-     "price": 57.5,
+     "candidates": 8,
+     "best_score": -7.4,
+     "title": "Melissa & Doug Playful Puppy Wooden Pull Toy for Beginner Walkers",
+     "price": 21.0,
      "misses": []
     },
     {
      "rung": "brand",
-     "candidates": 62,
+     "candidates": 59,
      "best_score": 0.91,
      "title": "Manhattan Toy Playful Pony Wooden Toddler Activity Center",
      "price": 49.89,
@@ -499,7 +500,7 @@
     },
     {
      "rung": "age_unknown_allowed",
-     "candidates": 40,
+     "candidates": 41,
      "best_score": -2.92,
      "title": "Darice 9186-J Wood Letters, Baby Font J, White, 5-Inch",
      "price": 2.64,
@@ -509,7 +510,7 @@
     },
     {
      "rung": "budget_stretched",
-     "candidates": 46,
+     "candidates": 43,
      "best_score": 3.99,
      "title": "Bigjigs Toys BJ756 Inset Puzzle Numbers",
      "price": 5.99,
@@ -539,7 +540,7 @@
    },
    "today": {
     "relaxed": [],
-    "best_score": -10.7889,
+    "best_score": -11.0427,
     "top": "Hot Wheels Star Wars Rogue One Character Car, First Order Flametrooper (Clean)"
    },
    "weak_today": true,
@@ -547,15 +548,15 @@
    "ladder": [
     {
      "rung": "strict",
-     "candidates": 68,
-     "best_score": -10.79,
-     "title": "Hyper Cluster Yo-Yo Starter Pack, Diamond Eyes Speed/Control",
-     "price": 6.97,
+     "candidates": 66,
+     "best_score": -11.04,
+     "title": "Hot Wheels Star Wars Rogue One Character Car, First Order Flametrooper (Clean)",
+     "price": 7.48,
      "misses": []
     },
     {
      "rung": "age_unknown_allowed",
-     "candidates": 67,
+     "candidates": 63,
      "best_score": -10.89,
      "title": "Redcat Racing 08005 Plastic Front Lower Suspension Arm, 2Piece",
      "price": 7.45,
@@ -565,7 +566,7 @@
     },
     {
      "rung": "budget_stretched",
-     "candidates": 63,
+     "candidates": 58,
      "best_score": -1.96,
      "title": "uxcell RC Remote Control Airplane Aircraft Prop Propeller Spinner 89mm/3.5\"",
      "price": 9.45,
@@ -576,7 +577,7 @@
     },
     {
      "rung": "budget_removed",
-     "candidates": 68,
+     "candidates": 66,
      "best_score": 5.59,
      "title": "NKOK Sonic and Sega All Stars Racing Remote Controlled Car - Sonic The Hedgehog",
      "price": 26.99,
@@ -603,7 +604,7 @@
    "ladder": [
     {
      "rung": "strict",
-     "candidates": 67,
+     "candidates": 64,
      "best_score": -7.17,
      "title": "Battlefront Miniature Tanks: Soviet Dice Set (6) Board Game",
      "price": 4.9,
@@ -611,7 +612,7 @@
     },
     {
      "rung": "budget_stretched",
-     "candidates": 70,
+     "candidates": 65,
      "best_score": 5.1,
      "title": "Chessex CHX25311 Dice-Speckled Arctic Camo Set",
      "price": 5.95,
@@ -621,7 +622,7 @@
     },
     {
      "rung": "budget_removed",
-     "candidates": 65,
+     "candidates": 66,
      "best_score": 8.11,
      "title": "Classic Wood Chess Set",
      "price": 18.99,
@@ -642,7 +643,7 @@
    "today": {
     "relaxed": [],
     "best_score": -8.8274,
-    "top": "Educational Insights Nancy B's Science Club Binoculars and Wildlife Activity Jou"
+    "top": "Scientific Explorer Glow in The Dark Fun Lab Kids Science Experiment Kit"
    },
    "weak_today": true,
    "first_relevant_rung": "age_unknown_allowed",
@@ -698,7 +699,7 @@
    "today": {
     "relaxed": [],
     "best_score": -10.7059,
-    "top": "Black & White Dog Bounce & Ride-on Inflatable Hopper Toddler Toy with Pump"
+    "top": "SwimWays Star Wars Millenium Falcon Ride-On Float - Inflatable Novelty Float for"
    },
    "weak_today": true,
    "first_relevant_rung": "age_unknown_allowed",
@@ -734,12 +735,11 @@
     {
      "rung": "budget_removed",
      "candidates": 40,
-     "best_score": 6.33,
-     "title": "Propel Trampolines PTS55-RE Junior Trampoline with Enclosure, 55\", Red",
-     "price": 129.99,
+     "best_score": 5.87,
+     "title": "TruJump Mini Kids Trampoline",
+     "price": 76.18,
      "misses": [
-      "$129.99 is above the $40.00 budget",
-      "the listing states no recommended age"
+      "$76.18 is above the $40.00 budget"
      ]
     }
    ]
@@ -777,7 +777,7 @@
     },
     {
      "rung": "budget_removed",
-     "candidates": 65,
+     "candidates": 63,
      "best_score": 2.56,
      "title": "Crayola Scribble Scrubbie Pets Scrub Tub Animal Toy Set, Gift Age 3+",
      "price": 19.97,

@@ -1,14 +1,14 @@
 {
- "created": "2026-11-12T04:23:13",
+ "created": "2026-11-12T05:42:45",
  "machine": "Linux x86_64, 2 CPUs, Python 3.12.13",
- "seconds": 412,
+ "seconds": 433,
  "queries": 600,
  "query_file": "retrieval_queries.jsonl",
  "instruction": "Represent this sentence for searching relevant passages: ",
  "index": {
   "n_docs": 9740,
   "embedding_model": "BAAI/bge-small-en-v1.5",
-  "products_sha256": "7d8e47f9564cb4fbf61e38bc71a3f3ac3396a6b3577b7132facdfd4cd3141a86"
+  "products_sha256": "a40f3d658244f2b801fc83e80652a2f20c0d50e61c42a0c1a9e0e13d81aaf1e1"
  },
  "results": {
   "no instruction": {

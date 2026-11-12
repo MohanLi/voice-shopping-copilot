@@ -124,8 +124,8 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 | E3 | Dimensions: task success, hallucination resistance/grounding, tool-use correctness, safety & guardrail compliance, response quality | the harness's six metrics, mapped in `docs/evaluation.md` §1, plus spoken-reply length and time per turn in every scorecard | ✅ |
 | E4 | Adversarial/edge cases: ambiguous requests, conflicting private vs live data, out-of-budget products, missing products, incorrect tool results, unsupported claims, unsafe requests | scenarios 5, 6, 10, 12 to 16; planted tool faults in `eval/proofagent/tool_faults.json`; 14 traps per run from the harness library | ✅ |
 | E5 | Failures located along ASR → Router → Planner → RAG/MCP → Answerer → TTS | credit lost by stage in every `scorecard.md` (`stage_attribution`), read against the step traces in `docs/evaluation.md` §3 and §4 | ✅ |
-| E6 | Final scorecard/results included | `eval/results/proofagent/run1` to `run4`, and `mac-live` and `final`, the two runs against live web search on the laptop (scorecard, the harness's report, evidence record, every turn), `comparison.md`; the table is in the README and in `docs/evaluation.md`. Run 4 and both live runs are on the ProofAgent dashboard (`upload.json` in each folder; release gate: pass) | ✅ |
-| E7 | At least two failure cases analysed, with improvements | twenty-one, from speech recognition to the spoken reply, each with what was observed, the stage, the cause, the change and what the next run showed: `docs/evaluation.md` §4; what is still wrong: §5; improvements not yet made: §6 | ✅ |
+| E6 | Final scorecard/results included | `eval/results/proofagent/run1` to `run4`, and `mac-live`, `final` and `live3`, the three runs against live web search on the laptop (scorecard, the harness's report, evidence record, every turn), `comparison.md`; the table is in the README and in `docs/evaluation.md`. Run 4 and the three live runs are on the ProofAgent dashboard (`upload.json` in each folder; release gate: pass) | ✅ |
+| E7 | At least two failure cases analysed, with improvements | twenty-three, from speech recognition to the spoken reply, each with what was observed, the stage, the cause, the change and what the next run showed: `docs/evaluation.md` §4; what is still wrong: §5; improvements not yet made: §6 | ✅ |
 | E8 | Evaluation configuration submitted | `eval/proofagent/` (governance profile, scenarios, planted faults, generated context and domain knowledge, README), `scripts/run_proofagent.sh` | ✅ |
 
 ### 2.9 Choice of LLM
@@ -153,17 +153,17 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 
 | ID | Requirement | Where it lives | Status |
 |----|-------------|----------------|:------:|
-| D1 | At least one live MCP web comparison demonstrated | live runs logged on the Mac 2026-11-11 (`voiceshop ask`, `scripts/mac_refresh.sh` step 7); demo script and write-up still to come | 🔄 |
-| D2 | Docs: data preprocessing and indexing | `docs/data.md`, `notebooks/01_data_ingestion.ipynb` | ⬜ |
+| D1 | At least one live MCP web comparison demonstrated | three ProofAgent runs against the live search API on the laptop (`mac-live`, `final`, `live3`), every turn recorded with its tool calls: for example `live3` turn 16, the catalog's $7.99 next to $9.99 now at a store, both cited; `scripts/mac_refresh.sh` step 7 repeats three live turns; `docs/images/ui-web-fallback.png`. A demo script belongs to the presentation (D12) | ✅ |
+| D2 | Docs: data preprocessing and indexing | `docs/data.md` (source, curation, the eight required fields and where each value comes from, ages, safety flags, unit prices), `notebooks/01_data_ingestion.ipynb` (executed, every count checked against the ingest report), `docs/retrieval.md` (what is indexed, filters, the two benchmarks) | ✅ |
 | D3 | Docs: LangGraph architecture | `docs/architecture.md` (workflow, node responsibilities, state and memory, evidence handles, failure handling, event stream) | ✅ |
 | D4 | Docs: MCP server and tool schemas | `docs/mcp.md` | ✅ |
 | D5 | Docs: safety considerations | `docs/safety.md` (risks and where each is handled, the layers in the order of a turn, the rule checks, children under three, privacy, sources and terms, how it was tested, what it does not cover) | ✅ |
-| D6 | Docs: evaluation methodology | `docs/evaluation.md` (ProofAgent: configuration, scenarios, six scorecards, stage attribution, twenty failure analyses, what is still wrong), `eval/proofagent/README.md`, `eval/results/` | ✅ |
+| D6 | Docs: evaluation methodology | `docs/evaluation.md` (ProofAgent: configuration, scenarios, seven scorecards, stage attribution, twenty-three failure analyses, what is still wrong), `eval/proofagent/README.md`, `eval/results/` | ✅ |
 | D7 | Setup instructions, `.env.example`, run/build scripts (index + MCP) | `README.md` (quick start), `.env.example`, `uv.lock`, `scripts/bootstrap_mac.sh`, `scripts/mac_refresh.sh`, `voiceshop ingest / index / mcp serve / serve` | ✅ |
 | D8 | `prompts/` folder: system, router, planner, tool-call, answerer/critic, guardrail prompts and few-shots, each mapped to its node/agent/tool | `prompts/` | ✅ |
-| D9 | Checkpoint 1: proposal, problem definition, data slice, tools, ingestion notebook, related work | `docs/checkpoints/checkpoint1.md` | ⬜ |
-| D10 | Checkpoint 2: architecture diagram, LangGraph flow, MCP/tool calls, UI wireframe, RAG evaluation plan, MCP README + schemas, initial ProofAgent plan | `docs/checkpoints/checkpoint2.md` | ⬜ |
-| D11 | Repository with clean code and README | repo: README with the measured results; still to write: `docs/data.md`, the checkpoint documents, the notebook | 🔄 |
+| D9 | Checkpoint 1: proposal, problem definition, data slice, tools, ingestion notebook, related work | `docs/checkpoints/checkpoint1.md`, `notebooks/01_data_ingestion.ipynb`, `docs/related-work.md` | ✅ |
+| D10 | Checkpoint 2: architecture diagram, LangGraph flow, MCP/tool calls, UI wireframe, RAG evaluation plan, MCP README + schemas, initial ProofAgent plan | `docs/checkpoints/checkpoint2.md` (each item in short, with the document that holds it in full) | ✅ |
+| D11 | Repository with clean code and README | repo: README with the measured results and a map of the documents; 634 tests and a lint check, run by `scripts/mac_refresh.sh` | ✅ |
 | D12 | ≤7-minute live demo and short presentation | later (not part of the technical build) | ⬜ |
 
 ## 3. Beyond the requirements
