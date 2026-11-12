@@ -1,6 +1,6 @@
 # PROGRESS — Voice Shopping Copilot build log
 
-**Last updated:** 2026-11-11 20:15 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
+**Last updated:** 2026-11-11 22:55 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
 (`~/Desktop/2026 Autumn/Applied Generative AI/Final Project/voice-shopping-copilot`).
 **The folder on the Mac is the source of truth.**
 
@@ -97,19 +97,27 @@ Open points:
 
 ## Waiting on Kevin
 
-| # | What | Command / where | Needed for |
-|---|------|-----------------|------------|
-| 1 | Add two lines to the project's `.env` (the file in this folder; it is not in git). At 20:00 CT on 11 Nov it still held only the old `ANTHROPIC_API_KEY` and `SERPER_API_KEY`, last saved 00:09 | `ANTHROPIC_API_KEY=<the new capped key>` (replace the old line) and `PROOFAGENT_API_KEY=<the key from app.proofagent.ai>` | the capped key replaces the reused NLP-project key; the ProofAgent key lets a run be uploaded |
-| 2 | Push the new commits | `git push` | GitHub shows the evaluation |
-| 3 | Refresh the Mac environment (a few minutes), then the live ProofAgent run (about 15 minutes, about $0.85, a few dozen Serper credits) | `bash scripts/mac_refresh.sh quick` then `bash scripts/run_proofagent.sh` | the same evaluation with the real speech models and live web search; uploads the run when `PROOFAGENT_API_KEY` is set |
-| 4 | (Optional) upload run 4 as well | `source .venv/bin/activate && voiceshop eval proofagent --label run4 --upload` | the dashboard then shows the cloud run next to the live one |
+Run in the project folder on the Mac, in this order (stop `voiceshop serve` first if it is running: the search
+index can be opened by one process at a time):
+
+| # | What | Command | Needed for |
+|---|------|---------|------------|
+| 1 | Push the new commits | `git push` | GitHub shows the evaluation |
+| 2 | Bring the Mac environment up to date (about 5 minutes; ends with `REFRESH COMPLETE (quick)`) | `bash scripts/mac_refresh.sh quick` | installs the ProofAgent harness at the locked version, checks catalog and index, runs the tests |
+| 3 | The live ProofAgent run (about 15 minutes, about $0.85, a few dozen Serper credits); it uploads the run to the ProofAgent dashboard at the end because `PROOFAGENT_API_KEY` is set | `caffeinate -i bash scripts/run_proofagent.sh` | the same evaluation with the real speech models and live web search; results in `eval/results/proofagent/mac-live/` |
+| 4 | (Optional) upload run 4 as well | `source .venv/bin/activate && voiceshop eval proofagent --label run4 --upload` | the dashboard then shows the run made in the workspace next to the live one |
+
+Not the full `bash scripts/mac_refresh.sh`: that re-runs the benchmarks and rewrites their result files. The
+results of step 3 are not committed on the Mac; they are added to the repository from the workspace, and one more
+`git push` follows.
 
 Why the upload runs on the Mac: neither the cloud workspace nor the bridge to the Mac can reach
-`app.proofagent.ai`.
+`app.proofagent.ai`. The upload is the one step that could not be tried from the workspace.
 
-Done by Kevin so far: bootstrap on the Mac (dataset + models), Serper key in `.env`, the refresh runs, a voice
-turn in the app ("the voice sounds natural"), the repository pushed to GitHub
-(`github.com/MohanLi/voice-shopping-copilot`).
+Done by Kevin so far: bootstrap on the Mac (dataset + models), the refresh runs, a voice turn in the app ("the
+voice sounds natural"), the repository pushed to GitHub (`github.com/MohanLi/voice-shopping-copilot`), and all
+three keys in `.env` (11 Nov, 20:34 CT): Serper, the new capped Anthropic key, the ProofAgent key. The workspace
+uses the new Anthropic key since then; one-token calls confirmed that it reaches Claude Haiku 5.5 and Sonnet 5.5.
 
 ## Environment facts (verified 2026-11-10/11)
 
