@@ -60,10 +60,13 @@ flowchart TD
 ### State and memory
 
 `agents/state.py` defines the turn state. Working fields (route, plan, evidence, draft, critique, answer, trace) are
-cleared at the start of each turn; four fields persist per conversation through the LangGraph checkpointer, keyed
-by `thread_id`: the short history, the products on screen, the merged constraints and the evidence behind the
-products on screen. A follow-up such as "is the second one in stock" therefore resolves "the second one" from what
-was shown, keeps its catalog record, and looks only that product up on the live web.
+cleared at the start of each turn; five fields persist per conversation through the LangGraph checkpointer, keyed
+by `thread_id`: the short history, the products on screen, the constraints that list was found for, the constraints
+of the request in force, and the evidence behind the products on screen. A follow-up such as "is the second one in
+stock" therefore resolves "the second one" from what was shown, keeps its catalog record, and looks only that
+product up on the live web. The list on screen changes only when a new search shows a new list: a reply that
+recommends nothing (an abstention, a refusal) leaves it, and the page keeps showing it. The two sets of
+constraints differ after such a reply, and a question about the list is then asked under the list's own.
 
 ### Evidence handles: how grounding is enforced
 
@@ -75,8 +78,8 @@ citations and the safety notes from the evidence. A handle that does not exist i
 cell cannot contain something the tools did not return, whatever the model writes.
 
 The free text the model does write (the reasons and the spoken sentence) is checked twice: by rules
-(`guardrails/output.py`: every dollar amount must be a price of a product the answer is about, no availability
-without a live source, no rating that is not in the evidence, no unsupported sensitive claim, a recall notice
+(`guardrails/output.py`: every dollar amount must be a price of a product the answer is about, a price above the
+budget is said to be above it, no availability without a live source, no rating that is not in the evidence, no unsupported sensitive claim, a recall notice
 must be said, no code or link copied from the shopper's message, speakable text, time budget), then by a model
 critic that lists findings with the evidence it compared against.
 

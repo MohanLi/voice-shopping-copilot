@@ -33,7 +33,7 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 | S5 | One MCP server with two tools (private retrieval + live web search) | `mcp_server/` | ✅ |
 | S6 | Grounded recommendations with citations | `agents/answerer.py`, `agents/finalize.py`, `guardrails/output.py` | ✅ |
 | S7 | Basic guardrails and safety checks | `guardrails/` | ✅ |
-| S8 | ProofAgent evaluation of the completed agent | `eval/proofagent/` | ⬜ |
+| S8 | ProofAgent evaluation of the completed agent | `eval/proofagent/`, `eval/results/proofagent/`, `docs/evaluation.md` | ✅ |
 | S9 | UI shows transcript, agent execution, results, citations, evaluation evidence | `frontend/` (what was heard, step log, comparison table, citations, evaluation panel fed by `eval/results`) | ✅ |
 | S10 | ASR/TTS fragment-based (streaming optional) | `speech/` (fragment in, fragment out; sentence-level streaming of the reply as an extra) | ✅ |
 
@@ -59,7 +59,7 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 |----|-------------|----------------|:------:|
 | A1 | Whisper (or comparable) ASR | `speech/asr.py` (faster-whisper, own audio decoding, transcript status) | ✅ |
 | A2 | Fragment-based recording (WAV/MP3) | `frontend/src/useRecorder.ts` (one fragment per request, stops on a pause), upload of WAV/MP3/M4A/WebM; `speech/audio.py` decodes them | ✅ |
-| A3 | Handles common accents and speech variations (measured) | `evals/speech_eval.py`, `voiceshop eval speech` (accented voices, fast and noisy speech, brand hint on/off); the report of record comes from the Mac run | 🔄 |
+| A3 | Handles common accents and speech variations (measured) | `evals/speech_eval.py`, `voiceshop eval speech`; report of record from the Mac: `eval/results/speech/asr_accents.md` (295 clips, nine voice groups, fast and noisy speech, brand hint on/off; 0.7% word error rate across the voice groups) | ✅ |
 | A4 | Timestamps returned when available | `speech/asr.py` (segment timestamps always; word timestamps on request) | ✅ |
 
 ### 2.4 Agentic RAG — private + live data
@@ -119,14 +119,14 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 
 | ID | Requirement | Where it lives | Status |
 |----|-------------|----------------|:------:|
-| E1 | Harness integrated with the end-to-end agent (not only the LLM) | `eval/proofagent/agent.py` | ⬜ |
-| E2 | Scenarios: discovery, constraints/preferences, RAG retrieval, MCP/tool calls, comparison, grounded recommendations, safety/guardrails, voice interactions | `eval/proofagent/traps/`, `eval/datasets/` | ⬜ |
-| E3 | Dimensions: task success, hallucination resistance/grounding, tool-use correctness, safety & guardrail compliance, response quality | harness metrics + `evals/` | ⬜ |
-| E4 | Adversarial/edge cases: ambiguous requests, conflicting private vs live data, out-of-budget products, missing products, incorrect tool results, unsupported claims, unsafe requests | `eval/proofagent/traps/` | ⬜ |
-| E5 | Failures located along ASR → Router → Planner → RAG/MCP → Answerer → TTS | `evals/stage_diagnosis.py` | ⬜ |
-| E6 | Final scorecard/results included | `eval/results/` | ⬜ |
-| E7 | At least two failure cases analysed, with improvements | `docs/evaluation.md` | ⬜ |
-| E8 | Evaluation configuration submitted | `eval/proofagent/` (context, governance profile, run script) | ⬜ |
+| E1 | Harness integrated with the end-to-end agent (not only the LLM) | `src/voiceshop/evals/proofagent_eval.py` (`AssistantUnderTest`: a whole turn per call, spoken scenarios through real audio), `voiceshop eval proofagent` | ✅ |
+| E2 | Scenarios: discovery, constraints/preferences, RAG retrieval, MCP/tool calls, comparison, grounded recommendations, safety/guardrails, voice interactions | `eval/proofagent/traps/shopping_scenarios/` (16 scenarios; table in `docs/evaluation.md` §2); `tests/test_proofagent.py` checks the coverage | ✅ |
+| E3 | Dimensions: task success, hallucination resistance/grounding, tool-use correctness, safety & guardrail compliance, response quality | the harness's six metrics, mapped in `docs/evaluation.md` §1, plus spoken-reply length and time per turn in every scorecard | ✅ |
+| E4 | Adversarial/edge cases: ambiguous requests, conflicting private vs live data, out-of-budget products, missing products, incorrect tool results, unsupported claims, unsafe requests | scenarios 5, 6, 10, 12 to 16; planted tool faults in `eval/proofagent/tool_faults.json`; 14 traps per run from the harness library | ✅ |
+| E5 | Failures located along ASR → Router → Planner → RAG/MCP → Answerer → TTS | credit lost by stage in every `scorecard.md` (`stage_attribution`), read against the step traces in `docs/evaluation.md` §3 and §4 | ✅ |
+| E6 | Final scorecard/results included | `eval/results/proofagent/run1` to `run4` (scorecard, the harness's report, evidence record, every turn), `comparison.md`; the table is in the README and in `docs/evaluation.md`. The run against live search on the Mac (`scripts/run_proofagent.sh`) and the upload to the ProofAgent dashboard are still to do | ✅ (live run ⏳) |
+| E7 | At least two failure cases analysed, with improvements | fifteen, each with what was observed, the stage, the cause, the change and what the next run showed: `docs/evaluation.md` §4; what is still wrong: §5; improvements not yet made: §6 | ✅ |
+| E8 | Evaluation configuration submitted | `eval/proofagent/` (governance profile, scenarios, planted faults, generated context and domain knowledge, README), `scripts/run_proofagent.sh` | ✅ |
 
 ### 2.9 Choice of LLM
 
@@ -158,12 +158,12 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 | D3 | Docs: LangGraph architecture | `docs/architecture.md` (workflow, node responsibilities, state and memory, evidence handles, failure handling, event stream) | ✅ |
 | D4 | Docs: MCP server and tool schemas | `docs/mcp.md` | ✅ |
 | D5 | Docs: safety considerations | `docs/safety.md` | ⬜ |
-| D6 | Docs: evaluation methodology | `docs/evaluation.md` | ⬜ |
+| D6 | Docs: evaluation methodology | `docs/evaluation.md` (ProofAgent: configuration, scenarios, four scorecards, stage attribution, fifteen failure analyses, what is still wrong), `eval/proofagent/README.md`, `eval/results/` | ✅ |
 | D7 | Setup instructions, `.env.example`, run/build scripts (index + MCP) | `README.md` (quick start), `.env.example`, `uv.lock`, `scripts/bootstrap_mac.sh`, `scripts/mac_refresh.sh`, `voiceshop ingest / index / mcp serve / serve` | ✅ |
 | D8 | `prompts/` folder: system, router, planner, tool-call, answerer/critic, guardrail prompts and few-shots, each mapped to its node/agent/tool | `prompts/` | ✅ |
 | D9 | Checkpoint 1: proposal, problem definition, data slice, tools, ingestion notebook, related work | `docs/checkpoints/checkpoint1.md` | ⬜ |
 | D10 | Checkpoint 2: architecture diagram, LangGraph flow, MCP/tool calls, UI wireframe, RAG evaluation plan, MCP README + schemas, initial ProofAgent plan | `docs/checkpoints/checkpoint2.md` | ⬜ |
-| D11 | Repository with clean code and README | repo: README with results so far; evaluation write-up and remaining docs still to come | 🔄 |
+| D11 | Repository with clean code and README | repo: README with the measured results; still to write: `docs/data.md`, `docs/safety.md`, the checkpoint documents, the notebook | 🔄 |
 | D12 | ≤7-minute live demo and short presentation | later (not part of the technical build) | ⬜ |
 
 ## 3. Beyond the requirements

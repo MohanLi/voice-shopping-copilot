@@ -8,11 +8,12 @@ three-way comparison on screen where every cell can be traced to a source.
 
 ![The assistant after a spoken request: what was heard, the spoken reply, the comparison table, and the list of agent steps with their times](docs/images/ui-voice.png)
 
-> **Status (11 November 2026): the system runs end to end; the evaluation phase has not started.**
-> Built and tested: data pipeline, hybrid retrieval, the MCP server, the agents, speech in and out, the API and
-> the web UI. Not done yet: the ProofAgent evaluation and scorecard, the failure analyses, most of the written
-> documentation. [PROGRESS.md](PROGRESS.md) is the build log; [docs/objectives.md](docs/objectives.md) lists every
-> requirement of the assignment with where it is met.
+> **Status (11 November 2026): the system runs end to end and has been evaluated four times with ProofAgent.**
+> Built and tested: data pipeline, hybrid retrieval, the MCP server, the agents, speech in and out, the API, the
+> web UI, and the evaluation with its scorecards and fifteen failure analyses
+> ([docs/evaluation.md](docs/evaluation.md)). Not done yet: the same evaluation against live web search, the
+> presentation, and part of the written documentation. [PROGRESS.md](PROGRESS.md) is the build log;
+> [docs/objectives.md](docs/objectives.md) lists every requirement of the assignment with where it is met.
 
 ## How a request is answered
 
@@ -35,12 +36,12 @@ flowchart LR
 | Stage | What it does | What is left to a model | What is not |
 |---|---|---|---|
 | Speech recognition | Whisper (`small.en`) with segment timestamps and a confidence; primed with the catalog's brand names | the transcript | whether the transcript is usable: an empty or very unsure one ends the turn with "could you say it again?" |
-| Input guard | prompt injection, requests for secrets, dangerous chemistry, emergencies | nothing | fixed replies; an emergency reply gives the Poison Control number |
-| Router | intent, constraints (budget, age, brand, material, wishes), safety flag | all of it | follow-up turns inherit earlier constraints in code |
-| Planner | catalog, live web, or both; writes the first tool calls | strategy and queries | the budget and the age always become filters, whatever the model wrote |
-| Retriever | calls `rag.search` and `web.search` through MCP tool discovery | extra calls when a search failed or found nothing | planned calls run without a model; duplicate and unknown calls are refused |
+| Input guard | emergencies, intent to harm; instructions, requests for prompts or keys, questions about mixing chemicals; personal details | nothing | an emergency reply gives the Poison Control number; a declined clause is taken out and the rest of the message is still answered; personal details are replaced by placeholders |
+| Router | intent, constraints (budget, age, brand, material, wishes), safety flag, and *which* fixed sentences to say for anything that is not a product request | the choices | the wording: every refusal, greeting and statement about the assistant is fixed text; follow-ups inherit earlier constraints in code, a different product starts a new request |
+| Planner | catalog, live web, or both; writes the first tool calls | strategy and queries | the budget and the age always become filters, whatever the model wrote; a named product looked up on the web is also checked against recall notices |
+| Retriever | calls `rag.search` and `web.search` through MCP tool discovery | extra calls when a search failed or found nothing | planned calls run without a model; duplicate calls, unknown tools and searches about a declined subject are refused |
 | Reconcile | matches live offers to catalog products; records price and stock conflicts | nothing | SKU, then model number, then brand plus every distinguishing title word |
-| Answerer and Critic | picks up to three items by handle and writes the reasons and one spoken sentence | choice and wording | **every table cell, citation, count and safety note is filled in by code from the evidence** |
+| Answerer and Critic | picks up to three items by handle and writes the reasons and one spoken sentence | choice and wording | **every table cell, citation, count and safety note is filled in by code from the evidence**; rule checks are binding, the model critic can send a draft back once |
 | Text to speech | Kokoro, sentence by sentence | nothing | the 15-second limit is enforced on the audio that was produced |
 
 The catalog never contained ratings, brands or ingredient lists as usable fields, and nothing was made up to fill
@@ -67,13 +68,42 @@ voiceshop ask "a wooden puzzle for my three year old under twenty dollars" "is t
 voiceshop voice question.m4a         # voice in, voice out; the reply is kept in logs/audio/
 voiceshop mcp tools                  # what the agents discover on the MCP server
 voiceshop eval retrieval             # the retrieval benchmark below
-python -m pytest tests -q            # 475 tests, about 20 s, no key or network needed
+voiceshop eval proofagent --label my-run --fallback-llm anthropic/claude-sonnet-5-5   # the ProofAgent evaluation below (15 min, $0.50 to $0.90)
+python -m pytest tests -q            # 589 tests, about 20 s, no key or network needed
 ```
 
 `LLM_MODEL=fake:rules` runs every agent on rules only (no key, no cost); `LLM_MODEL=ollama:<model>` or any other
 provider LangChain supports swaps the model without code changes.
 
 ## What has been measured so far
+
+**The whole assistant, with ProofAgent** — an adversarial shopper holds one 30-turn conversation with the
+assistant (two turns through real audio), and a jury of model calls votes on 46 checks per turn. Sixteen scenarios
+written for this project come first (discovery, constraints, comparison, live prices, conflicting sources,
+unsupported claims, a child under three, a recalled product, an instruction planted in a tool result, an unsafe
+request), then fourteen attacks the harness chooses itself. Four runs, each followed by fixes for what it found
+([scorecards, stage-by-stage attribution and fifteen failure analyses](docs/evaluation.md)):
+
+| | Run 1 | Run 2 | Run 3 | Run 4 |
+|---|---:|---:|---:|---:|
+| Task Success | 66% | 85% | 83% | 86% |
+| Hallucination Resistance / Grounding | 86% | 87% | 91% | 90% |
+| Tool-Use Correctness | 100% | 100% | 100% | 100% |
+| Safety and Guardrail Compliance | 84% | 99% | 98% | 93% |
+| Response Quality (Instruction Following) | 88% | 99% | 98% | 95% |
+| **Behavioural score** | **87%** | **95%** | **95%** | **94%** |
+| Certification | NEEDS_ENHANCEMENT | SILVER | SILVER | SILVER |
+| ProofAgent Index (0-100) | 74.8 | 77.0 | 78.1 | 79.1 |
+| Spoken replies within 15 s | 100% | 100% | 100% | 100% |
+
+What that table does and does not show: the step from run 1 to run 2 is real (in run 1, 17 of 30 replies were
+fixed text or a fallback template, often a refusal of a whole message of which one part had to be declined; since
+then that part is declined and the rest is answered). Runs 2
+to 4 are level within the noise of one conversation: every failure a run exposed is fixed and is a regression
+test, and the next run's attacker, which writes new messages each time, found different ones. One fix was itself
+wrong and cost run 4 its worst turn. Between a fifth and a third of the credit still lost in runs 2 to 4 belongs to
+ballots that the jury cast identically turn after turn, whatever the reply said; the scorecards report that part
+separately. The failures still open are named in the evaluation document, not hidden in the average.
 
 **Retrieval** — 600 spoken-style queries with one known target each, on an M2 Max
 ([full table](eval/results/retrieval/benchmark.md)):
@@ -82,14 +112,22 @@ provider LangChain supports swaps the model without code changes.
 |---|---:|---:|---:|---:|---:|---:|
 | BM25 | 81.0 | 91.0 | 0.866 | 77.9 | 76.5 | 0.3 ms |
 | dense (bge-small) | 69.0 | 82.2 | 0.763 | 77.6 | 77.2 | 12 ms |
-| hybrid (reciprocal-rank fusion) | 81.0 | 90.3 | 0.861 | 78.2 | 79.6 | 12 ms |
+| hybrid (reciprocal-rank fusion) | 80.5 | 90.3 | 0.859 | 78.3 | 79.6 | 12 ms |
 | hybrid + metadata filters | 83.3 | 92.2 | 0.881 | 100 | 100 | 58 ms |
-| + re-rank all 40 candidates | 83.3 | 90.7 | 0.876 | 100 | 100 | 544 ms |
-| + re-rank the first 10, fused (default) | 84.5 | 93.3 | 0.889 | 100 | 100 | 166 ms |
+| + re-rank all 40 candidates | 83.3 | 90.7 | 0.876 | 100 | 100 | 541 ms |
+| + re-rank the first 10, fused (default) | 83.8 | 93.7 | 0.886 | 100 | 100 | 164 ms |
 
 Two honest readings of that table: filters, not embeddings, are what guarantee the budget and the age; and the
 cross-encoder is worth about one point, which is within the noise of 600 queries. It is kept because the score of
 its best candidate flags 84% of requests the catalog cannot answer while wrongly flagging 2-3% of those it can.
+
+**Speech** — on the same machine ([recognition](eval/results/speech/asr_accents.md),
+[spoken replies](eval/results/speech/tts_duration.md)): 10 shopping requests read by 17 synthetic voices in nine
+accent groups, 170 clips, **0.7% word error rate**, and the budget, the age and the brand survived recognition in
+every clip. Giving the recogniser the catalog's brand names is what keeps the brands: without that hint 94% survive
+and the error rate triples. The voices are a stand-in for accents, not a sample of people. Every spoken reply
+tested stayed **within 15 seconds** (the limit is enforced on the audio, not on an estimate), and the first
+sentence is ready to play after 0.2 to 1.1 seconds.
 
 **Live turns** (Claude Haiku 5.5 + Serper, 11 November 2026): 6-14 seconds and $0.002-0.005 per turn, before
 any latency work. That first live run also found three defects, each now a regression test: a lunch box matched
@@ -97,8 +135,9 @@ to a brick box of the same brand, the assignment's own example answered with "I 
 shopping listings carry no description, and a safety rule that read "no source confirms it is eco-friendly" as an
 eco-friendly claim. They are written up in [docs/decisions.md](docs/decisions.md).
 
-Still to come: the ProofAgent scorecard, groundedness with planted errors, word error rate across accented
-voices, reconciliation accuracy on live listings, and stage-by-stage failure attribution.
+Still to come: the ProofAgent run against live web search on the laptop (the four runs above used recorded
+search results with planted faults, so that they can be compared), reconciliation accuracy on live listings, and
+recordings of real speakers next to the synthetic voices.
 
 ## The MCP server
 
@@ -119,20 +158,31 @@ src/voiceshop/
   mcp_server/   the two tools, cache, rate limit, providers, audit log        mcp_client/  discovery, tool restriction, adapters
   agents/       the LangGraph nodes, state, reconcile, claims, finalize       guardrails/  input screen, output rules, policy texts
   speech/       recognition, synthesis, text for speech                       api/         FastAPI + server-sent events
-  evals/        retrieval and speech evaluation                               llm/         model factory, cost ledger
+  evals/        retrieval, speech and ProofAgent evaluation                   llm/         model factory, cost ledger
 prompts/        every prompt, versioned, with a map of which node uses it     frontend/    the React UI (bundle committed)
-eval/           datasets, experiments, results                                tests/       unit and end-to-end tests
-docs/           objectives (requirement matrix), decisions (dated, with the evidence), the MCP reference
+eval/           datasets, experiments, results; proofagent/ holds the         tests/       unit and end-to-end tests
+                scenarios, planted tool faults and governance profile
+docs/           objectives (requirement matrix), evaluation (scorecards and failure analyses), architecture,
+                decisions (dated, with the evidence), the MCP reference
 ```
 
 ## Safety
 
 Grounding is structural rather than hoped for: the models choose items by handle and write reasons, and code copies
 prices, ratings, sources and citations from the evidence. Rule checks that cannot be argued with run before a
-model critic; a draft that fails twice is replaced by a template answer built from the evidence. Requests about
-children under three only return products whose own listing says they are for babies or toddlers, because the
-dataset's age field proved unreliable below three years. Tool results are treated as data: instruction-like text
-in a web result is removed and the result is flagged. Keys stay in `.env`; logs redact them.
+model critic; when a draft still fails after one revision, code rebuilds what failed from the evidence.
+
+What the assistant says without evidence is chosen, not written: refusals, greetings and statements about itself
+are fixed sentences that the input screen and the Router pick by id, so none of them can be talked into other
+wording. A declined part does not cost the shopper the rest of the message, and the agents that search and write
+are never shown the part that was declined. Personal details are replaced by placeholders before any model, tool
+or log sees them.
+
+Requests about children under three only return products whose own listing says they are for babies or toddlers,
+because the dataset's age field proved unreliable below three years. A named product that is looked up on the
+web is checked against recall notices, and a recalled product is never recommended. Tool results are treated as
+data: instruction-like text in a web result is removed before any model sees it, and the result is flagged.
+Keys stay in `.env`; logs redact them.
 
 ## How this was built
 
