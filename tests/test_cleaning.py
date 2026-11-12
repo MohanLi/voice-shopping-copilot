@@ -132,6 +132,13 @@ def test_parse_age(raw: str, expected: tuple[int | None, int | None, str | None]
         ("ideal for toddlers, ages 3", (36, None)),
         ("Supports 2 to 4 players, ages 10 and up", (120, None)),
         ("Party game for ages 21 and older", (252, None)),
+        # An abbreviated unit with its period. "Ages 18 mos. +" on a pull toy for beginning walkers was read as "Ages 18":
+        # the match gave the unit back and took the number for years, and the toy was in the catalog as "18 years and up".
+        ("Ages 18 mos. +", (18, None)),
+        ("Blocks, Ages 3 yrs. and up", (36, None)),
+        ("Rattle for ages 6 mos. to 3 yrs.", (6, 36)),
+        ("Pull toy, ages 18 mos", (18, None)),                              # a unit after the number is never dropped
+        ("Teether for ages 6 months", (6, None)),
     ],
 )
 def test_parse_text_age(text: str, expected: tuple[int, int | None]) -> None:

@@ -272,8 +272,8 @@ def age_label(lo: int, hi: int | None) -> str:
 # The dataset's "Manufacturer recommended age" field is unreliable: sellers often pick *months* where
 # years are meant ("7 months - 15 years" on a 402-piece set whose title says "Ages 7+"). The listing's
 # own text is the cross-check.
-_MONTH_UNIT = r"(?:months?|mos?\b|m\b)"
-_YEAR_UNIT = r"(?:years?|yrs?\b|y\b)"
+_MONTH_UNIT = r"(?:months?|mos?\b\.?|m\b)"       # "18 mos. +": the period belongs to the abbreviation
+_YEAR_UNIT = r"(?:years?|yrs?\b\.?|y\b)"
 _UNIT = rf"(?:{_MONTH_UNIT}|{_YEAR_UNIT})"
 _UP = r"(?:\+|plus\b|(?:and|&|or)\s*(?:up|older|above|over)\b)"
 _SEP = r"(?:-|–|—|to)"
@@ -295,8 +295,11 @@ _TEXT_AGE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("min", re.compile(r"\b(?:kids?|child(?:ren)?|boys?|girls?|toddlers?)\s+(?P<lo>\d{1,2})\s*\+(?!\s*(?:pc|pcs|pieces?|pack|players?))", re.I)),
     # "ages 6", "aged 4", "for kids age 3" with nothing after it: read as a minimum.
     # A bare singular "Age 3" is not accepted: it is usually a title ("Ice Age 2", "Stone Age 3D").
+    # A unit that follows the number belongs to it: the match may not give it back and read the number as years
+    # ("Ages 18 mos. +" on a pull toy for beginning walkers was "18 years and up" in the catalog until 12 November).
     ("min", re.compile(
-        rf"\b(?:age[sd]|(?:kids?|child(?:ren)?|boys?|girls?|toddlers?|recommended|for)\s+age)\s*:?\s*(?P<lo>\d{{1,2}})\s*(?P<lo_unit>{_UNIT})?(?![\d.]|\s*(?:{_SEP}|of\b|%))",
+        rf"\b(?:age[sd]|(?:kids?|child(?:ren)?|boys?|girls?|toddlers?|recommended|for)\s+age)\s*:?\s*(?P<lo>\d{{1,2}})\s*(?P<lo_unit>{_UNIT})?"
+        rf"(?![\d.]|\s*(?:{_SEP}|of\b|%|{_UNIT}))",
         re.I)),
 ]
 MAX_STATED_YEARS, MAX_STATED_MONTHS = 21, 48

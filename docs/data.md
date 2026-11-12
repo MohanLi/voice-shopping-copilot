@@ -155,16 +155,21 @@ minimum; a title never moves a product below three years against the field. The 
 
 | | Products |
 |---|---:|
-| age from the field alone | 5,439 |
-| age from the listing's text (the field was absent, or less strict) | 434 |
+| age from the field alone | 5,440 |
+| age from the listing's text (the field was absent, or less strict) | 433 |
 | age from the title | 385 |
 | no age stated anywhere | 3,482 |
-| field contradicted by the listing's text by two years or more (`age_conflict`) | 172 |
-| stated minimum age under three years | 1,162 |
-| ... of which the listing itself says the product is for babies or toddlers (`for_under_3`) | 427 |
+| field contradicted by the listing's text by two years or more (`age_conflict`) | 171 |
+| stated minimum age under three years | 1,163 |
+| ... of which the listing itself says the product is for babies or toddlers (`for_under_3`) | 428 |
+
+The reconciliation has its own errors, and the notebook's table of "the field says / the listing says / kept" is
+how they are found. On 12 November it showed a pull toy for beginning walkers kept as "18 years and up": its
+listing says "Ages 18 mos. +", and the parser had read "Ages 18", dropping the abbreviated unit with its period.
+One product; corrected, and a test.
 
 The last two rows are the under-three rule (`cleaning.explicitly_for_under_3`). For a child younger than three
-the search returns only the 427: a product whose title or bullets state an age under three, or say "toddler",
+the search returns only the 428: a product whose title or bullets state an age under three, or say "toddler",
 "infant", "newborn" or "babies" without a negation ("not suitable for toddlers" does not count), or whose category
 is a baby or toddler one; an age of three or more stated anywhere rules a product out, and so does a small-parts,
 magnet, balloon, sharp-parts or "not for under 3" warning. A product with no stated age is never admitted, and
@@ -204,7 +209,7 @@ The assignment asks for normalised units so that prices can be compared fairly (
 - **Price per ounce.** Only for products that are used up (paint, sand, glue, slime) and state a net content in
   the title: `content_amount`, `content_unit` (`oz` or `fl_oz`) and `price_per_oz`, 92 products. A toy's shipping
   weight is not a content, and no price per ounce is computed from it.
-- **Pieces.** The piece count of a puzzle or building set, from the title: 529 products.
+- **Pieces.** The piece count of a puzzle or building set, from the title, when it is ten or more: 529 products.
 
 The numbers are small because the catalog is mostly toys. Where pack sizes differ, the Planner asks for the unit
 price as a comparison criterion and the table shows it.

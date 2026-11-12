@@ -103,7 +103,7 @@ only when the first product has them, otherwise "One of the options contains mag
 The dataset has an age field, and below three years it cannot be trusted on its own: it often says months where
 years are meant. A 402-piece construction set is listed as "7 months - 15 years" while its title says "Ages 7+".
 For a child under three the search therefore returns only products whose own listing text says they suit babies
-or toddlers (427 of the 1,162 products whose stated minimum age is under three), excludes anything with a
+or toddlers (428 of the 1,163 products whose stated minimum age is under three), excludes anything with a
 small-parts, magnet, balloon or sharp-parts warning, never admits a product with no stated age, and relaxes none
 of this when results are scarce. Web results are not recommended for that age at all, because a shopping listing
 carries nothing to check their suitability against. When nothing of the kind asked for is permitted (a marble
