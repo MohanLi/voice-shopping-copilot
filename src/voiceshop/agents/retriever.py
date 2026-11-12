@@ -72,7 +72,7 @@ def web_unit_prices(title: str | None, price: float | None) -> dict[str, Any]:
     a number the model worked out is exactly what it is there to stop. Now the division is done here, once, the same
     way as for the catalog, and the Answerer reads the result like any other price.
     """
-    if not title or not price or price <= 0:
+    if not title or isinstance(price, bool) or not isinstance(price, (int, float)) or price <= 0:
         return {}
     content = units.parse_content(title) if units.is_consumable(title) else None
     worked_out = units.unit_prices(price, units.parse_pack_count(title), content)

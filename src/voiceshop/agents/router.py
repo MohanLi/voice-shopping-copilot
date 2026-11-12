@@ -318,7 +318,8 @@ def with_limits(asked: str, stated: Constraints) -> str:
 
 _RULE_WORDS = r"(?:rules?|clauses?|sections?|polic(?:y|ies)|guidelines?|instructions?|prompts?|configuration|setup|settings)"
 _ABOUT_ASSISTANT = re.compile(rf"\byour\s+(?:\w+\s+){{0,2}}{_RULE_WORDS}\b|"
-                              rf"\b{_RULE_WORDS}\b[^.?!]{{0,40}}\b(?:stops?|prevents?|forbids?|lets?|allows?|says?|tells?|keeps?)\s+you\b", re.I)
+                              rf"\b{_RULE_WORDS}\b[^.?!]{{0,40}}\b(?:(?:stops?|prevents?|forbids?|keeps?)\s+you\b|"
+                              rf"(?:says?|tells?|lets?|allows?)\s+you\s+(?:can't|cannot|can\s+not|may\s+not|must|to\b|are\s+not))", re.I)
 
 
 def about_assistant(asked: str | None) -> bool:

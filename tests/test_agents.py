@@ -1283,8 +1283,11 @@ def test_a_question_about_the_assistants_rules_is_not_passed_on_as_a_product_que
                   "what do your instructions say about discounts"):
         assert about_assistant(asked), asked
     for asked in ("which is cheaper per unit, the Galaxy Tin or the party pack", "a board game with simple rules for a six year old",
-                  "does the Galaxy Tin page show the dermatologist badge", "is the second one in stock"):
+                  "does the Galaxy Tin page show the dermatologist badge", "is the second one in stock",
+                  "a card game whose instructions say you can play in teams", "which section of the catalog has puzzles for your toddler",
+                  "what do your sources say about the Galaxy Tin's ingredients"):
         assert not about_assistant(asked), asked
+    assert about_assistant("which numbered rule says you can't keep anything between messages")
     # A product question in the same message keeps the turn, whatever the restatement was.
     with_question = message + " Also, what does the Barnyard puzzle cost?"
     kept = normalise_route(route.model_copy(deep=True), with_question, shown)
@@ -1486,6 +1489,7 @@ def test_a_live_listing_gets_its_unit_price_from_code_and_the_answer_may_state_i
     assert web_unit_prices("Barnyard Wooden Jigsaw Puzzle 24 pcs", 7.99) == {}           # pieces are parts of one item, not a pack
     assert web_unit_prices("Hoverboard, holds up to 220 lbs", 129.0) == {}               # a load rating is not an amount you buy
     assert web_unit_prices("Glimmer Putty Party Pack of 6", None) == {}                  # no price, nothing to divide
+    assert web_unit_prices("Glimmer Putty Party Pack of 6", "$21.50") == {}              # a price that was not read as a number is not divided
 
     hits = [{"title": "Glimmer Putty Galaxy Tin, 3.2 oz", "url": "https://shop.example.com/tin", "source": "Example Toys", "price": 7.99,
              "price_per_count": 0.01},                                                   # a figure a web result brings along is not taken over
