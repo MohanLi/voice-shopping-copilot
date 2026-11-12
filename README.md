@@ -6,7 +6,12 @@ Ask for a product out loud. A team of LangGraph agents works out what you want, 
 catalog and the live web through one MCP server, and answers out loud in under 15 seconds, with a
 three-way comparison on screen where every cell can be traced to a source.
 
-![The assistant after a spoken request: what was heard, the spoken reply, the comparison table, and the list of agent steps with their times](docs/images/ui-voice.png)
+![Two turns: a typed request is routed, planned, searched and answered step by step, the reply is spoken while its words are highlighted, and a follow-up is answered from the products on screen](docs/images/demo.gif)
+
+*Two turns through the real pipeline: Claude Haiku 5.5, the full catalog, speech on. The highlight follows the
+reply as it is spoken. Stretches in which nothing changes on screen are cut short, and the recording was made in
+the two-CPU build workspace, which is slower than the laptop the system is built for (a median turn of 13.5 s
+against 8.4 s). Made by [`frontend/e2e/demo.cjs`](frontend/e2e/demo.cjs).*
 
 > **Status (12 November 2026): the system runs end to end and has been evaluated seven times with ProofAgent,
 > the last three times on a laptop against live web search.**
@@ -19,6 +24,10 @@ three-way comparison on screen where every cell can be traced to a source.
 > of the assignment with where it is met.
 
 ## How a request is answered
+
+![The assistant after a spoken request: what was heard, the spoken reply, the comparison table, and the list of agent steps with their times](docs/images/ui-voice.png)
+
+*A spoken request: what the recogniser heard and how sure it was, the reply, the table, and every step with its time.*
 
 ```mermaid
 flowchart TB
