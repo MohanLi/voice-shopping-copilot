@@ -108,6 +108,10 @@ python -m pytest tests -q            # 641 tests, about 20 s, no key or network 
 `LLM_MODEL=fake:rules` runs every agent on rules only (no key, no cost); `LLM_MODEL=ollama:<model>` or any other
 provider LangChain supports swaps the model without code changes.
 
+Every push is checked without a key, the dataset or a model file ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
+lint, the tests, the UI build, and a browser test of the page against a server that runs the rule-based
+agents on the committed 148-row sample.
+
 ## What has been measured so far
 
 **The whole assistant, with ProofAgent** — an adversarial shopper holds one 30-turn conversation with the

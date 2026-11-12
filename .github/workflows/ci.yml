@@ -1,0 +1,99 @@
+name: CI
+
+# Everything here runs without an API key, without the dataset and without model files:
+# the tests use the committed 148-row sample, and the end-to-end check runs the rule-based
+# version of every agent against recorded sample search results.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Lint and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install the project at the locked versions
+        run: uv sync --frozen --extra eval --extra dev
+
+      - name: Lint
+        run: uv run ruff check src tests scripts eval
+
+      - name: Tests
+        run: uv run pytest tests -q
+
+  ui:
+    name: Web UI build and end-to-end check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      LLM_MODEL: fake:rules          # the rule-based version of every agent
+      WEB_SEARCH_PROVIDER: fixture   # recorded sample results instead of the search API
+      EMBEDDING_BACKEND: hashing     # word hashing instead of the sentence encoder
+      RERANKER_ENABLED: "false"
+      ASR_PROVIDER: none             # no speech models are downloaded in CI; the page is checked with typed requests
+      TTS_PROVIDER: none
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Type-check and build the UI
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install the project at the locked versions
+        run: uv sync --frozen
+
+      - name: Build a small catalog and its index from the committed sample
+        run: |
+          uv run voiceshop ingest --raw-csv data/sample/raw_sample.csv
+          uv run voiceshop index
+
+      - name: Install the browser for the end-to-end check
+        working-directory: frontend
+        run: |
+          npm install --no-save playwright@1.63.0
+          npx playwright install --with-deps chromium
+
+      - name: Start the app and check the page end to end
+        run: |
+          uv run voiceshop serve --port 8000 > serve.log 2>&1 &
+          for i in $(seq 1 90); do
+            curl -sf http://127.0.0.1:8000/api/health > /dev/null && break
+            sleep 1
+          done
+          node frontend/e2e/smoke.cjs http://127.0.0.1:8000
+
+      - name: Server log
+        if: failure()
+        run: tail -n 100 serve.log
