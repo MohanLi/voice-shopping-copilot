@@ -41,7 +41,7 @@ SPOKEN_SAFETY: dict[str, str] = {
 SPOKEN_CHEMICAL = "Follow the label and never mix cleaning products."
 SPOKEN_RECALL = "A source says it was recalled, so I do not recommend it."
 SPOKEN_UNDER_3 = "Please check the age label on the packaging."
-SPOKEN_UNDER_3_ONLY = "For a child under three I only suggest products labelled for that age."
+SPOKEN_UNDER_3_ONLY = "For a child under three I only suggest toys labelled for that age."
 
 
 def _money(value: float | None) -> str:
@@ -178,7 +178,10 @@ def spoken_around_lead(draft: AnswerDraft, evidence: Evidence, constraints: Cons
     before = [policy.said_before_answer(preface)] if preface else []
     items = [item for rec in draft.recommendations[:3] if (item := evidence.get(rec.ref)) is not None]
     if draft.abstain or not items:
-        return before, []
+        under_three = constraints.age_years is not None and constraints.age_years < 3
+        # Nothing is recommended for a child under three: the reason is said in fixed words, and it is counted, so a
+        # long sentence from the model is sent back instead of pushing it out.
+        return before, ([SPOKEN_UNDER_3_ONLY] if under_three and "under three" not in draft.spoken.lower() else [])
     about_screen = route is not None and route.intent in ("follow_up", "compare")
     _, spoken_notes = safety_notes(items, constraints, route)
     after = _after_lead(split_sentences(draft.spoken)[:1], spoken_notes, len(items), about_screen)
@@ -272,10 +275,13 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
     screen_notes, spoken_notes = safety_notes(items, constraints, route)
 
     notes: list[str] = list(screen_notes)
-    if draft.conflict_note and evidence.web:                 # a "conflict" needs a live source to conflict with
-        notes.append(draft.conflict_note.strip())
     refs = {i.ref for i in items}
-    notes.extend(c for c in evidence.conflicts if any(c.startswith(f"{ref} ") for ref in refs) and c not in notes)
+    found = [c for c in evidence.conflicts if any(c.startswith(f"{ref} ") for ref in refs)]       # disagreements the reconcile step measured
+    if draft.conflict_note and found:
+        # The model's sentence is shown only next to a conflict the code found. On its own it produced "the live price of
+        # $7.99 is lower than nothing in the catalog" for a product the catalog does not carry.
+        notes.append(draft.conflict_note.strip())
+    notes.extend(c for c in found if c not in notes)
     if evidence.relaxed and items:
         notes.append("No product met every constraint, so the search loosened: " + ", ".join(evidence.relaxed).replace("_", " ") + ".")
     for key, value in evidence.unmatched_filters.items():
@@ -296,9 +302,10 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
     # "... at a catalog price." and "... no live listing was found, so I." in the spoken reply of a live check.)
     spoken = " ".join(whole_sentences(draft.spoken, before, max_seconds, max_words))
     under_three = constraints.age_years is not None and constraints.age_years < 3
-    if (draft.abstain or not rows) and under_three and "under three" not in spoken.lower() \
-            and fits(" ".join([*before, spoken, SPOKEN_UNDER_3_ONLY]), max_seconds, MAX_SPEED):
-        spoken = f"{spoken} {SPOKEN_UNDER_3_ONLY}"           # the reason nothing was suggested, said in fixed words
+    if (draft.abstain or not rows) and under_three and "under three" not in spoken.lower():
+        # The reason nothing was suggested, said in fixed words. Further sentences of the model's statement give way to it.
+        first = whole_sentences(draft.spoken, [*before, SPOKEN_UNDER_3_ONLY], max_seconds, max_words)
+        spoken = " ".join([*first, SPOKEN_UNDER_3_ONLY])
     if rows and not draft.abstain:
         first = split_sentences(draft.spoken)[:1]
         *safety, tail = _after_lead(first, spoken_notes, len(rows), about_screen)

@@ -75,8 +75,9 @@ def test_the_context_document_fits_what_the_assessor_reads_and_is_built_from_the
     from voiceshop.guardrails import policy
     from voiceshop.prompts import load_prompt
 
-    for sentence in (*policy.SAY.values(), policy.EMERGENCY, policy.SELF_HARM):
-        assert sentence in text                                                 # the fixed sentences, verbatim
+    for name, sentence in policy.SAY.items():
+        assert (sentence in text) == (name not in pa.COURTESIES)               # every fixed sentence that declines or discloses something, verbatim
+    assert policy.EMERGENCY in text and policy.SELF_HARM in text
     assert load_prompt("safety_policy").text.split("\n\n", 1)[1] in text
     for name, _ in pa.AGENTS:
         prompt = load_prompt(name)
@@ -167,3 +168,20 @@ def test_failed_checks_follow_each_checks_polarity_and_the_share_of_the_jury() -
 )
 def test_a_failed_check_is_attributed_to_a_pipeline_stage(check: str, trace: dict[str, Any], stage: str) -> None:
     assert pa.stage_for(check, trace) == stage
+
+
+def test_runs_are_put_side_by_side_from_their_scorecards() -> None:
+    def card(label: str, task: float, lost: dict[str, float]) -> dict[str, Any]:
+        return {"label": label, "final_score_pct": 87.0, "certification": "NEEDS_ENHANCEMENT", "agent_version": "abc1234",
+                "metrics_pct": {"task_success": task, "tool_use": 100.0},
+                "pai": {"score": 74.8, "axes": [{"symbol": "Q", "score": 66.0}, {"symbol": "E", "score": 87.2}]},
+                "gate": {"decision": "pass"},
+                "stage_attribution": {"turns_by_reply_origin": {"Answerer": 12, "Router": 10}, "lost_credit_by_stage": lost,
+                                      "majority_failures_by_stage": dict.fromkeys(lost, 1)},
+                "harness": {"turns_run": 30, "llm": "anthropic/claude-haiku-5-5"}, "agent": {"voice_turns": 2, "web_search": ["fixture"]},
+                "spoken_reply": {"within_15_s_pct": 100.0, "longest_s": 13.8}, "latency_s": {"p50": 10.2}, "cost_usd": {"agent": 0.05, "harness": 0.75}}
+
+    text = pa.comparison_markdown([card("baseline", 66.0, {"Input guard": 6.0, "Answerer": 10.64}), card("after", 90.0, {"Answerer": 3.5})])
+    assert "| | baseline | after |" in text and "| Task Success | 66% | 90% |" in text
+    assert "| Input guard | 6.00 (1 majority) | 0.00 (0 majority) |" in text            # a stage that stopped losing credit stays in the table
+    assert "| **All stages** | **16.64** | **3.50** |" in text and "| Context engineering (Q) | 66.0 | 66.0 |" in text

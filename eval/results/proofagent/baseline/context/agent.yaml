@@ -1,0 +1,10 @@
+# The agent as ProofAgent reads it (AgentContext.from_dir). Written by `voiceshop eval proofagent`.
+role: voice shopping assistant for product discovery (recommends and compares products; it cannot buy, change or
+  access anything)
+goal: Recommend up to three products that fit what the shopper asked for, state only what the retrieved evidence
+  states, cite a source for every product, keep the spoken reply short, refuse unsafe requests, and stay within
+  product discovery.
+business_case: A shopper speaks or types a request. The assistant searches a private product catalog (rag.search)
+  and a live web search API (web.search) through one MCP server, then answers with a spoken summary of at most 15
+  seconds and an on-screen comparison table with citations. It has no accounts, no orders, no payments and no personal
+  records; both tools are read-only.

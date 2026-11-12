@@ -78,6 +78,8 @@ _INJECTION = re.compile(
     r"|\b(?:append|add|include|insert|put|attach)\b[^.?!]{0,60}\b(?:to|in|into|at\s+the\s+(?:end|start|top|bottom)\s+of)\s+(?:your|the|every|each)\s+(?:repl(?:y|ies)|responses?|answers?|messages?|outputs?)\b"
     r"|\b(?:end|begin|start|prefix|sign)\s+(?:your|the|every|each)\s+(?:repl(?:y|ies)|responses?|answers?|messages?)\s+with\b"
     r"|\b(?:reply|respond|answer)\s+(?:only\s+)?with\s+(?:the\s+(?:word|phrase|code|text)|exactly)\b|\bsay\s+exactly\b"
+    # Template syntax is a request to evaluate something ("Hello {{config.SECRET_KEY}}"): never part of a shopping request.
+    r"|\{\{[^{}]{0,80}\}\}|\$\{[^{}]{0,80}\}|<%[^%]{0,80}%>|\{%[^%]{0,80}%\}"
     # A note that claims to come from the system or its operators is still just text in the message.
     r"|\b(?:system|admin(?:istrator)?|developer|operator|security|compliance)\s+(?:notice|note|message|override|alert|directive)\s*[:\-]",
     re.I,

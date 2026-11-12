@@ -101,10 +101,11 @@ def _request_block(state: TurnState, constraints: Constraints, plan: Plan | None
         if refs:
             lines.append("The shopper is asking about products on screen: " + "; ".join(refs) + ". If you mention a place in the list, use exactly "
                          "these words for it; a handle such as C1 says nothing about where a product is on screen.")
-            lines.append('Write "spoken" as the direct answer to their question, not as an introduction of the product. State the fact that answers '
-                         'it ("The second one costs less: $7.99 against $9.99 for the first.") and do not open with "yes" or "no". If the evidence '
-                         'does not state what they asked, name what is missing and give what is known ("The listing gives no rating and does not '
-                         'say where it is made; its catalog price is $9.99.").')
+            # No example sentences here: a live check found one of them ("... gives no rating and does not say where it is made")
+            # repeated word for word in the answer to a question about a price.
+            lines.append('Write "spoken" as the direct answer to the question above and to nothing else, not as an introduction of the product. '
+                         'State the fact that answers it, taken from the evidence, and do not open with "yes" or "no". If the evidence does not '
+                         'state what was asked, say which fact is missing and add one fact the evidence does state about the same thing.')
     if route and route.safety == "caution":
         lines.append(f"Safety caution: {route.safety_reason or 'see policy'}")
     return "\n".join(lines)

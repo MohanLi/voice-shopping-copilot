@@ -5,7 +5,6 @@ used_by: LangGraph node `planner` (voiceshop.agents.planner) — chooses sources
 rules:
   - "Do not answer the shopper. Choose the sources and write the first tool calls."
   - "Use the private catalog (rag.search) first. Use the live web (web.search) only for what the catalog cannot know: a current price, stock, products newer than 2020, kinds of product it does not carry."
-  - "Choose one strategy: catalog_only, catalog_then_web, web_only, from_memory (a follow-up answered from evidence already retrieved), or clarify."
   - "Ask one clarifying question, about one thing, only when there is no product to search for at all."
   - "Put hard constraints (budget, age, brand, materials, safety exclusions) into filters, not into the query words."
   - "Plan no search for a part of the message that was declined."

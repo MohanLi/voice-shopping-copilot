@@ -98,6 +98,16 @@ class EvidenceBuilder:
         self._catalog_base = max([int(i.ref[1:]) for i in earlier.catalog if i.ref[1:].isdigit()], default=0)
         self._web_base = max([int(i.ref[1:]) for i in earlier.web if i.ref[1:].isdigit()], default=0)
 
+    def reserve(self, earlier: Evidence) -> None:
+        """Number new items after the handles already on screen, so that one handle never means two products.
+
+        A spoken follow-up asked for "any wooden puzzle under fifteen dollars" and about "the Janod one". The new search
+        numbered its results from C1 again, the Janod puzzle on screen was C4, and so was a different puzzle in the new
+        results: the answer called that one "the third one on screen" (second ProofAgent run, turn 8).
+        """
+        self._catalog_base = max([self._catalog_base, *(int(i.ref[1:]) for i in earlier.catalog if i.ref[1:].isdigit())])
+        self._web_base = max([self._web_base, *(int(i.ref[1:]) for i in earlier.web if i.ref[1:].isdigit())])
+
     def _next_ref(self, prefix: str) -> str:
         if prefix == "C":
             self._catalog_base = max(self._catalog_base, len(self.catalog)) + 1
@@ -308,14 +318,20 @@ def make_retriever_node(deps: Deps):  # type: ignore[no-untyped-def]
         route = state.get("route")
         earlier: Evidence | None = state.get("last_evidence")
         seeded = False
-        if route is not None and route.intent in ("follow_up", "compare") and earlier is not None and not any(s.tool == "rag.search" for s in plan.steps):
+        kept: list[str] = []
+        if route is not None and route.intent in ("follow_up", "compare") and earlier is not None:
             shown = state.get("shown") or []
             meant = [shown[p - 1]["ref"] for p in route.refers_to if 0 < p <= len(shown)] or None
-            # A turn that names a product of its own and points at nothing on screen is a new request, whatever it was routed as:
-            # carrying the old list into its evidence put LEGO sets next to a putty (first ProofAgent run, turn 14).
-            if meant is not None or not route.constraints.product:
-                builder.seed(earlier, meant)                  # the live look-up is about products already on screen
-                seeded = True
+            builder.reserve(earlier)                          # a handle on screen is never given to another product
+            if not any(s.tool == "rag.search" for s in plan.steps):
+                # A turn that names a product of its own and points at nothing on screen is a new request, whatever it was routed as:
+                # carrying the old list into its evidence put LEGO sets next to a putty (first ProofAgent run, turn 14).
+                if meant is not None or not route.constraints.product:
+                    builder.seed(earlier, meant)              # the live look-up is about products already on screen
+                    seeded = True
+            elif meant is not None:
+                builder.seed(earlier, meant)                  # a new search that also points at a product on screen: it stays in the evidence, under its handle
+                kept = list(meant)
 
         planned_calls = [(s.tool, step_arguments(s)) for s in plan.steps]
         planned = await _run_calls(deps, builder, planned_calls, origin="plan", round_no=0) if planned_calls else []
@@ -345,7 +361,7 @@ def make_retriever_node(deps: Deps):  # type: ignore[no-untyped-def]
             "trace": [step("retriever", summary, status="warn" if (failed or error or evidence.empty) else "ok", started=started,
                            tool_calls=[r.model_dump(exclude_none=True) for r in builder.records],
                            agent_rounds=model_calls, agent_decision=why, agent_notes=notes or None,
-                           seeded_from_screen=[c.ref for c in builder.catalog.values()] if seeded else None,
+                           seeded_from_screen=[c.ref for c in builder.catalog.values()] if seeded else None, kept_from_screen=kept or None,
                            best_match_score=builder.best_match_score, strict_matches=evidence.strict_matches, error=error)],
         }
 

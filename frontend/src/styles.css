@@ -157,6 +157,7 @@ blockquote.heard--doubt { background: none; color: var(--ink-soft); }
 
 /* ------------------------------------------------------------------ the comparison */
 .table-wrap { overflow-x: auto; margin-top: 1.75rem; }
+.table-note { margin: 0.6rem 0 0 1rem; font-size: var(--step--1); color: var(--ink-soft); }
 .compare { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
 .compare thead th {
   padding: 0 0.6rem 0.5rem; text-align: left; vertical-align: bottom; font-size: var(--step--1); font-weight: 650; color: var(--ink-soft);

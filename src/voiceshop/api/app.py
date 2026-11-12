@@ -236,6 +236,8 @@ def create_app(assistant: Assistant | None = None, settings: Settings | None = N
         for path in sorted(root.rglob("*")):
             if path.suffix not in (".md", ".json") or path.stat().st_size > 400_000:
                 continue
+            if "context" in path.parts or path.name in ("report.per.json", "report.bundle.json"):
+                continue                                     # inputs and machine records of a run, not reports to read
             name = str(path.relative_to(root))
             if path.suffix == ".md":
                 out["reports"].append({"name": name, "kind": "markdown", "text": path.read_text(encoding="utf-8")})
@@ -243,6 +245,8 @@ def create_app(assistant: Assistant | None = None, settings: Settings | None = N
                 try:
                     data = json.loads(path.read_text(encoding="utf-8"))
                 except ValueError:
+                    continue
+                if not isinstance(data, dict):
                     continue
                 summary = {k: v for k, v in data.items() if not isinstance(v, list | dict) or k in ("results", "orderings", "summary", "scores")}
                 out["reports"].append({"name": name, "kind": "json", "data": summary})

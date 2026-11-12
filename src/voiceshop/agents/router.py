@@ -80,6 +80,43 @@ def names_another_product(new: Constraints, earlier: Constraints | None) -> bool
     return earlier is None or not (words & _name_words(earlier.product))
 
 
+_WEB_ASK = re.compile(r"\b(?:check|search|look)\b[^.?!]{0,24}\b(?:the\s+web|online|the\s+internet|google)\b", re.I)
+_SHOPPING_WORDS = re.compile(
+    r"\$\s?\d|\b(?:prices?|priced|costs?|cheap(?:er|est)?|expensive|dollars?|bucks|rat(?:ed|ing|ings)|reviews?|stars?|in\s+stock|available|availability"
+    r"|compare|comparison|difference|recommend(?:ed)?|pieces?|ages?|sizes?|materials?|brands?|budget)\b", re.I)
+
+
+def product_question(text: str, shown: list[dict[str, Any]] | None) -> tuple[str, list[int]]:
+    """The sentences of a message that ask about a product on screen, and the positions of the products they name.
+
+    A long message can bury one ordinary question ("... so where is that rating of the Galaxy tin from?") among
+    requests that are declined, and the Router model then tends to call the whole message out of scope: three turns of
+    the second ProofAgent run lost all their task credit that way. A sentence counts when it names a product on screen
+    by a word the other products on screen do not share, uses a shopping word (price, rated, in stock ...), and passes
+    the input screen untouched. Nothing else of the message is returned.
+    """
+    if not shown:
+        return "", []
+    from voiceshop.guardrails.output import echoed_tokens
+    from voiceshop.speech.text import split_sentences
+
+    names = [_name_words(str(entry.get("name") or entry.get("title") or "")) for entry in shown]
+    shared = set.intersection(*names) if len(names) > 1 else set()
+    distinctive = [{w for w in words - shared if len(w) > 3} for words in names]
+    kept: list[str] = []
+    positions: list[int] = []
+    for sentence in split_sentences(" ".join(text.split())):
+        said = {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", sentence.lower())}
+        named = [i for i, words in enumerate(distinctive, 1) if words & said]
+        if not named or not _SHOPPING_WORDS.search(sentence) or echoed_tokens(sentence, text):
+            continue
+        verdict = screen_input(sentence)
+        if verdict.allowed and not verdict.removed:
+            kept.append(verdict.text)
+            positions.extend(p for p in named if p not in positions)
+    return " ".join(kept), positions
+
+
 def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]] | None, earlier: Constraints | None = None) -> RouteDecision:
     """Code backstops applied to whatever the Router model returned."""
     c = route.constraints
@@ -91,6 +128,8 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
         c.age_years = None
     if c.age_years is None:                                   # "for my baby" must still switch the under-three rule on
         c.age_years = rules.recipient_age(f"{text} {c.recipient or ''}")
+    if _WEB_ASK.search(text):                                 # "just check the web if you don't have it" is a request for a live look-up
+        c.wants_current_info = True
     route.say = list(dict.fromkeys(route.say))[:MAX_SAY]      # type: ignore[assignment]
     if "no_harm" in route.say or route.safety == "refuse":
         route.intent = "unsafe"                               # an intent to hurt someone colours the whole message: nothing in it is served
@@ -102,6 +141,12 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
         route.say = ["off_topic"]
     elif route.intent == "chitchat" and not route.say:
         route.say = ["greeting"]
+    if route.intent in ("chitchat", "out_of_scope", "unsafe") and "no_harm" not in route.say and any(i.startswith("no_") for i in route.say):
+        asked, positions = product_question(text, shown)
+        if asked:                                             # one ordinary question about a product on screen, among things that are declined
+            route.intent, route.refers_to, route.request = "follow_up", positions, asked
+            route.safety = "ok" if route.safety == "refuse" else route.safety
+            route.say = [i for i in route.say if i not in ("off_topic", "greeting", "thanks")]      # type: ignore[assignment]
     if route.intent in ("follow_up", "compare") and not shown:
         route.intent = "product_search"                       # nothing on screen to refer to
         route.refers_to = []
@@ -125,7 +170,7 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
 MAX_REQUEST_WORDS = 40
 
 
-def request_for_agents(route: RouteDecision, text: str) -> str:
+def request_for_agents(route: RouteDecision, text: str, shown: list[dict[str, Any]] | None = None) -> str:
     """The shopper's request as the Planner, the Retriever, the Answerer and the Critic are given it.
 
     Normally that is the message itself. When part of the message was declined, it is the product request alone, as
@@ -134,7 +179,7 @@ def request_for_agents(route: RouteDecision, text: str) -> str:
     Answerer compared the kits and also read back a checklist, although both the Router and its own prompt had ruled
     that out. A model that never sees the instruction cannot follow it.) The restatement is screened like any message;
     if the Router gave none that passes, a new product request is described from its constraints, and a question about
-    products on screen falls back to the message.
+    products on screen is reduced to the sentences that ask it (``product_question``), or else left as the message.
     """
     if route.intent not in SHOPPING or not route.say:        # what the input screen removed is already out of ``text``
         return text
@@ -150,7 +195,7 @@ def request_for_agents(route: RouteDecision, text: str) -> str:
             return verdict.text
     if route.intent == "product_search" and route.constraints.product:
         return rules.describe_request(route.constraints)
-    return text
+    return product_question(text, shown)[0] or text           # a question about the list on screen: the sentences that ask it, if they can be told apart
 
 
 def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
@@ -191,7 +236,7 @@ def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
         if route.safety != "ok":
             summary += f". Safety: {route.safety} ({route.safety_reason or 'policy'})"
         summary += summary_say
-        request_text = request_for_agents(route, text)
+        request_text = request_for_agents(route, text, shown)
         return {
             "route": route,
             "request_text": request_text,

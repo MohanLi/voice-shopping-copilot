@@ -82,6 +82,7 @@ export function ComparisonTable({ rows, citations }: { rows: TableRow[]; citatio
           ))}
         </tbody>
       </table>
+      <p className="table-note">Chosen and ordered by an AI assistant from the sources cited in each row.</p>
     </div>
   );
 }

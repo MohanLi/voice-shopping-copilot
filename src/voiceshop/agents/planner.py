@@ -46,13 +46,26 @@ WEB_POLICY = {
 _SAFETY_ASK = re.compile(r"\b(?:safe|safety|recall(?:ed|s)?|dangerous|hazard(?:ous|s)?)\b", re.I)
 
 
-def safety_lookup(constraints: Constraints, user_text: str, strategy: str, steps: list[PlanStep]) -> PlanStep | None:
-    """A search for recall and safety notices, when the shopper asks whether a named product is safe and the web is being consulted anyway.
+def names_one_product(product: str | None) -> bool:
+    """Is this the name of one particular product ("Aqua Beads Mega Set") rather than a kind of product ("bead kit", "LEGO set")?
 
-    Merchant listings do not mention recalls. Asked "is it safe and worth buying?", the pipeline once looked up the price,
-    found two listings and answered from them; the recall notice was one search away and was never fetched.
+    Two capitalised words or more: how a product name is written, by the Router and by speech recognition alike.
     """
-    if strategy not in ("catalog_then_web", "web_only") or not constraints.product or not _SAFETY_ASK.search(user_text):
+    return len(re.findall(r"\b[A-Z][A-Za-z0-9'&-]+", product or "")) >= 2
+
+
+def safety_lookup(constraints: Constraints, user_text: str, strategy: str, steps: list[PlanStep]) -> PlanStep | None:
+    """A search for recall and safety notices, when the web is consulted about one particular product or the shopper asks whether a product is safe.
+
+    Merchant listings do not mention recalls. Asked for today's price of a set that had been recalled, the pipeline
+    looked up the price, found two listings and answered from them, twice: once although the shopper had asked "is it
+    safe?", and once more when they had not. The notice was one search away. A particular product that is looked up
+    on the live web is now always checked; a kind of product is checked only when safety is asked about, because
+    "bead kit recall" finds notices about products nobody asked for.
+    """
+    if strategy not in ("catalog_then_web", "web_only") or not constraints.product:
+        return None
+    if not (names_one_product(constraints.product) or _SAFETY_ASK.search(user_text)):
         return None
     if any(s.tool == "web.search" and s.kind == "web" and re.search(r"recall|safety", s.query, re.I) for s in steps):
         return None
@@ -153,7 +166,7 @@ def normalise_plan(plan: Plan, route: RouteDecision, constraints: Constraints, u
     safety_step = safety_lookup(constraints, user_text, strategy, steps) if route.intent == "product_search" else None
     if safety_step is not None:
         steps.append(safety_step)
-        notes.append("added a search for recall and safety notices, because the shopper asked whether the product is safe")
+        notes.append("added a search for recall and safety notices for the product that is looked up on the web")
     return plan.model_copy(update={"strategy": strategy, "steps": steps, "verify_current_price": verify}), notes
 
 
