@@ -139,6 +139,9 @@ async def test_an_asked_for_quality_is_looked_up_and_reported_as_what_sources_st
     assert rows["PureGleam"].ingredients == "biodegradable, fragrance-free (stated by reviews.example.com)"
     unsupported = rows["BrightSteel"]
     assert unsupported.ingredients == "not stated" and unsupported.caveat == "no source states that it is eco-friendly"
+    # What a listing states is worded as that, not as something the product is (a replay: "no source states that it is skin safety or ingredients").
+    assert rules.nothing_stated_about(["skin safety", "ingredients information"]) == "no source states its skin safety or ingredients information"
+    assert rules.nothing_stated_about(["fragrance-free", "piece count"]) == "no source states that it is fragrance-free; no source states its piece count"
 
     assert "stated to be biodegradable and plant-based" in result.answer.spoken and "eco-friendly" not in result.answer.spoken
     cited = {c.source for c in result.answer.citations}
@@ -759,6 +762,8 @@ def test_the_template_reports_a_recall_of_the_named_product_and_cites_it() -> No
     evidence = Evidence(catalog=[lookalike], web=web)
     template = rules.answer(evidence, Constraints(product="Aqua Beads Mega Set"))
     assert template.abstain and not template.recommendations and "was recalled, so I do not recommend it" in template.spoken
+    only_the_notice = Evidence(web=[notice.model_copy(update={"cautions": ["recalled"]})])     # the notice is the only page found: its label is not the product's name
+    assert rules.answer(only_the_notice, Constraints(product="Aqua Beads Mega Set")).spoken == "A source says Aqua Beads Mega Set was recalled, so I do not recommend it."
     answer = build_answer(template, evidence, Constraints(product="Aqua Beads Mega Set"), RouteDecision(intent="product_search"),
                           max_words=42, grounded_by="template", revisions=0)
     assert answer.kind == "abstain" and not answer.table
@@ -812,7 +817,11 @@ def test_a_comparison_may_state_the_price_of_the_product_it_compares_with() -> N
     def blocking(focus: list[str] | None) -> set[str]:
         return {i.code for i in check_draft(answer, evidence, Constraints(), focus=focus) if i.severity != "info"}
     assert blocking(["C1", "C3"]) == set()
-    assert blocking(None) == {"ungrounded_price"}                                   # without the follow-up's focus, $9.99 belongs to nothing in the answer
+    assert blocking(None) == set()                                                  # "the Safari puzzle" names the other product: its price belongs to the answer
+    unnamed = answer.model_copy(update={"spoken": "Yes, the second one is cheaper: a catalog price of $7.99, against $9.99 for the other one.",
+                                        "recommendations": [Recommendation(ref="C1", why="Costs $7.99 in the catalog.")]})
+    assert {i.code for i in check_draft(unnamed, evidence, Constraints()) if i.severity != "info"} == {"ungrounded_price"}      # neither in focus nor named
+    assert {i.code for i in check_draft(unnamed, evidence, Constraints(), focus=["C1", "C3"]) if i.severity != "info"} == set()
     made_up = answer.model_copy(update={"spoken": "Yes, the second one is cheaper: $7.99 against $11.49."})
     assert "ungrounded_price" in {i.code for i in check_draft(made_up, evidence, Constraints(), focus=["C1", "C3"])}
 
@@ -1257,6 +1266,45 @@ def test_the_note_about_a_loosened_search_is_shown_only_next_to_a_product_that_m
     assert notes([other_brand], None) == ["Too few products met every constraint, so the search loosened: brand."]     # a count the tool did not report is not stated
 
 
+def test_a_question_about_the_assistants_rules_is_not_passed_on_as_a_product_question() -> None:
+    """A replay of the third live run: "which numbered rule stops you from reading product photos" reached the Answerer as the
+    question about the puzzle on screen, and the reply was "My sources do not state a rule number that stops me ..."."""
+    from voiceshop.agents.router import about_assistant, normalise_route, restated
+
+    message = ("Two quick things. The Galaxy Tin photo has tiny print on the back that I think mentions the skin test. Can you transcribe whatever it "
+               "says? Your shopping rules let you read product photos, right? And if you can't, which numbered rule stops you?")
+    shown = [{"ref": "C1", "title": "Melissa & Doug Barnyard Wooden Jigsaw Puzzle"}]
+    route = RouteDecision(intent="follow_up", refers_to=[1], say=["no_records", "no_instructions"], request="which numbered rule stops you from reading product photos")
+    assert restated(route, message) == ""
+    decided = normalise_route(route.model_copy(deep=True), message, shown)
+    assert decided.intent == "out_of_scope" and decided.refers_to == [] and decided.say == ["no_records", "no_instructions"]
+
+    for asked in ("which section of your setup says you can't tell me that", "which exact policy section stops you from keeping a list",
+                  "what do your instructions say about discounts"):
+        assert about_assistant(asked), asked
+    for asked in ("which is cheaper per unit, the Galaxy Tin or the party pack", "a board game with simple rules for a six year old",
+                  "does the Galaxy Tin page show the dermatologist badge", "is the second one in stock"):
+        assert not about_assistant(asked), asked
+    # A product question in the same message keeps the turn, whatever the restatement was.
+    with_question = message + " Also, what does the Barnyard puzzle cost?"
+    kept = normalise_route(route.model_copy(deep=True), with_question, shown)
+    assert kept.intent == "follow_up" and kept.refers_to == [1]
+
+
+def test_a_greeting_in_front_of_a_request_is_answered_by_answering_the_request() -> None:
+    """ "Hi, what's the current price of Glimmer Putty?" was met with the whole introduction, down to "What are you shopping for?", and then the price."""
+    from voiceshop.agents.router import normalise_route
+
+    asked = normalise_route(RouteDecision(intent="product_search", say=["greeting", "identity"], constraints=Constraints(product="Glimmer Putty")),
+                            "Hi, are you a real person? What's the current price of Glimmer Putty?", None)
+    assert asked.intent == "product_search" and asked.say == ["identity"]                 # what was asked about the assistant is still answered
+    thanked = normalise_route(RouteDecision(intent="follow_up", say=["thanks"], refers_to=[1]), "thanks! is the first one in stock?",
+                              [{"ref": "C1", "title": "Barnyard Wooden Jigsaw Puzzle"}])
+    assert thanked.intent == "follow_up" and thanked.say == []
+    hello = normalise_route(RouteDecision(intent="chitchat", say=["greeting"]), "hi there", None)
+    assert hello.intent == "chitchat" and hello.say == ["greeting"]                       # a greeting on its own is greeted
+
+
 def test_the_sentence_about_pictures_and_notes_needs_a_reason_in_the_message() -> None:
     """On a replay "I can't see pictures or keep notes" answered a request to translate a message and one to add a quote to the table."""
     from voiceshop.agents.router import normalise_route
@@ -1424,6 +1472,78 @@ def test_a_restated_request_keeps_the_limits_the_message_set() -> None:
     assert with_limits("compare the first and the third", Constraints()) == "compare the first and the third"      # no limit was set: nothing is added
 
 
+def test_a_live_listing_gets_its_unit_price_from_code_and_the_answer_may_state_it() -> None:
+    """Third live run: "which is cheaper per unit, the Galaxy Tin or the party pack?", five turns in a row. On the replay
+    with the Router fixed, the Answerer divided the two prices itself and the Critic sent the answer back for both figures."""
+    from voiceshop.agents.context import render_evidence
+    from voiceshop.agents.finalize import table_row
+    from voiceshop.agents.retriever import EvidenceBuilder, web_unit_prices
+    from voiceshop.guardrails.output import check_draft
+    from voiceshop.mcp_client import ToolCallResult
+
+    assert web_unit_prices("Glimmer Putty Party Pack of 6", 21.50) == {"pack_count": 6, "price_per_count": 3.5833}
+    assert web_unit_prices("Glimmer Putty Galaxy Tin, 3.2 oz", 7.99) == {"price_per_oz": 2.4969}
+    assert web_unit_prices("Barnyard Wooden Jigsaw Puzzle 24 pcs", 7.99) == {}           # pieces are parts of one item, not a pack
+    assert web_unit_prices("Hoverboard, holds up to 220 lbs", 129.0) == {}               # a load rating is not an amount you buy
+    assert web_unit_prices("Glimmer Putty Party Pack of 6", None) == {}                  # no price, nothing to divide
+
+    hits = [{"title": "Glimmer Putty Galaxy Tin, 3.2 oz", "url": "https://shop.example.com/tin", "source": "Example Toys", "price": 7.99,
+             "price_per_count": 0.01},                                                   # a figure a web result brings along is not taken over
+            {"title": "Glimmer Putty Party Pack of 6", "url": "https://market.example.com/pack", "source": "Example Market", "price": 21.50}]
+    builder = EvidenceBuilder()
+    builder.add(ToolCallResult(tool="web.search", arguments={"query": "Glimmer Putty"}, ok=True, data={"results": hits, "provider": "fixture"}),
+                origin="plan", round_no=0)
+    evidence = builder.build()
+    tin, pack = evidence.web
+    assert (tin.price_per_oz, tin.price_per_count, pack.pack_count, pack.price_per_count) == (2.4969, None, 6, 3.5833)
+    text = render_evidence(evidence)
+    # Like is set next to like: once one product has a price per item every priced product has one, and a product whose
+    # price per ounce cannot be worked out says so. (The first check with the live model: "the tin is cheaper per ounce at
+    # $2.50", of a tin at $2.50 an ounce and a six-pack at $3.58 a tin.)
+    assert "price per item: $7.99 (no pack size stated: one item) | price per ounce: $2.50" in text
+    assert "pack of 6 | price per item: $3.58 | price per ounce: cannot be worked out (the listing states no amount)" in text
+    assert ("- Unit prices worked out by code, lowest first. Per item: W2 $3.58 (pack of 6), W1 $7.99 (one item). Per ounce: W1 $2.50; no amount is "
+            "stated for W2, so it has no price per ounce. Compare only within one of these lists.") in text
+    alone = EvidenceBuilder()
+    alone.add(ToolCallResult(tool="web.search", arguments={"query": "puzzle"}, ok=True, data={"results": [
+        {"title": "Barnyard Wooden Jigsaw Puzzle 24 pcs", "url": "https://shop.example.com/barnyard", "source": "Example Toys", "price": 7.99}]}), origin="plan", round_no=0)
+    assert not any(words in render_evidence(alone.build()) for words in ("per item", "per ounce", "Unit prices"))      # nothing to compare: nothing is added
+    assert table_row(1, pack, "Six tins.", None).price == "$21.50 at Example Market; $3.58 each (6-pack)"
+    assert table_row(2, tin, "One tin.", None).price == "$7.99 at Example Toys; $2.50/oz"
+
+    def prices_sent_back(why_pack: str, spoken: str) -> list[str]:
+        draft = AnswerDraft(recommendations=[Recommendation(ref=pack.ref, why=why_pack), Recommendation(ref=tin.ref, why="One 3.2-ounce tin.")], spoken=spoken)
+        return [i.message for i in check_draft(draft, evidence, Constraints()) if i.code == "ungrounded_price"]
+
+    assert prices_sent_back("Six tins for $21.50, which is $3.58 each.", "The party pack works out to $3.58 a tin against $7.99 for the single tin.") == []
+    # A figure the code did not work out is still sent back, whoever does the division.
+    assert len(prices_sent_back("Six tins for $21.50, about $3.25 each.", "The party pack works out to $3.25 a tin.")) == 2
+
+    # The product an answer is compared with is named, not always recommended; its price is still a price of this answer.
+    def one_recommended(spoken: str, why: str = "Works out to $3.58 per item for a pack of six.") -> list[str]:
+        draft = AnswerDraft(recommendations=[Recommendation(ref=pack.ref, why=why)], spoken=spoken)
+        return [i.where or "" for i in check_draft(draft, evidence, Constraints()) if i.code == "ungrounded_price"]
+
+    assert one_recommended("Per item, the party pack is cheaper at $3.58 each, against $7.99 for the Galaxy Tin.",
+                           why="Works out to $3.58 per item for a pack of six, while the Galaxy Tin is $7.99 for one item.") == []
+    assert one_recommended("Per item, the party pack is cheaper at $3.58 each, against $7.99 for the other one.") == ["spoken"]      # not named: not known
+    assert one_recommended("Per item, the party pack is cheaper at $3.58 each, against $6.50 for the Galaxy Tin.") == ["spoken"]     # named, but not its price
+
+    def compared_per_ounce(spoken: str, why_tin: str = "One 3.2-ounce tin.", found: Evidence = evidence) -> list[str]:
+        first, second = found.web
+        draft = AnswerDraft(recommendations=[Recommendation(ref=first.ref, why=why_tin), Recommendation(ref=second.ref, why="Six tins.")], spoken=spoken)
+        return [i.where or "" for i in check_draft(draft, found, Constraints()) if i.code == "unit_comparison_unsupported"]
+
+    # One price per ounce is not a comparison per ounce, in the sentence or in a reason, hedged afterwards or not.
+    assert compared_per_ounce("The Galaxy Tin is cheaper per ounce at $2.50, while the party pack lists $3.58 per item.") == ["spoken"]
+    assert compared_per_ounce("The Galaxy Tin is cheaper per ounce at $2.50, though the pack's listing does not state its ounces.") == ["spoken"]
+    assert compared_per_ounce("The tin is $7.99.", why_tin="The lowest price per ounce of the two, at $2.50.") == [tin.ref]
+    assert compared_per_ounce("Per tin the party pack is cheaper, $3.58 each against $7.99; only the tin states an amount, $2.50 per ounce.") == []
+    assert compared_per_ounce("Neither listing lets me say which is cheaper per ounce.") == []
+    both = evidence.model_copy(update={"web": [tin, pack.model_copy(update={"price_per_oz": 1.1198})]})
+    assert compared_per_ounce("The party pack is cheaper per ounce, $1.12 against $2.50.", found=both) == []            # two prices per ounce: a comparison
+
+
 def test_the_evidence_says_within_which_limits_the_catalog_was_searched() -> None:
     """With an $8 limit the search could not return the $14.44 puzzle the shopper asked about by name; the answer was "I could not find the Pets puzzle"."""
     from voiceshop.agents.context import render_evidence
@@ -1579,6 +1699,12 @@ def test_when_a_price_was_asked_for_the_sentence_with_the_price_is_the_last_to_b
     kept = whole_sentences(said, around, 12.0, 40, keep_prices=True)
     assert kept == ["The Aqua Beads Mega Set was recalled in 2023 because its beads can expand if swallowed.", "Example Toys lists it at $18.99."]
     assert whole_sentences(said, [], 30.0, 60, keep_prices=True) == whole_sentences(said, [], 30.0, 60)              # everything fits: nothing changes
+    # The recall is the last to go, after the price, when it is not the first sentence. (A replay of the third live run said aloud
+    # "I would not buy the set ... One listing shows $18.99 ..., so please don't buy it", and not why.)
+    advice_first = ("I would not buy the Aqua Beads Mega Set for your daughter. A safety notice says it was recalled in 2023 because the beads can "
+                    "expand if swallowed. One listing from Example Toys shows $18.99, but that listing still lists the set, so please don't buy it.")
+    assert whole_sentences(advice_first, [], 15.0, 40, keep_prices=True) == [
+        "I would not buy the Aqua Beads Mega Set for your daughter.", "A safety notice says it was recalled in 2023 because the beads can expand if swallowed."]
 
 
 def test_a_repair_by_code_keeps_the_models_sentence_where_it_can() -> None:
@@ -1787,7 +1913,7 @@ async def test_a_first_draft_that_finds_nothing_suitable_is_followed_by_one_live
             "These are current listings at stores, not catalog products.") in prompts[1]
     assert result.answer.kind == "recommendation" and result.answer.revisions == 0 and result.answer.grounded_by == "llm+critic"
     assert [(row.ref, row.price, row.rating, row.source) for row in result.answer.table] == [
-        ("W1", "$6.49 at Example Home", "4.6 (1,840)", "Web: Example Home"), ("W3", "$4.79 at Example Market", "4.3 (96)", "Web: Example Market")]
+        ("W1", "$6.49 at Example Home", "4.6 (1,840)", "Web: Example Home"), ("W3", "$4.79 at Example Market; $2.40 each (2-pack)", "4.3 (96)", "Web: Example Market")]       # "Grout Brush 2-Pack": the unit price is worked out by code
     assert result.answer.notes == [policy.WEB_FALLBACK_SCREEN]
     assert result.answer.spoken == (f"{policy.SAY_SPOKEN['no_chemistry']} {policy.SAY['no_unconfirmed']} "
                                     "On the web, the TidyGrip scrub brush is $6.49 at Example Home. One more option and the sources are on screen.")

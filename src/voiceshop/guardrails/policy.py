@@ -26,7 +26,7 @@ SAY: dict[str, str] = {
     "no_instructions": "I can't change how I work or share my instructions or configuration.",
     "no_harm": "I can't help with anything meant to hurt a person or an animal.",
     "no_chemistry": "I can't help with mixing cleaning products. Mixing them, such as bleach with ammonia or acids, can release toxic gas. "
-                    "Use one product at a time and follow its label.",
+                    "Use one product at a time and follow its label. I can find you one cleaner for the job instead.",
     "no_restricted": "I can't help with shopping for that kind of product.",
     "no_fabrication": "I can't write reviews, quotes, endorsements or citations.",
     "no_unconfirmed": "I can only confirm what my sources state.",
@@ -143,7 +143,7 @@ REFUSALS: dict[str, str] = {
     "prompt_injection": say(["no_instructions"]),
     "secrets": "I can't share keys, passwords, or internal configuration. " + ASSISTANT_SCOPE,
     "harmful": say(["no_harm"]),
-    "dangerous_chemistry": SAY["no_chemistry"] + " I can help you find a suitable cleaner instead.",
+    "dangerous_chemistry": SAY["no_chemistry"],
     "restricted_product": say(["no_restricted"]),
     "empty": "Sorry, I didn't catch that. Could you say it again?",
     "too_long": "That was a lot to take in. Could you tell me in a sentence or two what you are looking for?",
@@ -171,7 +171,7 @@ SPOKEN: dict[str, str] = {
     ),
     REFUSALS["dangerous_chemistry"]: (
         "I can't help with mixing cleaning products. Mixing them, such as bleach with ammonia, can release toxic gas. "
-        "Use one product at a time and follow its label."
+        "Use one product at a time and follow its label. I can find you one cleaner for the job instead."
     ),
 }
 

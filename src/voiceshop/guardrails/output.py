@@ -45,6 +45,14 @@ _CHEAPEST = re.compile(r"\b(?:cheapest|lowest[-\s]priced?|lowest\s+(?:price|cost
 _TOP_RATED = re.compile(r"\b(?:highest|best|top)[-\s]rated\b|\bhighest\s+(?:star\s+)?rating\b", re.I)
 
 
+# "Cheaper per ounce" sets two prices per ounce against each other. With only one in the answer it compares nothing, and
+# next to a price per item it reads as if it did.
+_BETTER = r"(?:cheap(?:er|est)|lowest|lower|least|less|better\s+value|best\s+value)"
+_AN_OUNCE = r"(?:per[-\s]ounce|an\s+ounce|per\s+oz|/\s?oz)"
+_OUNCE_COMPARED = re.compile(rf"\b{_BETTER}\b[^.;!?]*?{_AN_OUNCE}|{_AN_OUNCE}[^.;!?]*?\b{_BETTER}\b", re.I)
+_CLAUSE_BREAK = re.compile(r"[.;!?]\s+|,\s+(?:though|although|but|while|whereas|yet|and)\b", re.I)
+
+
 _HEDGE = re.compile(
     r"\b(?:no|not|none|never|nothing|neither|nor|cannot|can't|couldn't|could\s+not|unable|unknown|unclear|unconfirmed|whether|if|confirm(?:ed)?|"
     r"check(?:ed)?|verify|verified|without|wasn't|weren't|isn't|aren't|don't|doesn't|didn't|did\s+not|does\s+not|do\s+not|may|might|unavailable|"
@@ -63,6 +71,12 @@ def asserted(pattern: re.Pattern[str], text: str) -> re.Match[str] | None:
     return None
 
 
+def compares_per_ounce(text: str) -> bool:
+    """True when a clause of ``text`` calls something cheaper (or the cheapest) per ounce and does not take it back."""
+    text = (text or "").replace("\u2019", "'")
+    return any(_OUNCE_COMPARED.search(clause) and not _HEDGE.search(clause) for clause in _CLAUSE_BREAK.split(text))
+
+
 def word_count(text: str) -> int:
     return len(_WORDS.findall(text or ""))
 
@@ -77,7 +91,7 @@ def item_prices(item: CatalogItem | WebItem) -> list[float]:
     if isinstance(item, CatalogItem):
         values = [item.price, item.price_per_oz, item.price_per_count, item.live.price if item.live else None]
     else:
-        values = [item.price]
+        values = [item.price, item.price_per_oz, item.price_per_count]
     return [float(v) for v in values if v is not None]
 
 
@@ -132,6 +146,28 @@ def _claims_in(text: str) -> list[tuple[str, tuple[str, ...]]]:
     low = (text or "").lower()
     return [(name, variants) for name, variants in policy.SENSITIVE_CLAIMS.items()
             if any(asserted(re.compile(re.escape(v)), low) for v in variants)]
+
+
+_NAME_WORD = re.compile(r"[a-z0-9]+")
+
+
+def named_in(text: str, evidence: Evidence, besides: list[CatalogItem | WebItem]) -> list[CatalogItem | WebItem]:
+    """Evidence items that ``text`` names by a word no other item of the evidence has in its title (and that are not in ``besides``).
+
+    A comparison names the product it compares with, and that product's price belongs in the answer whether or not it is
+    recommended. ("Per item the party pack is cheaper at $3.58 each, against $7.99 for the Galaxy Tin" recommended the pack
+    alone. $7.99 was then "not a price of any product this answer is about", in the reason and in the sentence, and a
+    correct answer was replaced by the template: a replay of the third live run.)
+    """
+    items = [*evidence.catalog, *evidence.web]
+    words = [{w.rstrip("s") for w in _NAME_WORD.findall(i.title.lower()) if len(w) > 3} for i in items]
+    said = {w.rstrip("s") for w in _NAME_WORD.findall((text or "").lower())}
+    named = []
+    for n, item in enumerate(items):
+        elsewhere = set().union(*(w for m, w in enumerate(words) if m != n)) if len(items) > 1 else set()
+        if item not in besides and (words[n] - elsewhere) & said:
+            named.append(item)
+    return named
 
 
 def known_prices(item: CatalogItem | WebItem, evidence: Evidence) -> list[float]:
@@ -225,6 +261,9 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
     # A comparison names the price of the product it is compared with. A correct "yes, $7.99 against $9.99 for the first one"
     # was once replaced by the template because only one of the two products was in the recommendations.
     compared = [*items, *(other for ref in (focus or []) if (other := evidence.get(ref)) is not None and other not in items)]
+    if items:                                                 # and of a product the answer names without recommending it (named_in)
+        written = " ".join([draft.spoken, draft.conflict_note or "", *(f"{rec.why} {rec.caveat or ''}" for rec in draft.recommendations)])
+        compared += named_in(written, evidence, compared)
     pool: list[CatalogItem | WebItem] = compared if items else ([*evidence.catalog, *evidence.web] if draft.abstain else [])
     all_prices = [p for item in pool for p in known_prices(item, evidence)]
     of_what = "any product this answer is about" if items else "anything in the evidence"
@@ -288,6 +327,16 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
                 issues.append(Issue(code="superlative_not_true", severity="revise", where=rec.ref,
                                     message=f"{rec.ref} is called the highest rated at {item.rating:g}, but {above[0][0]} in the same answer is rated {above[0][1]:g}. "
                                             "Remove the claim or give it to the right product."))
+
+    # ---- a comparison per ounce needs two prices per ounce
+    with_ounce_price = [i.ref for i in pool if i.price_per_oz is not None]
+    if len(with_ounce_price) < 2:
+        for where, text in [*((rec.ref, f"{rec.why} {rec.caveat or ''}") for rec in draft.recommendations), ("spoken", draft.spoken)]:
+            if compares_per_ounce(text):
+                only = f"only {with_ounce_price[0]} has" if with_ounce_price else "no product of this answer has"
+                issues.append(Issue(code="unit_comparison_unsupported", severity="revise", where=where,
+                                    message=f"Something is called cheaper per ounce, but {only} a price per ounce in the evidence. Compare the "
+                                            "prices per item if every product has one; otherwise state each figure as given and name no winner."))
 
     # ---- spoken text and notes
     for where, text in spoken_fields:

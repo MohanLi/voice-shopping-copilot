@@ -441,6 +441,25 @@ def recommendation_for(item: CatalogItem | WebItem, constraints: Constraints) ->
     return Recommendation(ref=item.ref, why=_why(item, constraints), caveat=caveat)
 
 
+# Wishes that name a thing a listing states, not something a product is.
+_STATED_THING = re.compile(r"\b(?:safety|ingredients?|materials?|contents?|count|pieces|size|sizes|dimensions?|weight|theme|colou?rs?|certifications?|"
+                           r"badge|label|testing|tests?|rating|ratings|warranty|origin|age\s+range|instructions|information|info|details)$", re.I)
+
+
+def nothing_stated_about(wishes: list[str]) -> str:
+    """The caveat for a live listing none of whose sources backs what the shopper asked for.
+
+    "Eco-friendly" is something a product is; "skin safety" and "ingredients" are things a listing states. (A replay of the
+    third live run said "no source states that it is skin safety or ingredients".)
+    """
+    things = [w for w in wishes if _STATED_THING.search(w.strip())]
+    qualities = [w for w in wishes if w not in things]
+    parts = [f"no source states that it is {' or '.join(qualities)}"] if qualities else []
+    if things:
+        parts.append(f"no source states its {' or '.join(things)}")
+    return "; ".join(parts)
+
+
 def _caveat(item: CatalogItem | WebItem, constraints: Constraints) -> str | None:
     notes: list[str] = []
     if isinstance(item, CatalogItem):
@@ -454,7 +473,7 @@ def _caveat(item: CatalogItem | WebItem, constraints: Constraints) -> str | None
         if constraints.budget_max is not None and item.price is not None and item.price > constraints.budget_max:
             notes.append(f"${item.price:.2f} is above the ${constraints.budget_max:g} budget")
         if constraints.must_have and not wish_support(item, constraints):
-            notes.append(f"no source states that it is {' or '.join(constraints.must_have)}")
+            notes.append(nothing_stated_about(constraints.must_have))
         notes.extend(all_cautions(item))
     return "; ".join(dict.fromkeys(notes)) or None
 
@@ -647,6 +666,9 @@ def where_searched(searched: Iterable[str] | None) -> str:
     return " in the catalog or on the web" if catalog and web else " in the catalog" if catalog else " on the web" if web else ""
 
 
+_NOTICE_LABEL = re.compile(r"^\s*(?:(?:product\s+)?(?:safety\s+)?recall(?:\s+notice)?|safety\s+(?:notice|alert|warning)|notice|alert|warning)\s*[:\u2013\u2014-]\s*", re.I)
+
+
 def answer(evidence: Evidence, constraints: Constraints, weak_score: float | None = None, focus: list[str] | None = None,
            labels: dict[str, str] | None = None, searched: Iterable[str] | None = None) -> AnswerDraft:
     """The grounded template answer: every value is copied from the evidence.
@@ -659,9 +681,12 @@ def answer(evidence: Evidence, constraints: Constraints, weak_score: float | Non
     withdrawn = None if focused else withdrawn_match(evidence, constraints)
     if withdrawn is not None:                                # the product asked for by name was recalled: say so, recommend nothing in its place
         item, stated = withdrawn
+        # The page that states it is often the notice itself: its title's label is not part of the product's name.
+        # ("A source says Recall notice: Aqua Beads Mega Set was recalled", on a replay of the third live run.)
+        named = item.model_copy(update={"title": _NOTICE_LABEL.sub("", item.title) or item.title})
         return AnswerDraft(
             recommendations=[], abstain=True, abstain_reason=f"a source states the product was {stated}", sources=[item.ref],
-            spoken=f"A source says {short_name(item)} was {stated}, so I do not recommend it.",
+            spoken=f"A source says {short_name(named)} was {stated}, so I do not recommend it.",
             follow_up_question="Would you like me to look for a similar product instead?",
         )
     chosen = focused[:3] if focused else pick(evidence, constraints, weak_score)

@@ -94,7 +94,54 @@ def render_constraints(constraints: Constraints | None) -> str:
     return "; ".join(f"{labels.get(k, k)}: {v}" for k, v in stated.items())
 
 
-def _catalog_block(item: CatalogItem, weak_score: float | None) -> str:
+def unit_facts(item: CatalogItem | WebItem, any_pack: bool = False, any_ounce: bool = False) -> list[str]:
+    """Unit prices as the Answerer reads them: worked out by code (data/units.py), never by the model.
+
+    When any product of the evidence has a price per item, every priced product gets one (a product whose title states no
+    pack size is one item at its price); when any has a price per ounce, the others say that theirs cannot be worked
+    out. So a price per ounce is never the only figure next to a price per item. (A check with the live model: a tin
+    at $2.50 an ounce beside a six-pack at $3.58 a tin was answered with "the tin is cheaper per ounce at $2.50". Per tin,
+    $7.99 against $3.58, the six-pack was the cheaper one.)
+    """
+    facts = []
+    if item.pack_count:
+        facts.append(f"pack of {item.pack_count}")
+    if item.price_per_count:
+        facts.append(f"price per item: {money(item.price_per_count)}")
+    elif any_pack and item.price is not None:
+        facts.append(f"price per item: {money(item.price)} (no pack size stated: one item)")
+    if item.price_per_oz:
+        facts.append(f"price per ounce: {money(item.price_per_oz)}")
+    elif any_ounce and item.price is not None:
+        facts.append("price per ounce: cannot be worked out (the listing states no amount)")
+    return facts
+
+
+MAX_UNIT_NOTE_ITEMS = 8
+
+
+def unit_price_note(evidence: Evidence) -> str | None:
+    """The unit prices of the evidence in order, lowest first, as one tool note; None when no product has one.
+
+    The division is done by code and so is the ordering. With the figures only on each product's own lines, the model
+    twice named the product with a price per ounce "cheaper per unit" over a pack that was cheaper per item.
+    """
+    priced = [i for i in [*evidence.web, *evidence.catalog] if i.price is not None]
+    if not any(i.price_per_count or i.price_per_oz for i in priced):
+        return None
+    parts = []
+    if any(i.price_per_count for i in priced):
+        per_item = sorted(((i.price_per_count or i.price, i) for i in priced), key=lambda pair: pair[0])[:MAX_UNIT_NOTE_ITEMS]
+        parts.append("Per item: " + ", ".join(f"{i.ref} {money(value)} ({f'pack of {i.pack_count}' if i.pack_count else 'one item'})" for value, i in per_item) + ".")
+    if any(i.price_per_oz for i in priced):
+        per_ounce = sorted((i for i in priced if i.price_per_oz), key=lambda i: i.price_per_oz or 0.0)[:MAX_UNIT_NOTE_ITEMS]
+        without = [i.ref for i in priced if not i.price_per_oz][:MAX_UNIT_NOTE_ITEMS]
+        parts.append("Per ounce: " + ", ".join(f"{i.ref} {money(i.price_per_oz)}" for i in per_ounce)
+                     + (f"; no amount is stated for {', '.join(without)}, so {'it has' if len(without) == 1 else 'they have'} no price per ounce" if without else "") + ".")
+    return "Unit prices worked out by code, lowest first. " + " ".join(parts) + " Compare only within one of these lists."
+
+
+def _catalog_block(item: CatalogItem, weak_score: float | None, any_pack: bool = False, any_ounce: bool = False) -> str:
     head = [
         f"[{item.ref}] {item.title}",
         f"  doc_id: {item.doc_id} | brand: {item.brand or 'not stated'} | catalog price (Jan 2020): {money(item.price)} | rating: "
@@ -105,12 +152,7 @@ def _catalog_block(item: CatalogItem, weak_score: float | None) -> str:
     extras = []
     if item.piece_count:
         extras.append(f"pieces: {item.piece_count}")
-    if item.pack_count:
-        extras.append(f"pack of {item.pack_count}")
-    if item.price_per_count:
-        extras.append(f"price per item: {money(item.price_per_count)}")
-    if item.price_per_oz:
-        extras.append(f"price per ounce: {money(item.price_per_oz)}")
+    extras.extend(unit_facts(item, any_pack, any_ounce))
     if extras:
         head.append("  " + " | ".join(extras))
     if item.features:
@@ -135,13 +177,14 @@ def _catalog_block(item: CatalogItem, weak_score: float | None) -> str:
     return "\n".join(head)
 
 
-def _web_block(item: WebItem, related: list[str] | None = None) -> str:
+def _web_block(item: WebItem, related: list[str] | None = None, any_pack: bool = False, any_ounce: bool = False) -> str:
     facts = [f"price: {money(item.price)}" + (f" ({item.price_source})" if item.price_source else ""),
              f"availability: {item.availability or 'not stated'}"]
     if item.rating is not None:
         facts.append(f"rating: {item.rating}" + (f" ({item.rating_count} ratings)" if item.rating_count else ""))
     if item.delivery:
         facts.append(f"delivery: {item.delivery}")
+    facts.extend(unit_facts(item, any_pack, any_ounce))
     match = f"matched to {item.matched_ref}" if item.matched_ref else "not matched to a catalog product"
     lines = [
         f"[{item.ref}] {item.title}",
@@ -190,9 +233,11 @@ def web_fallback_note(evidence: Evidence) -> str:
 def render_evidence(evidence: Evidence, weak_score: float | None = None) -> str:
     """The only product knowledge the Answerer and the Critic receive."""
     parts: list[str] = []
+    everything = [*evidence.catalog, *evidence.web]
+    any_pack, any_ounce = any(i.price_per_count for i in everything), any(i.price_per_oz for i in everything)
     if evidence.catalog:
         parts.append("CATALOG PRODUCTS (private catalog, January 2020 snapshot)")
-        parts.extend(_catalog_block(item, weak_score) for item in evidence.catalog)
+        parts.extend(_catalog_block(item, weak_score, any_pack, any_ounce) for item in evidence.catalog)
     else:
         parts.append("CATALOG PRODUCTS: none retrieved" + _asked(evidence, "rag.search", "the catalog was not searched this turn",
                                                                  "the catalog was searched and returned nothing"))
@@ -201,7 +246,7 @@ def render_evidence(evidence: Evidence, weak_score: float | None = None) -> str:
         from voiceshop.agents.reconcile import same_name
 
         pages = [w for w in evidence.web if w.price is None and not w.flagged and w.snippet]
-        parts.extend(_web_block(item, [p.ref for p in pages if p.ref != item.ref and same_name(item, p)]) for item in evidence.web)
+        parts.extend(_web_block(item, [p.ref for p in pages if p.ref != item.ref and same_name(item, p)], any_pack, any_ounce) for item in evidence.web)
     else:
         parts.append("\nLIVE WEB RESULTS: none retrieved" + _asked(evidence, "web.search", "no live web search was made this turn",
                                                                    "a live web search was made and returned nothing"))
@@ -214,6 +259,9 @@ def render_evidence(evidence: Evidence, weak_score: float | None = None) -> str:
         notes.append(f"The catalog has no {key.split(':')[0]} named '{value}'.")
     if evidence.conflicts:
         notes.extend("Catalog vs live web: " + c for c in evidence.conflicts)
+    units_note = unit_price_note(evidence)
+    if units_note:
+        notes.append(units_note)
     if notes:
         parts.append("\nTOOL NOTES\n" + "\n".join(f"- {n}" for n in dict.fromkeys(notes)))
     return "\n".join(parts)

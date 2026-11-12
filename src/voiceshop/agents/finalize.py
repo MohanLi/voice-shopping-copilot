@@ -100,8 +100,13 @@ def table_row(rank: int, item: CatalogItem | WebItem, why: str, caveat: str | No
     rating = "not available"
     if item.rating is not None:
         rating = f"{item.rating:.1f}" + (f" ({item.rating_count:,})" if item.rating_count else "")
+    price = f"{_money(item.price)} at {item.source}" if item.price is not None else "not stated"
+    if item.price_per_oz is not None:                         # the same two unit prices as a catalog row, worked out the same way
+        price += f"; {_money(item.price_per_oz)}/oz"
+    elif item.price_per_count is not None and item.pack_count:
+        price += f"; {_money(item.price_per_count)} each ({item.pack_count}-pack)"
     return TableRow(
-        rank=rank, ref=item.ref, product=item.title, price=f"{_money(item.price)} at {item.source}" if item.price is not None else "not stated",
+        rank=rank, ref=item.ref, product=item.title, price=price,
         rating=rating, ingredients=stated_about(item, evidence), source=f"Web: {item.source}", citation=item.url, image_url=item.image,
         support_refs=list(item.claims_elsewhere),
         price_live=item.price, availability=item.availability, why=why, caveat=caveat, url=item.url, live_url=item.url,
@@ -238,20 +243,29 @@ def said_before(preface: list[str] | None, lead: str, max_seconds: float) -> lis
     return [both]
 
 
+_RECALL_SAID = re.compile(r"\brecall|\bdiscontinu|\bsafety\s+notice|\bno\s+longer\s+(?:made|sold)", re.I)
+
+
 def whole_sentences(text: str, around: list[str], max_seconds: float, max_words: int, *, keep_prices: bool = False) -> list[str]:
     """The sentences of ``text``, from the first, that can be said together with ``around`` inside the time limit.
 
     Trailing sentences give way one at a time; the first is always kept, and kept whole. Only a first sentence that
     could not be said in the limit even on its own is cut, at ``max_words`` (the checks before this make that a last resort).
 
-    With ``keep_prices`` (the shopper asked what something costs) a sentence that states a price is the last to give
-    way: a replay answered "can you check today's price" with the recall and the price, in that order, and the
+    With ``keep_prices`` (the shopper asked what something costs) a sentence that states a price gives way after the
+    others: a replay answered "can you check today's price" with the recall and the price, in that order, and the
     sentence with the price was the one cut for time.
+
+    A sentence that states a recall gives way last of all, after the price. (A replay of the third live run: "I would not
+    buy it. A safety notice says it was recalled in 2023 ... One listing shows $18.99 ..." was three sentences for the
+    time of two; the price was kept and the reply said aloud not to buy the set without saying why. The price is on screen.)
     """
     kept = split_sentences(" ".join((text or "").split()))
     while len(kept) > 1 and not fits(" ".join([*around, *kept]), max_seconds, MAX_SPEED):
-        without_price = [i for i in range(1, len(kept)) if not dollars_in(kept[i])] if keep_prices else []
-        kept.pop(without_price[-1] if without_price else -1)
+        later = range(1, len(kept))
+        no_recall = [i for i in later if not _RECALL_SAID.search(kept[i])]
+        plain = [i for i in no_recall if not (keep_prices and dollars_in(kept[i]))]
+        kept.pop((plain or no_recall or list(later))[-1])
     if kept and not fits(kept[0], max_seconds, MAX_SPEED):
         kept = [trim_spoken(kept[0], max_words)]
     return kept

@@ -46,6 +46,7 @@ from voiceshop.agents.state import (
     WebItem,
     step,
 )
+from voiceshop.data import units
 from voiceshop.guardrails import policy
 from voiceshop.guardrails.input import unsafe_query
 from voiceshop.llm.factory import get_chat_model, spec_for
@@ -56,7 +57,26 @@ from voiceshop.mcp_client.adapters import as_langchain_tools, render_for_model
 VERIFY_TOP_N = 3
 _CATALOG_FIELDS = set(CatalogItem.model_fields) - {"ref", "from_query", "live"}
 _WEB_FIELDS = set(WebItem.model_fields) - {"ref", "provider", "cached", "kind", "from_query", "matched_ref", "match_score", "match_note",
-                                           "claims", "cautions", "described_by", "claims_elsewhere", "cautions_elsewhere"}
+                                           "claims", "cautions", "described_by", "claims_elsewhere", "cautions_elsewhere",
+                                           "pack_count", "price_per_count", "price_per_oz"}
+
+
+def web_unit_prices(title: str | None, price: float | None) -> dict[str, Any]:
+    """Unit prices of a live listing: the catalog's rules (data/units.py), applied to the listing's own title and price.
+
+    A pack size ("Party Pack of 6") gives a price per item; an amount ("3.2 oz") gives a price per ounce, for products
+    that are used up. Nothing is taken from the snippet, and a listing whose title states neither has no unit price.
+
+    Why code does this: asked five times in the third live run which of a tin and a six-pack was cheaper per unit, the
+    Answerer divided the prices itself. The amounts were right, and the Critic sent the answer back each time, because
+    a number the model worked out is exactly what it is there to stop. Now the division is done here, once, the same
+    way as for the catalog, and the Answerer reads the result like any other price.
+    """
+    if not title or not price or price <= 0:
+        return {}
+    content = units.parse_content(title) if units.is_consumable(title) else None
+    worked_out = units.unit_prices(price, units.parse_pack_count(title), content)
+    return {k: worked_out[k] for k in ("pack_count", "price_per_count", "price_per_oz") if worked_out[k] is not None}
 
 
 def step_arguments(plan_step: PlanStep) -> dict[str, Any]:
@@ -197,6 +217,7 @@ class EvidenceBuilder:
                     self.web[url] = WebItem(ref=self._next_ref("W"), provider=str(data.get("provider") or ""), cached=bool(data.get("cached")),
                                             kind=str(data.get("kind") or "shopping"), from_query=query,
                                             claims=stated_claims(text), cautions=stated_cautions(text),
+                                            **web_unit_prices(hit.get("title"), hit.get("price")),
                                             **{k: v for k, v in hit.items() if k in _WEB_FIELDS})
                 refs.append(self.web[url].ref)
         if result.ok:

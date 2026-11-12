@@ -177,6 +177,9 @@ class WebItem(BaseModel):
     match_score: float | None = None
     match_note: str | None = None
     image: str | None = None
+    pack_count: int | None = Field(default=None, description="Units in the pack, when the listing's title says so (retriever.web_unit_prices)")
+    price_per_count: float | None = Field(default=None, description="price / pack_count, worked out by code")
+    price_per_oz: float | None = Field(default=None, description="Price per ounce, worked out by code from an amount the title states, for products that are used up")
     claims: list[str] = Field(default_factory=list, description="Claims stated in this result's own title or snippet")
     cautions: list[str] = Field(default_factory=list, description="Cautions stated in this result's own text")
     described_by: list[str] = Field(default_factory=list, description="Other web results (refs) whose text is about this same product")

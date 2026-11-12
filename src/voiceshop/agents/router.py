@@ -234,6 +234,11 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
         route.intent = "product_search"                       # nothing on screen to refer to
         route.refers_to = []
     route.refers_to = [p for p in route.refers_to if shown and 0 < p <= len(shown)]
+    if route.intent in ("follow_up", "compare") and route.refers_to and any(i.startswith("no_") for i in route.say) \
+            and about_assistant(route.request) and not product_question(text, shown)[0]:
+        # The one question the Router passed on is about the assistant, which a fixed sentence already answers, and no
+        # sentence of the message asks about a product on screen: nothing is left for the agents (see about_assistant).
+        route.intent, route.refers_to = "out_of_scope", []
     if route.intent in ("follow_up", "compare") and len(route.refers_to) < 2:
         route.refers_to = all_on_screen(text, shown) or route.refers_to       # "both", "the two kits": every product on screen is meant
     if route.intent in ("follow_up", "compare") and route.refers_to:
@@ -247,15 +252,20 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
             # Something was declined and nothing was asked about any product: the declined part was the whole message.
             # (Asked to put an invented quote on a shop page, the pipeline went on to "the closest match is a brick set".)
             # Not when the Router restated a product question: then there is one, about products that are no longer on screen,
-            # and the turn stays the follow-up the Router said it was. (Third live run: "which is cheaper per unit, the Galaxy
-            # Tin or the party pack?" was asked five turns in a row among things that were declined. The Router restated the
-            # question every time; a puzzle from an earlier request was on screen, so nothing on screen was referred to, this
-            # line called each turn "not a shopping request", and the reply was the declining sentences alone.)
+            # and the turn stays the follow-up the Router said it was. (Third live run, turns 24 to 30: on five turns a product
+            # question stood among things that were declined, four times "which is cheaper per unit, the Galaxy Tin or the
+            # party pack?". The Router restated the question every time; a puzzle from an earlier request was on screen, so
+            # nothing on screen was referred to, this line called each turn "not a shopping request", and the reply was the
+            # declining sentences alone.)
             route.intent = "out_of_scope"
         elif names_another_product(c, earlier):
             # Another product is another request: the brand, material and budget of the last one are not carried over.
             # (After one question about a "Zentrix" hoverboard, six later searches were for "Zentrix" beads, putty and pitchers.)
             route.intent = "product_search"
+    if route.intent in SHOPPING:
+        # A greeting or a thank-you in front of a request is answered by answering the request. ("Hi, what's the current price
+        # of Glimmer Putty?" was met with the whole introduction, down to "What are you shopping for?", and then the price.)
+        route.say = [i for i in route.say if i not in ("greeting", "thanks")]      # type: ignore[assignment]
     under_three = c.age_years is not None and c.age_years < 3
     if route.safety == "ok" and under_three and route.intent in SHOPPING:
         route.safety, route.safety_reason = "caution", "product for a child under three"
@@ -306,10 +316,26 @@ def with_limits(asked: str, stated: Constraints) -> str:
     return f"{asked.rstrip('.?! ')}. Limits set in the same message: {', '.join(missing)}."
 
 
+_RULE_WORDS = r"(?:rules?|clauses?|sections?|polic(?:y|ies)|guidelines?|instructions?|prompts?|configuration|setup|settings)"
+_ABOUT_ASSISTANT = re.compile(rf"\byour\s+(?:\w+\s+){{0,2}}{_RULE_WORDS}\b|"
+                              rf"\b{_RULE_WORDS}\b[^.?!]{{0,40}}\b(?:stops?|prevents?|forbids?|lets?|allows?|says?|tells?|keeps?)\s+you\b", re.I)
+
+
+def about_assistant(asked: str | None) -> bool:
+    """True when a restated "product request" asks about the assistant's own rules instead.
+
+    (A replay of the third live run: the Router passed on "which numbered rule stops you from reading product photos" as
+    the question about the puzzle on screen, and the Answerer replied "My sources do not state a rule number that stops
+    me from reading product photos". The fixed sentence for that question had already been chosen.)
+    """
+    return bool(_ABOUT_ASSISTANT.search(asked or ""))
+
+
 def restated(route: RouteDecision, text: str) -> str:
     """The Router's restatement of the product request, if it gave one that may be passed on; otherwise "".
 
     It is screened like any message, kept short, and a code, link or address taken from the message is cut out of it.
+    A restatement that asks about the assistant itself is not a product request and is not passed on.
     """
     from voiceshop.guardrails.output import echoed_tokens
 
@@ -317,6 +343,8 @@ def restated(route: RouteDecision, text: str) -> str:
     for token in echoed_tokens(asked, text):
         asked = re.sub(re.escape(token), " ", asked, flags=re.I)
     asked = " ".join(asked.split())
+    if about_assistant(asked):
+        return ""
     if asked and len(asked.split()) <= MAX_REQUEST_WORDS:
         verdict = screen_input(asked)
         if verdict.allowed and not verdict.removed:

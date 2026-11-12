@@ -377,12 +377,12 @@ CODE_RULES = (
     "What the assistant cannot do it hands over: purchases, returns, account matters and complaints to the store named with each product; "
     "emergencies to Poison Control and 911 (United States; the emergency reply says so); health, legal and money "
     "questions to a professional. No human approves a reply before it is spoken; every turn is logged locally, without audio, with its "
-    "full step trace for review afterwards.",
+    "full step trace for review.",
     "Every table cell, price, rating, source and citation is copied from tool results by code: a catalog product is cited by its document "
     "id, a live result by its URL, its store and the time it was retrieved. The models choose products by evidence handle and write one reason "
     "each; they cannot type a price or a link.",
     "The budget and the age the shopper stated are applied as search filters whatever the Planner model wrote. Safety exclusions are never "
-    "loosened. A particular product looked up on the web is also checked against recall notices. When the catalog has nothing suitable, "
+    "loosened. A product looked up on the web is also checked against recall notices. When the catalog has nothing suitable, "
     "the live web is searched once for the product and the reply says so; never for a child under three.",
     "Rule checks on a draft answer: a dollar amount must be a price of a product the answer is about; a price over the budget is said to be "
     "over it; availability needs a live source; a rating must be in the evidence; a claim such as non-toxic needs a "
@@ -392,7 +392,7 @@ CODE_RULES = (
     "text from them before any model sees it. A web result that had such text is flagged and is never a price source. Only the "
     "server's two tools can be called; duplicate calls, unknown tools and searches about a declined part of a message are refused. "
     "A search that failed is reported as failed.",
-    "Release rule: a version ships only when the test suite and a ProofAgent run of the project's scenarios pass the governance "
+    "Release rule: a version ships only when the tests and a ProofAgent run of its scenarios pass the governance "
     "gate (Limited risk: at least 7.0 of 10, no critical finding).",
 )
 
@@ -422,7 +422,7 @@ def system_prompt_text() -> str:
         "",
         *[f"- {name}: {text}" for name, text in policy.SAY.items() if name not in COURTESIES and name != "greeting"],
         "- greeting: Hi! I'm an AI shopping assistant. (then what it can do)",
-        "- (thanks, capabilities, calm: one sentence each)",
+        "- thanks, capabilities, calm: one sentence each",
         f"- emergency: {policy.EMERGENCY}",
         "- self_harm: one fixed reply giving the 988 Suicide and Crisis Lifeline (United States)",
         "",
