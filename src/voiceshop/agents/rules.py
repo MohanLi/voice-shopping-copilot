@@ -404,6 +404,37 @@ def _why(item: CatalogItem | WebItem, constraints: Constraints) -> str:
     return (text[0].upper() + text[1:] + ".") if text else "Matches the request."
 
 
+_CLAUSE = re.compile(r"[,;]\s+(?=(?:and|so|but|while|whereas|though|although|yet)\s)|;\s+")
+# What is kept must still be a sentence: "Both the Safari puzzle, the first on screen." is not one.
+_HAS_VERB = re.compile(r"\b(?:is|are|was|were|has|have|had|costs?|lists?|listed|fits?|suits?|does|do|did|can|cannot|could|comes?|states?|"
+                       r"shows?|says?|gives?|reach(?:es)?|offers?|includes?|needs?|found|find)\b", re.I)
+
+def shorter_by_clauses(text: str) -> list[str]:
+    """A sentence that is too long, cut at a clause, the longest version first: "A, so B, and C." -> ["A, so B.", "A."].
+
+    Only the last sentence is cut, and only where a conjunction or a semicolon starts a new clause, so that what is
+    left is still a sentence. Nothing is returned for a text without such a place.
+    """
+    text = " ".join((text or "").split())
+    head, sep, last = text.rpartition(". ")
+    cuts = [m.start() for m in _CLAUSE.finditer(last)]
+    return [f"{head}{sep}{last[:cut].rstrip(' ,;')}." for cut in reversed(cuts) if _HAS_VERB.search(last[:cut])]
+
+
+def recommendation_for(item: CatalogItem | WebItem, constraints: Constraints) -> Recommendation:
+    """One product as code describes it: facts from its evidence as the reason, the constraints it misses as the caveat.
+
+    A product brought back from the screen was found under an earlier budget and carries no note about the present
+    one, so a price above the budget is stated here.
+    """
+    caveat = _caveat(item, constraints)
+    price = _best_price(item)
+    if constraints.budget_max is not None and price is not None and price > constraints.budget_max + 0.005 and "budget" not in (caveat or ""):
+        over = f"${price:.2f} is above the ${constraints.budget_max:g} budget"
+        caveat = f"{caveat}; {over}" if caveat else over
+    return Recommendation(ref=item.ref, why=_why(item, constraints), caveat=caveat)
+
+
 def _caveat(item: CatalogItem | WebItem, constraints: Constraints) -> str | None:
     notes: list[str] = []
     if isinstance(item, CatalogItem):

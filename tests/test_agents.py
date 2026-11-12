@@ -1499,3 +1499,50 @@ def test_when_a_price_was_asked_for_the_sentence_with_the_price_is_the_last_to_b
     kept = whole_sentences(said, around, 12.0, 40, keep_prices=True)
     assert kept == ["The Aqua Beads Mega Set was recalled in 2023 because its beads can expand if swallowed.", "Example Toys lists it at $18.99."]
     assert whole_sentences(said, [], 30.0, 60, keep_prices=True) == whole_sentences(said, [], 30.0, 60)              # everything fits: nothing changes
+
+
+def test_a_repair_by_code_keeps_the_models_sentence_where_it_can() -> None:
+    """Second live run. "Which is better for a four year old?" had been answered a few words too long, and the sentence was replaced by two
+    names with two prices. And a sentence about the product the shopper had asked about was replaced by the prices of two other products,
+    because the model had not put the product it spoke about among its recommendations."""
+    from voiceshop.agents.answerer import kept_by_code
+    from voiceshop.agents.state import Issue, LiveOffer
+    from voiceshop.guardrails.output import check_draft
+
+    # ---- only too long: cut at a clause, the longest version first, and never down to a fragment
+    long = ("Both the Melissa & Doug Safari Chunky Puzzle, the first on screen, and the Janod Turtle puzzle, the third on screen, are listed for ages 2 to 4, "
+            "so both reach a four year old, and the Melissa & Doug is cheaper at a catalog price of $9.99 against $14.99.")
+    shorter = rules.shorter_by_clauses(long)
+    assert shorter == [
+        "Both the Melissa & Doug Safari Chunky Puzzle, the first on screen, and the Janod Turtle puzzle, the third on screen, are listed for ages 2 to 4, so both reach a four year old.",
+        "Both the Melissa & Doug Safari Chunky Puzzle, the first on screen, and the Janod Turtle puzzle, the third on screen, are listed for ages 2 to 4.",
+    ]
+    assert rules.shorter_by_clauses("I can only confirm what my sources state. The first one is $9.99; the third one is $14.99.") == [
+        "I can only confirm what my sources state. The first one is $9.99."]
+    assert rules.shorter_by_clauses("My top pick is the Barnyard jigsaw at a catalog price of $7.99.") == []
+    safari, turtle = catalog_item("C2", "Melissa & Doug Safari Wooden Chunky Puzzle", 9.99), catalog_item("C4", "Janod 3 Level Puzzle Turtle", 14.99)
+    two = Evidence(catalog=[safari, turtle])
+    draft = AnswerDraft(recommendations=[Recommendation(ref="C2", why="Eight chunky pieces."), Recommendation(ref="C4", why="Three levels.")], spoken=long)
+    too_long = [Issue(code="spoken_too_long", severity="revise", where="spoken", message="too long")]
+    kept = kept_by_code(draft, too_long, two, Constraints(age_years=4), ["C2", "C4"])
+    assert [how for how, _ in kept] == ["spoken_shortened", "spoken_shortened"] and [d.spoken for _, d in kept] == shorter
+    assert all(d.recommendations == draft.recommendations for _, d in kept)
+
+    # ---- the sentence is about the product that was asked about, and the answer does not show it: the product is added, the sentence stays
+    abc = catalog_item("C3", "Melissa & Doug Jumbo ABC Wooden Chunky Puzzle (26 pcs)", 13.46).model_copy(update={
+        "live": LiveOffer(web_ref="W1", url="https://shop.example/abc", source="CM School Supply", price=18.99)})
+    barnyard = catalog_item("C8", "Melissa & Doug Barnyard Wooden Jigsaw Puzzle (24 pcs)", 7.99)
+    found = Evidence(catalog=[abc, safari, barnyard],
+                     web=[WebItem(ref="W1", url="https://shop.example/abc", title="Melissa & Doug Jumbo ABC Chunky Puzzle", price=18.99, source="CM School Supply", matched_ref="C3")])
+    ten = Constraints(budget_max=10, age_years=4)
+    said = "The Jumbo ABC Chunky Puzzle, the second one on screen, is $18.99 now at CM School Supply, over your $10 limit."
+    others = AnswerDraft(recommendations=[Recommendation(ref="C8", why="24 wooden pieces."), Recommendation(ref="C2", why="Eight chunky pieces.")], spoken=said)
+    blocking = [i for i in check_draft(others, found, ten, max_words=40, focus=["C3"]) if i.severity in ("block", "revise")]
+    assert [i.code for i in blocking] == ["spoken_about_another_product"]
+    [(how, fixed)] = kept_by_code(others, blocking, found, ten, ["C3"])
+    assert how == "asked_product_shown" and fixed.spoken == said and [r.ref for r in fixed.recommendations] == ["C3", "C8", "C2"]
+    assert "budget" in (fixed.recommendations[0].caveat or "")                                  # described by code: what it costs and that it is over the limit
+    assert [i.code for i in check_draft(fixed, found, ten, max_words=40, focus=["C3"]) if i.severity in ("block", "revise")] == []
+    # Any other finding, an abstention, or a finding outside the spoken sentence: nothing gentle to try.
+    assert kept_by_code(others, [Issue(code="ungrounded_price", severity="revise", where="spoken", message="x")], found, ten, ["C3"]) == []
+    assert kept_by_code(others, [*blocking, Issue(code="unknown_ref", severity="block", where="C9", message="x")], found, ten, ["C3"]) == []

@@ -75,7 +75,7 @@ Untrusted content:
 
 ## Agent prompts (the rules of each)
 
-### Router (version 5)
+### Router (version 6)
 
 - Classify the request as product_search (the default when in doubt), follow_up, compare, chitchat, out_of_scope or unsafe.
 - Extract only the constraints the shopper stated (budget, age, brand, materials, must-haves, things to avoid).

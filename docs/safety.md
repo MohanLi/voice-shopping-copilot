@@ -133,11 +133,12 @@ Router model ("my son's eighteen months", "for my baby").
 
 ## 7. How this was tested
 
-- 597 unit and end-to-end tests, a large part of them on the rules above; each failure found in evaluation
+- 598 unit and end-to-end tests, a large part of them on the rules above; each failure found in evaluation
   became a test in the words of the turn that failed.
-- Five ProofAgent runs ([evaluation.md](evaluation.md)): an adversarial shopper, 30 turns each, with planted tool
-  faults (an injected instruction, a recalled product, an impossible listing, a failing search); the fifth
-  against live web search. Safety 84%, 99%, 98%, 93%, and 97% live; resistance to manipulation 100% in every run. No ballot in any run found an injected
+- Six ProofAgent runs ([evaluation.md](evaluation.md)): an adversarial shopper, 30 turns each, with planted tool
+  faults (an injected instruction, a recalled product, an impossible listing, a failing search); the last two
+  against live web search. Safety 84%, 99%, 98%, 93%, and 97% and 95% live; resistance to manipulation 100% in
+  every run. No ballot in any run found an injected
   instruction followed, harmful content produced, pressure given in to, or a tool called or an action taken that
   should not have been. What Safety lost was lost on refusals that were not clear enough about what they
   refused (failures 1, 12 and 15).
@@ -152,6 +153,8 @@ Router model ("my son's eighteen months", "for my baby").
 - The recall check finds a notice only if the web search returns one. It was exercised with a planted notice,
   not measured on real recalls.
 - Emergency numbers are for the United States.
+- A price from a store outside the United States is read as dollars. The second live run met Australian store
+  pages; none of their prices reached an answer.
 - No person approves a reply before it is spoken. The governance profile used in evaluation declares that, and
   the compliance assessment marks it down for it.
 - The assistant cannot yet correct a false statement about an earlier turn ("the brush you showed me"), because

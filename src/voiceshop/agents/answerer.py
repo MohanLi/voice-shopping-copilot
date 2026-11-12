@@ -241,6 +241,39 @@ def _draft_block(draft: AnswerDraft) -> str:
 
 
 CODE_REPAIRABLE = ("spoken", "conflict_note")    # fields code can rebuild from the evidence when the model's version does not pass
+REPAIRED = {
+    "asked_product_shown": "The product the spoken sentence is about was added to the answer",
+    "spoken_shortened": "The spoken sentence was shortened at a clause",
+    "spoken_rebuilt": "The spoken sentence was rebuilt from the evidence (name, price, source)",
+    "note_dropped": "The conflict note was dropped (conflicts found by code are still shown)",
+}
+
+
+def kept_by_code(draft: AnswerDraft, blocking: list[Issue], evidence: Evidence, constraints: Constraints,
+                 focus: list[str] | None = None) -> list[tuple[str, AnswerDraft]]:
+    """Repairs that keep the model's spoken sentence, tried before the sentence is rebuilt from name, price and source.
+
+    A rebuilt sentence is grounded and often no longer answers the question. In the second live run it replaced two
+    good ones. "Which is better for a four year old?" had been answered ("both are listed for ages 2 to 4 ... and the
+    Melissa & Doug is cheaper"), a few words too long, and became two names with two prices. And a sentence about the
+    product the shopper had asked about was replaced by prices of two other products, because the model had not put
+    the product it spoke about among its recommendations.
+
+    * The sentence is about a product on screen that the answer does not show: that product is added to the answer.
+    * The sentence is only too long: it is cut at a clause, the longest version first.
+    """
+    if draft.abstain or not draft.recommendations or not blocking or any(i.where != "spoken" for i in blocking):
+        return []
+    codes = {i.code for i in blocking}
+    if codes == {"spoken_about_another_product"}:
+        shown = {rec.ref for rec in draft.recommendations}
+        asked = [item for ref in (focus or []) if ref not in shown and (item := evidence.get(ref)) is not None]
+        if asked:
+            recs = [*(rules.recommendation_for(item, constraints) for item in asked), *draft.recommendations][:3]
+            return [("asked_product_shown", draft.model_copy(update={"recommendations": recs}))]
+    if codes == {"spoken_too_long"}:
+        return [("spoken_shortened", draft.model_copy(update={"spoken": shorter})) for shorter in rules.shorter_by_clauses(draft.spoken)]
+    return []
 
 
 def rebuilt_by_code(draft: AnswerDraft, blocking: list[Issue], evidence: Evidence, constraints: Constraints, focus: list[str] | None = None,
@@ -325,20 +358,24 @@ def make_critic_node(deps: Deps):  # type: ignore[no-untyped-def]
         else:
             verdict = "fallback"
             binding = [i for i in blocking if i.code not in ADVISORY_AFTER_REVISION]
-            fixed = None if from_template else rebuilt_by_code(draft, binding, evidence, constraints, focus_refs(state), focus_labels(state))
-            if fixed is not None:
+            # Repairs by code, the gentlest first; the first whose result passes every rule is kept.
+            repairs = [] if from_template else [*kept_by_code(draft, binding, evidence, constraints, focus_refs(state)),
+                                                ("spoken_rebuilt", rebuilt_by_code(draft, binding, evidence, constraints, focus_refs(state), focus_labels(state)))]
+            for how, fixed in repairs:
+                if fixed is None:
+                    continue
                 before, after = spoken_around_lead(fixed, evidence, constraints, state.get("route"), said_ids(state.get("preface"), state.get("route"), state.get("user_text")))
                 left = [i for i in check_draft(fixed, evidence, constraints, max_words=budget, total_seconds=settings.tts_max_seconds,
                                                spoken_after=[*before, *after], user_text=state.get("user_text"), focus=focus_refs(state)) if i.severity in ("block", "revise")]
                 if not left:                                  # the rest of the model's answer passed: keep it
                     for issue in blocking:
                         issue.severity = "info"
-                    what = ("The spoken sentence was rebuilt from the evidence (name, price, source)" if fixed.spoken != draft.spoken
-                            else "The conflict note was dropped (conflicts found by code are still shown)")
-                    issues.append(Issue(code="spoken_rebuilt" if fixed.spoken != draft.spoken else "note_dropped", severity="info",
-                                        where="spoken" if fixed.spoken != draft.spoken else "conflict_note",
-                                        message=f"{what}; the recommendations and reasons are the model's."))
+                    if how == "spoken_rebuilt" and fixed.spoken == draft.spoken:
+                        how = "note_dropped"
+                    issues.append(Issue(code=how, severity="info", where="conflict_note" if how == "note_dropped" else "spoken",
+                                        message=f"{REPAIRED[how]}; the recommendations and reasons are the model's."))
                     draft, verdict, rebuilt = fixed, "pass", True
+                    break
         critique = Critique(verdict=verdict, issues=issues, checked_by=checked,
                             unsupported_claims=[i.message for i in issues if i.code == "critic_unsupported"])
         update: dict[str, Any] = {"critique": critique, "draft": draft}
