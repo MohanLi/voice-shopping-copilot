@@ -354,8 +354,15 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
         # $7.99 is lower than nothing in the catalog" for a product the catalog does not carry.
         notes.append(draft.conflict_note.strip())
     notes.extend(c for c in found if c not in notes)
-    if evidence.relaxed and items:
-        notes.append("No product met every constraint, so the search loosened: " + ", ".join(evidence.relaxed).replace("_", " ") + ".")
+    if evidence.relaxed and any(isinstance(i, CatalogItem) and i.constraint_notes for i in items):
+        # Said only when a product in the table misses something, and with the number that did not. The search loosens a
+        # constraint when fewer than five products meet all of them, to fill its list; in the third live run four LEGO sets
+        # were within the budget, the three in the table were among them, and the note under the table still read "No
+        # product met every constraint". Half the jury took that for the answer's own doubt.
+        met = evidence.strict_matches
+        lead = ("Too few products met every constraint" if met is None else "No product met every constraint" if met == 0
+                else f"Only {met} product{'s' if met != 1 else ''} met every constraint")
+        notes.append(f"{lead}, so the search loosened: " + ", ".join(evidence.relaxed).replace("_", " ") + ".")
     for key, value in evidence.unmatched_filters.items():
         notes.append(f"The catalog has no {key.split(':')[0]} named '{value}'.")
     notes.extend(policy.TOOL_FAILED_SCREEN[tool] for tool in evidence.failed_tools if tool in policy.TOOL_FAILED_SCREEN)

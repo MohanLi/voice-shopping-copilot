@@ -243,9 +243,14 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
         c.product = None
     if route.intent in ("follow_up", "compare") and not route.refers_to:
         declined = any(i.startswith("no_") for i in route.say)
-        if declined and not [k for k in c.stated() if k not in _WHO_FOR]:
+        if declined and not [k for k in c.stated() if k not in _WHO_FOR] and not restated(route, text):
             # Something was declined and nothing was asked about any product: the declined part was the whole message.
             # (Asked to put an invented quote on a shop page, the pipeline went on to "the closest match is a brick set".)
+            # Not when the Router restated a product question: then there is one, about products that are no longer on screen,
+            # and the turn stays the follow-up the Router said it was. (Third live run: "which is cheaper per unit, the Galaxy
+            # Tin or the party pack?" was asked five turns in a row among things that were declined. The Router restated the
+            # question every time; a puzzle from an earlier request was on screen, so nothing on screen was referred to, this
+            # line called each turn "not a shopping request", and the reply was the declining sentences alone.)
             route.intent = "out_of_scope"
         elif names_another_product(c, earlier):
             # Another product is another request: the brand, material and budget of the last one are not carried over.
