@@ -13,7 +13,7 @@
 # the reporter, on Claude Haiku with Sonnet as backup for calls Haiku cannot complete) about
 # $0.80. The project's spending limit in .env (LLM_BUDGET_USD) applies to both.
 #
-# The ProofAgent dashboard: if .env holds a PROOFAGENT_API_KEY, the finished run is then sent
+# The ProofAgent dashboard: if .env (or the shell) holds a PROOFAGENT_API_KEY, the finished run is then sent
 # to app.proofagent.ai (scores, findings, the jury's votes and the conversation of the run;
 # no key, no local path). Without the key nothing leaves this machine. A run can also be
 # sent later:  voiceshop eval proofagent --label <label> --upload
@@ -27,8 +27,10 @@ LOG="logs/proofagent_${LABEL}.log"
 # shellcheck disable=SC1091
 source .venv/bin/activate || { echo "No .venv here. Run: bash scripts/mac_refresh.sh quick"; exit 1; }
 python -c "import proofagent_harness" 2>/dev/null || { echo "proofagent-harness is not installed. Run: bash scripts/mac_refresh.sh quick"; exit 1; }
-grep -q '^ANTHROPIC_API_KEY=.\+' .env 2>/dev/null || { echo "ANTHROPIC_API_KEY is missing from .env"; exit 1; }
-grep -q '^SERPER_API_KEY=.\+' .env 2>/dev/null || echo "Note: no SERPER_API_KEY in .env, so web.search uses the sample results (the run still works)."
+# A key counts whether it is in .env or exported in the shell (the shell wins when both are set).
+has_key() { [ -n "${!1:-}" ] || grep -q "^$1=.\+" .env 2>/dev/null; }
+has_key ANTHROPIC_API_KEY || { echo "ANTHROPIC_API_KEY is missing: add it to .env in this folder"; exit 1; }
+has_key SERPER_API_KEY || echo "Note: no SERPER_API_KEY, so web.search uses the sample results (the run still works)."
 
 echo "code: $(git log --oneline -1 2>/dev/null || echo 'not a git checkout')"
 echo "ProofAgent run '$LABEL', $TURNS turns. Progress is quiet; the scorecard prints at the end (about 15 minutes for 30 turns)."
@@ -41,9 +43,9 @@ if [ "${PIPESTATUS[0]}" -ne 0 ]; then
 fi
 echo
 echo "PROOFAGENT RUN COMPLETE in $(( ($(date +%s) - START) / 60 )) min: eval/results/proofagent/$LABEL/scorecard.md  (log: $LOG)"
-if grep -q '^PROOFAGENT_API_KEY=.\+' .env 2>/dev/null; then
-  echo "Sending the run to the ProofAgent dashboard (PROOFAGENT_API_KEY is set in .env) ..."
+if has_key PROOFAGENT_API_KEY; then
+  echo "Sending the run to the ProofAgent dashboard (PROOFAGENT_API_KEY is set) ..."
   voiceshop eval proofagent --label "$LABEL" --upload 2>&1 | tee -a "$LOG" || echo "The upload did not work; the run itself is complete. Try again with: voiceshop eval proofagent --label $LABEL --upload"
 else
-  echo "Not uploaded (no PROOFAGENT_API_KEY in .env). To send it later: voiceshop eval proofagent --label $LABEL --upload"
+  echo "Not uploaded: no PROOFAGENT_API_KEY in .env or in the shell. Add the line PROOFAGENT_API_KEY=<key> to .env, then: voiceshop eval proofagent --label $LABEL --upload"
 fi
