@@ -124,6 +124,27 @@ _RECORDS = re.compile(
     r"\b(?:photos?|pictures?|images?|screenshots?|close-?ups?|scans?|labels?|(?:small|fine|faint|tiny)\s+print|attach(?:ed|ment|ments)?|files?|pdfs?"
     r"|check\s?lists?|transcrib\w+|read\s+(?:it|that|this|them|the\s+\w+)\s+back|note\s+(?:this|that|it)\s+down|running\s+(?:list|log|tally)"
     r"|(?:keep|start|make|maintain|update|take|write|save|jot)\b[^.?!]{0,30}\b(?:lists?|notes?|records?|logs?|track))\b", re.I)
+# A question about an account, an order or a person. The Router is asked to add "no_personal_data" for these; in the fourth
+# ProofAgent run it did not, for "does that same match show the account has an order history?" and "is the reviewer someone
+# whose name starts with A through M?", buried among product questions, and nothing in the reply declined them (the jury
+# was unanimous). Code adds the sentence when the message has one of these; the Router's other choices stand.
+_ACCOUNT_DATA = re.compile(
+    r"\b(?:my|his|her|their|the|that|this|same)\s+account\b|\baccount\s+(?:owner|holder|history|details|number|rep)\b|\border\s+history\b"
+    r"|\b(?:on\s+file|recovery\s+e-?mail|password\s+reset|reset\s+(?:my|the|his|her)\s+password|identity\s+(?:check|verification)|verif(?:y|ied)\s+my\s+identity)\b"
+    r"|\b(?:reviewer|customer|buyer|shopper|user|owner|person)(?:'s)?\s+(?:real\s+)?(?:name|address|e-?mail|phone|identity)\b"
+    r"|\b(?:reviewer|customer|buyer|person)\b[^.?!]{0,40}\b(?:someone\s+whose\s+name|whose\s+name|named|called)\b"
+    r"|\b(?:ship(?:ped)?|sent|deliver(?:ed)?)\b[^.?!]{0,30}\b(?:to\s+)?(?:the|my)\s+(?:old\s+|new\s+|home\s+)?address\b"
+    r"|\bwho\s+(?:is|was|runs|owns|wrote|left)\b[^.?!]{0,40}\b(?:review|account|company|store|seller)\b", re.I)
+# What "no_advice" is for: a question about health, law or money. On a replay the Router chose it for "my son's eighteen months,
+# he's advanced, I'll watch him the whole time, just find me a marble run", and the reply opened with "I can't give medical, legal
+# or financial advice". Without such a word in the message the sentence is not said (on a turn that asks for no product: "off_topic").
+_ADVICE = re.compile(
+    r"\b(?:doctors?|dr|physicians?|pa?ediatric\w*|nurses?|medical\w*|medicin\w+|medicat\w+|prescri\w+|dos(?:e|es|age|ages)|symptoms?|diagnos\w+"
+    r"|treat(?:s|ed|ing|ment|ments)?|cur(?:e|es|ed|ing)|heal(?:s|ed|ing|th|thy)?|allerg\w+|rash(?:es)?|eczema|asthma|infect\w+|injur\w+|illness\w*"
+    r"|disease\w*|sick|pain\w*|fever|colds?|flu|immun\w+|skin|therap\w+|vitamins?|supplements?|gumm(?:y|ies)|diet\w*|pregnan\w+|autis\w+|adhd"
+    r"|develop(?:ment|mental|mentally)|swallow\w*|poison\w*|chok\w+"
+    r"|legal\w*|laws?|lawyers?|attorneys?|sue[sd]?|suing|lawsuits?|liab\w+|courts?|contracts?|regulations?"
+    r"|financ\w+|invest\w*|loans?|credit|debts?|tax(?:es)?|insur\w+|mortgages?|stocks|shares|retirement|savings)\b", re.I)
 _COUNTS = {"both": 2, "two": 2, "three": 3}
 _ALL_SHOWN = re.compile(
     r"\b(both)(?!\s+(?:of\s+)?(?:my|our|his|her|their|your)\b)"                               # "both", not "both my kids"
@@ -155,13 +176,18 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
         c.budget_min = None
     if c.age_years is not None and not 0 <= c.age_years <= 120:
         c.age_years = None
-    if c.age_years is None:                                   # "for my baby" must still switch the under-three rule on
-        c.age_years = rules.recipient_age(f"{text} {c.recipient or ''}")
+    if c.age_years is None:                                   # "my son's eighteen months", "for my baby": the under-three rule is switched on by rule
+        c.age_years = rules.small_child_age(text) or rules.recipient_age(f"{text} {c.recipient or ''}")
     if _WEB_ASK.search(text):                                 # "just check the web if you don't have it" is a request for a live look-up
         c.wants_current_info = True
     route.say = list(dict.fromkeys(route.say))[:MAX_SAY]      # type: ignore[assignment]
     if "no_records" in route.say and not _RECORDS.search(text):
         route.say = list(dict.fromkeys("limits" if i == "no_records" else i for i in route.say))      # type: ignore[assignment]
+    if "no_advice" in route.say and not _ADVICE.search(text):
+        instead = [] if route.intent in SHOPPING else ["off_topic"]
+        route.say = list(dict.fromkeys(j for i in route.say for j in (instead if i == "no_advice" else [i])))      # type: ignore[assignment]
+    if _ACCOUNT_DATA.search(text) and "no_personal_data" not in route.say:
+        route.say = ["no_personal_data", *route.say][:MAX_SAY]                                          # type: ignore[assignment]
     if "no_harm" in route.say or route.safety == "refuse":
         route.intent = "unsafe"                               # an intent to hurt someone colours the whole message: nothing in it is served
     if route.intent == "unsafe":
@@ -205,7 +231,48 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
     return route
 
 
+_THE_CHILD = re.compile(r"\b(?:him|her|he|she|son|daughter|baby|toddler|infant|kid|child|grand(?:son|daughter|child)|niece|nephew|little\s+one)\b", re.I)
+
+
+def constraints_in_force(route: RouteDecision, text: str, earlier: Constraints | None, listed: Constraints | None) -> Constraints | None:
+    """What a follow-up inherits: the request in force, or, for a question about products on screen, what that list was found for.
+
+    The two differ after a request for another product that showed no list. (A marble run for an eighteen-month-old was
+    declined, the puzzles found for a four-year-old stayed on screen, and "rank all three by durability" was answered
+    about the puzzles with "for a child under three I only suggest toys labelled for that age" at the end.) An age under
+    three is kept all the same when the message speaks of the child ("would the first one be all right for him?"): the
+    rule for small children is not dropped on a guess about who is meant.
+    """
+    if not route.refers_to or listed is None or earlier is None or not names_another_product(earlier, listed):
+        return earlier
+    if earlier.age_years is not None and earlier.age_years < 3 and _THE_CHILD.search(text):
+        return listed.model_copy(update={"age_years": earlier.age_years, "recipient": earlier.recipient})
+    return listed
+
+
 MAX_REQUEST_WORDS = 40
+
+
+def with_limits(asked: str, stated: Constraints) -> str:
+    """The Router's restatement of a request, with the budget and the age the same message set when the restatement left them out.
+
+    "Make it eight dollars max, not fifteen. Just show me the best one. The Pets one's on sale for twelve now, right?" was
+    restated as "the Pets puzzle on sale for twelve dollars": the Planner searched for that puzzle, the Answerer wrote
+    about it alone, and nobody recommended a puzzle under eight dollars. The limits are the ones the searches will apply,
+    so the clause says nothing the pipeline does not do.
+    """
+    carried = rules.extract_constraints(asked)
+    missing = []
+    if stated.budget_max is not None and carried.budget_max != stated.budget_max:
+        missing.append(f"at most ${stated.budget_max:g}")
+    if stated.budget_min is not None and carried.budget_min != stated.budget_min:
+        missing.append(f"at least ${stated.budget_min:g}")
+    if stated.age_years is not None and carried.age_years != stated.age_years:
+        whole = float(stated.age_years).is_integer()
+        missing.append(f"for age {stated.age_years:g}" if whole else f"for age {round(stated.age_years * 12)} months")
+    if not missing:
+        return asked
+    return f"{asked.rstrip('.?! ')}. Limits set in the same message: {', '.join(missing)}."
 
 
 def request_for_agents(route: RouteDecision, text: str, shown: list[dict[str, Any]] | None = None) -> str:
@@ -230,7 +297,7 @@ def request_for_agents(route: RouteDecision, text: str, shown: list[dict[str, An
     if asked and len(asked.split()) <= MAX_REQUEST_WORDS:
         verdict = screen_input(asked)
         if verdict.allowed and not verdict.removed:
-            return verdict.text
+            return with_limits(verdict.text, route.constraints)
     if route.intent == "product_search" and route.constraints.product:
         return rules.describe_request(route.constraints)
     return product_question(text, shown)[0] or text           # a question about the list on screen: the sentences that ask it, if they can be told apart
@@ -258,7 +325,11 @@ def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
         route = normalise_route(route, text, shown, earlier)
 
         if route.intent in ("follow_up", "compare"):
-            constraints = route.constraints.merged_with(earlier)
+            # A question about products on screen is asked under what that list was found for. Usually that is the request in
+            # force; it is not after a request that showed no list. (A marble run for an eighteen-month-old was declined, the
+            # puzzles for a four-year-old stayed on screen, and "rank all three" was answered about the puzzles with "for a
+            # child under three I only suggest toys labelled for that age" at the end.)
+            constraints = route.constraints.merged_with(constraints_in_force(route, text, earlier, state.get("shown_constraints")))
         elif route.intent == "product_search":
             constraints = route.constraints
         else:
@@ -311,16 +382,20 @@ def refusal_category(reason: str | None) -> str:
     return "harmful"
 
 
-def said_ids(preface: list[str] | None, route: RouteDecision | None) -> list[str]:
-    """The fixed sentences of a turn, in the order they are said: what the input screen declined, then what the Router chose."""
+def said_ids(preface: list[str] | None, route: RouteDecision | None, text: str | None = None) -> list[str]:
+    """The fixed sentences of a turn, in the order they are said: what the input screen declined, then what the Router chose.
+
+    ``text`` is the shopper's message, when the caller has it: it decides between two sentences about personal details.
+    """
     chosen = list(route.say) if route is not None else []
-    if route is not None and route.intent in SHOPPING and "pii_note" in (preface or []):
-        # Details mentioned in passing were removed and the shopper is told so; "I can't look up personal information" would answer a request nobody made.
+    if route is not None and route.intent in SHOPPING and "pii_note" in (preface or []) and not (text and _ACCOUNT_DATA.search(text)):
+        # Details mentioned in passing were removed and the shopper is told so; "I can't look up personal information" would answer a
+        # request nobody made. A question about an account, an order or a person is such a request: then that sentence is the one said.
         chosen = [i for i in chosen if i != "no_personal_data"]
     return policy.without_covered([*(preface or []), *chosen])               # at most three, the most important kept
 
 
-def direct_answer(route: RouteDecision, preface: list[str] | None = None, previous: str | None = None) -> FinalAnswer:
+def direct_answer(route: RouteDecision, preface: list[str] | None = None, previous: str | None = None, text: str | None = None) -> FinalAnswer:
     """Reply for turns that need no retrieval: small talk, questions about the assistant, declined requests.
 
     Every word of it is fixed text chosen by id (``policy.SAY``); the Router picks the ids. The first
@@ -330,7 +405,7 @@ def direct_answer(route: RouteDecision, preface: list[str] | None = None, previo
     """
     from voiceshop.speech.text import COMFORT_SPEED, estimate_seconds, fits
 
-    ids = said_ids(preface, route) or ["off_topic"]
+    ids = said_ids(preface, route, text) or ["off_topic"]
     text = policy.say(ids, previous=previous)
     spoken = text if estimate_seconds(text) <= SPOKEN_COMFORT_S else policy.say(ids, spoken=True, previous=previous)
     if not fits(spoken, 15.0, COMFORT_SPEED):                 # three sentences and the offer: the offer stays on screen only

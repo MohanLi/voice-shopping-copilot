@@ -123,6 +123,16 @@ export function App() {
   };
 
   const answer = current?.result?.answer;
+  // The list stays on screen until a new search replaces it. A turn with no list of its own (a declined request, a greeting,
+  // "I could not find that") keeps showing the last one, because the assistant still takes "the second one" to mean that list.
+  const carried = useMemo(() => {
+    if (!answer || answer.table.length > 0) return null;
+    for (let index = turns.length - 2; index >= 0; index -= 1) {
+      const earlierAnswer = turns[index].result?.answer;
+      if (earlierAnswer && earlierAnswer.table.length > 0) return earlierAnswer;
+    }
+    return null;
+  }, [turns, answer]);
   return (
     <div className="page">
       <header className="bar">
@@ -165,6 +175,7 @@ export function App() {
           {current?.error && <p className="problem" role="alert">{current.error}</p>}
           {current && <Reply turn={current} playing={player.playing} blocked={player.blocked} onPlay={player.play} onStop={player.stop} />}
           {answer && answer.table.length > 0 && <ComparisonTable rows={answer.table} citations={answer.citations} />}
+          {carried && <ComparisonTable rows={carried.table} citations={carried.citations} carried />}
           {answer?.kind === "recommendation" && answer.follow_up_question && !answer.spoken.includes(answer.follow_up_question) && (
             <p className="followup">{answer.follow_up_question}</p>
           )}

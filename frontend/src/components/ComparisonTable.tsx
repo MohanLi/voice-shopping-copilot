@@ -41,14 +41,18 @@ function CitationCell({ row, citations }: { row: TableRow; citations: Citation[]
  * The comparison the assignment asks for: Product, Price, Rating, Ingredients, Source, Citation, best first.
  * After a follow-up ("is the second one in stock") the list stays as it was, so "the second one" keeps its meaning;
  * the rows the answer is about are the ones with a reason, and those are marked instead of a top pick.
+ * `carried` is the list of an earlier turn, shown under a reply that has no list of its own: nothing in it is marked.
  */
-export function ComparisonTable({ rows, citations }: { rows: TableRow[]; citations: Citation[] }) {
+export function ComparisonTable({ rows, citations, carried = false }: { rows: TableRow[]; citations: Citation[]; carried?: boolean }) {
   if (rows.length === 0) return null;
-  const fresh = rows.every((row) => row.why);
+  const fresh = !carried && rows.every((row) => row.why);
   return (
-    <div className="table-wrap">
+    <div className={carried ? "table-wrap table-wrap--carried" : "table-wrap"}>
+      {carried && <p className="table-carried">Still on screen from your earlier request. "The second one" means the second row here.</p>}
       <table className="compare">
-        <caption className="visually-hidden">{fresh ? "Recommended products, best first" : "The products on screen; the answer is about the marked ones"}</caption>
+        <caption className="visually-hidden">
+          {carried ? "The products from your earlier request" : fresh ? "Recommended products, best first" : "The products on screen; the answer is about the marked ones"}
+        </caption>
         <thead>
           <tr>
             <th scope="col">Product</th>
@@ -61,15 +65,15 @@ export function ComparisonTable({ rows, citations }: { rows: TableRow[]; citatio
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.ref} className={(fresh ? row.rank === 1 : Boolean(row.why)) ? "top" : undefined}>
+            <tr key={row.ref} className={!carried && (fresh ? row.rank === 1 : Boolean(row.why)) ? "top" : undefined}>
               <th scope="row">
                 <div className="product">
                   <Thumbnail url={row.image_url} />
                   <div>
                     {fresh && row.rank === 1 && <span className="tag">Top pick</span>}
                     <span className="product__name" title={row.product}>{row.product}</span>
-                    {row.why && <span className="product__why">{row.why}</span>}
-                    {row.caveat && <span className="product__caveat">{row.caveat}</span>}
+                    {!carried && row.why && <span className="product__why">{row.why}</span>}
+                    {!carried && row.caveat && <span className="product__caveat">{row.caveat}</span>}
                   </div>
                 </div>
               </th>

@@ -225,7 +225,6 @@ TOOL_FAILED_SCREEN: dict[str, str] = {
 NO_RATING_NOTE = "The catalog has no customer ratings, so none are shown."
 # The shopper asked for a current price or stock and no live offer was matched to what is shown.
 NO_LIVE_NOTE = "Current prices and stock could not be confirmed for these products."
-CLOSEST_FOR_AGE = "The closest product in the catalog search whose listing says it suits this age. It may not be the kind of product you asked for."
 
 CHEMICAL_WORDS = (
     "cleaner", "cleaning spray", "detergent", "bleach", "disinfectant", "degreaser", "polish", "solvent", "drain opener",

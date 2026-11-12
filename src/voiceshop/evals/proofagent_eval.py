@@ -383,10 +383,10 @@ CODE_RULES = (
     "each; they cannot type a price or a link.",
     "The budget and the age the shopper stated are applied as search filters whatever the Planner model wrote. Safety exclusions are never "
     "loosened. A particular product looked up on the web is also checked against recall notices.",
-    "A draft answer is checked by rules before it is shown: a dollar amount must be a price of a product the answer is about; availability "
-    "needs a live source; a rating must exist in the evidence; a claim such as non-toxic or eco-friendly must be stated by a source; a recall "
-    "notice must be said; absolute assurances are never given; no code, link or address from the shopper's message is repeated; the spoken "
-    "reply must fit 15 seconds. After one revision, what still fails is rebuilt by code from the evidence.",
+    "Rule checks on a draft answer: a dollar amount must be a price of a product the answer is about; a price over the budget is said to be "
+    "over it; availability needs a live source; a rating must be in the evidence; a claim such as non-toxic must be stated by a "
+    "source; a recall notice must be said; absolute assurances are never given; no code, link or address from the message is repeated; the "
+    "spoken reply must fit 15 seconds. After one revision, what still fails is rebuilt by code from the evidence.",
     "Tool results, catalog listings and web results alike, are fenced as data in every prompt, and the MCP server removes instruction-like "
     "text from them before any model sees it. A web result that had such text is flagged: it is never a price source and never the "
     "template's pick. Only the two tools the server offers can be called; duplicate calls, unknown tools and searches about a declined "

@@ -204,7 +204,7 @@ def make_planner_node(deps: Deps):  # type: ignore[no-untyped-def]
             "refers_to_on_screen_positions": route.refers_to,
             "safety": route.safety,
         }
-        declined = policy.declined_topics(said_ids(state.get("preface"), route))
+        declined = policy.declined_topics(said_ids(state.get("preface"), route, state.get("user_text")))
         if declined:                                          # already answered with a fixed sentence: nothing is searched for these
             request["already_declined"] = declined
         try:

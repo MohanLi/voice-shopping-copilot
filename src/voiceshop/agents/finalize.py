@@ -317,14 +317,14 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
     # every stated limit. It is the one the model pointed to in its sources; if it pointed to none, the best-ranked one,
     # unless the re-ranker scored it as unrelated to the request. Chosen by code; the model's abstention stands. (Third
     # ProofAgent run: "the closest matches are toddler activity toys", with none of them named or shown.)
+    # It is named in the reply with its price and its source, and it does not become the list on screen: in the fourth
+    # run it did, the three puzzles the shopper had been comparing were gone, and "rank all three" was answered about it.
     closest = None
     if abstained and under_three and not about_screen:
         eligible = [c for c in evidence.catalog if not c.constraint_notes]
         pointed_to = [c for c in eligible if c.ref in draft.sources]
         related = [c for c in eligible if weak_score is None or c.rerank_score is None or c.rerank_score >= weak_score]
         closest = next(iter(pointed_to or related), None)
-    if closest is not None:
-        rows = [table_row(1, closest, policy.CLOSEST_FOR_AGE, None, evidence)]
     screen_notes, spoken_notes = safety_notes(items, constraints, route, evidence)
 
     notes: list[str] = list(screen_notes)
@@ -391,8 +391,9 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
     if abstained:
         lines.append(draft.spoken.strip())
         if closest is not None:
-            row = rows[0]
-            lines.append(f"**Closest for this age: {short_name(closest)}** - {row.price}. Listed for {closest.age_label or 'this age'}. [{row.citation}]")
+            shown_as = table_row(1, closest, "", None, evidence)
+            lines.append(f"**Closest for this age: {short_name(closest)}** - {shown_as.price}. Listed for {closest.age_label or 'this age'}; "
+                         f"it may not be the kind of product you asked for. [{shown_as.citation}]")
     else:
         by_ref = {row.ref: row for row in rows}
         for item, why, caveat in picked:
@@ -450,11 +451,12 @@ def remember(state: TurnState, answer: FinalAnswer) -> dict[str, Any]:
     update: dict[str, Any] = {"history": history}
     new_catalog_search = any(r.tool == "rag.search" and r.ok for r in state.get("tool_log") or [])
     is_new_request = route is not None and route.intent == "product_search"
-    if answer.kind in ("recommendation", "abstain") and answer.table:      # an abstention can show one row: the closest product for a young child
+    if answer.kind == "recommendation" and answer.table:
         current: Evidence | None = state.get("evidence")
         earlier: Evidence | None = state.get("last_evidence")
         if is_new_request or new_catalog_search or not state.get("shown") or earlier is None or current is None:
             update["shown"] = shown_from(answer)          # a new list replaces what was on screen
+            update["shown_constraints"] = constraints     # ... and it stays the list for this budget, age and product (see router_node)
             update["last_evidence"] = current
         else:
             # The turn was about products already on screen: positions ("the third one") stay valid, and what was
@@ -482,15 +484,15 @@ def make_finalize_node(deps: Any):  # type: ignore[no-untyped-def]
 
         answer = build_answer(draft, evidence, constraints, state.get("route"), max_words=max_words, grounded_by=grounded_by,
                               revisions=state.get("revisions") or 0, max_seconds=deps.settings.tts_max_seconds,
-                              preface=said_ids(state.get("preface"), state.get("route")),
+                              preface=said_ids(state.get("preface"), state.get("route"), state.get("user_text")),
                               shown=state.get("shown"), on_screen=state.get("last_evidence"), weak_score=deps.settings.weak_match_score)
         by = {"llm+critic": "the model's answer, passed by the critic", "template": "the template answer, built from the evidence",
               "llm": "the model's answer"}.get(grounded_by or "", grounded_by or "a fixed reply")
         n_rows, n_cites = len(answer.table), len(answer.citations)
         summary = (f"{n_rows} product{'s' if n_rows != 1 else ''} in the table, {n_cites} citation{'s' if n_cites != 1 else ''}, about "
                    f"{estimate_seconds(answer.spoken):.0f} s to say; {by}") if answer.table else "Abstained: nothing suitable in the evidence"
-        if answer.kind == "abstain" and answer.table:
-            summary = "Abstained on what was asked for; the closest product labelled for the child's age is shown, chosen by code"
+        if answer.kind == "abstain" and "**Closest for this age:" in answer.text:
+            summary = "Abstained on what was asked for; the closest product labelled for the child's age is named, chosen by code"
         return {
             "answer": answer,
             **remember(state, answer),
@@ -512,9 +514,9 @@ def respond_node(state: TurnState) -> dict[str, Any]:
     history = state.get("history") or []
     previous = str(history[-1].get("assistant") or "") if history else None
     if answer is None:
-        answer = direct_answer(route, state.get("preface"), previous) if route is not None else FinalAnswer(spoken=policy.OUT_OF_SCOPE, text=policy.OUT_OF_SCOPE, kind="out_of_scope")
+        answer = direct_answer(route, state.get("preface"), previous, state.get("user_text")) if route is not None else FinalAnswer(spoken=policy.OUT_OF_SCOPE, text=policy.OUT_OF_SCOPE, kind="out_of_scope")
     elif answer.kind == "clarify" and route is not None:      # the Planner's question, after whatever part of the message was declined
-        answer = with_preface(answer, said_ids(state.get("preface"), route))
+        answer = with_preface(answer, said_ids(state.get("preface"), route, state.get("user_text")))
     answer = answer.model_copy(update={"spoken": trim_spoken(answer.spoken, 60)})
     return {"answer": answer, **remember(state, answer),
             "trace": [step("respond", f"Direct reply ({answer.kind})" + (f": {', '.join(answer.declined)}" if answer.declined else ""), started=started,

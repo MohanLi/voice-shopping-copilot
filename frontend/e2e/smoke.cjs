@@ -57,6 +57,14 @@ function check(condition, message) {
   await page.waitForFunction(() => document.querySelectorAll(".earlier li").length >= 1 && document.querySelector(".total"), null, { timeout: 180000 });
   check(true, "a follow-up keeps the earlier turn on screen");
 
+  // ---- a reply with no list of its own keeps the earlier list on screen ("the second one" still means that list)
+  await page.fill("#request", "thank you");
+  await page.click("button:has-text('Ask')");
+  await page.waitForFunction(() => document.querySelectorAll(".earlier li").length >= 2 && document.querySelector(".total"), null, { timeout: 180000 });
+  check((await page.$$("table.compare tbody tr")).length === rows && (await page.textContent(".table-carried")).includes("Still on screen"),
+        "a reply without a list keeps the earlier list on screen, marked as carried over");
+  if (shots) await page.screenshot({ path: `${shots}/ui-carried.png`, fullPage: true });
+
   // ---- evaluation evidence and tools
   await page.click("text=Evaluation results");
   await page.waitForSelector(".drawer .report table, .drawer p");

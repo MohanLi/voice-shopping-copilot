@@ -103,6 +103,30 @@ _RECIPIENT = re.compile(r"\bfor\s+(?:my|a|an|our|the)\s+((?:[\w'-]+\s+){0,4}?(?:
                         r"newborn|boy|girl|friend|brother|sister|wife|husband|mom|dad|mother|father|teen|teenager|student|grandchild|cousin|dog|cat))\b", re.I)
 
 
+_WHO = r"(?:son|daughter|grandson|granddaughter|grandchild|nephew|niece|kid|child|baby|boy|girl|little\s+one|he|she)"
+_UNDER_THREE = re.compile(
+    rf"\b(?P<m1>{_NUMBER})[\s-]*months?[\s-]*olds?\b"                                                              # "eighteen months old", "an 18-month-old"
+    rf"|\b{_WHO}(?:'s|\s+is|\s+turns|\s+just\s+turned|\s+will\s+be|\s+is\s+only|\s+is\s+just)\s+(?P<m2>{_NUMBER})\s+months\b"   # "my son's eighteen months"
+    r"|\b(?P<y>one|two|1|2)[\s-]*(?:years?|yrs?)[\s-]*olds?\b", re.I)                                              # "a two-year-old"
+
+
+def small_child_age(text: str) -> float | None:
+    """An age under three that the message states of a child, read by rule: "my son's eighteen months" -> 1.5.
+
+    The rule for children under three must not depend on the Router model having filled in the age. Only phrasings that
+    are about a child count ("for six months I have been looking" is not one), and only ages under three are returned.
+    """
+    for m in _UNDER_THREE.finditer(text.lower()):
+        months, years = m.group("m1") or m.group("m2"), m.group("y")
+        n = words_to_number(months or years)
+        if n is None:
+            continue
+        age = round(n / 12, 2) if months else float(n)
+        if 0 <= age < 3:
+            return age
+    return None
+
+
 def recipient_age(text: str) -> float | None:
     """A conservative age when only the kind of recipient is known (keeps the under-three rule in force)."""
     low = text.lower()
@@ -488,7 +512,9 @@ def template_lead(top: CatalogItem | WebItem, constraints: Constraints, *, cavea
     opener = "" if focused else "My top pick is "
     if focused and label:                                     # a follow-up: the product is called by its place on screen
         opener = f"{label[0].upper()}{label[1:]}, "
-    lead = f"{opener}{short_name(top)}, ${price:.2f} {where}." if price is not None else f"{opener}{short_name(top)}."
+    over = f", over your ${constraints.budget_max:g} budget" if (price is not None and constraints.budget_max is not None
+                                                                  and price > constraints.budget_max + 0.005) else ""
+    lead = f"{opener}{short_name(top)}, ${price:.2f} {where}{over}." if price is not None else f"{opener}{short_name(top)}."
     if focused and constraints.wants_current_info:
         stock = top.live.availability if isinstance(top, CatalogItem) and top.live is not None else (top.availability if isinstance(top, WebItem) else None)
         lead += f" It is listed as {stock.replace('_', ' ')}." if stock else " I could not confirm whether it is in stock right now."

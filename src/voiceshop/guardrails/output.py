@@ -39,7 +39,7 @@ _STOCK_TALK = re.compile(r"\b(?:in\s+stock|available\s+(?:now|today|right\s+now)
 _CURRENT_TALK = re.compile(r"\b(?:currently|current\s+price|right\s+now|today(?:'s)?\s+price|now\s+(?:costs?|sells?|priced|at|\$)|costs?\s+\$?[\d.]+\s+now|latest\s+price)\b", re.I)
 _UNSPEAKABLE = re.compile(r"https?://|www\.|\[[CW]\d+\]|\b[CW]\d+\b|AMZ-[A-Z0-9]{6,}|[*#`_|<>{}\[\]]", re.I)
 _SECRET = re.compile(r"\bsk-[A-Za-z0-9_-]{16,}|\bAIza[0-9A-Za-z_-]{20,}|\b[A-Fa-f0-9]{32,}\b|api[_-]?key\s*[:=]", re.I)
-_BUDGET_WORDS = re.compile(r"\b(?:budget|over|above|more\s+than|exceeds?|higher|pricier|beyond)\b", re.I)
+_BUDGET_WORDS = re.compile(r"\b(?:budget|over|above|more\s+than|exceeds?|higher|pricier|beyond|limit|too\s+expensive)\b", re.I)
 
 
 _HEDGE = re.compile(
@@ -291,6 +291,19 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
             issues.append(Issue(code="spoken_about_another_product", severity="revise", where="spoken",
                                 message="The spoken sentence gives the price of a product on screen that is not among the recommendations, and no price of "
                                         "a recommended one. Say which recommended product answers the request, with its price."))
+
+    # ---- a price above the budget is not said without saying that it is
+    # The row of an over-budget product must say so in its caveat (above); the sentence that is spoken did not have to. Asked to
+    # "make it eight dollars max", two ProofAgent runs answered aloud "... at a catalog price of $29.99" and "... has a catalog
+    # price of $14.44", with the caveat on screen only. A sentence that also gives a price within the budget ("$7.99, against
+    # $9.99 for the first one") leads with something that fits, and is left alone.
+    if constraints.budget_max is not None and not _BUDGET_WORDS.search(draft.spoken):
+        said = [a for a in dollars_in(draft.spoken) if any(abs(a - p) < 0.005 for p in all_prices)]
+        over = [a for a in said if a > constraints.budget_max + 0.005]
+        if over and len(over) == len(said):
+            issues.append(Issue(code="spoken_over_budget", severity="revise", where="spoken",
+                                message=f"The spoken sentence gives ${over[0]:.2f}, above the ${constraints.budget_max:g} budget, without saying so. "
+                                        "Say that it is over the budget, or lead with a product that fits it."))
 
     every_text = " ".join([draft.spoken, draft.conflict_note or "", draft.follow_up_question or "", draft.abstain_reason or "",
                            *(f"{r.why} {r.caveat or ''}" for r in draft.recommendations)])

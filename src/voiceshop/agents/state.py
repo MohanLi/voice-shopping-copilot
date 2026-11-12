@@ -344,6 +344,7 @@ class TurnState(TypedDict, total=False):
     history: list[dict[str, Any]]
     shown: list[dict[str, Any]]
     session_constraints: Constraints | None
+    shown_constraints: Constraints | None   # what the list on screen was found for; a later request that shows no list leaves both as they are
     last_evidence: Evidence | None
     # ---- per-turn working state
     guard: dict[str, Any] | None

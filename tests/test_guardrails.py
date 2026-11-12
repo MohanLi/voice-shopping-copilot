@@ -232,7 +232,9 @@ def test_a_listing_claim_may_be_repeated_only_when_the_listing_makes_it() -> Non
 def test_over_budget_or_constraint_misses_need_a_caveat() -> None:
     spoken = "The farm jigsaw is $24.50."
     assert {"over_budget_undisclosed", "constraint_miss_undisclosed"} <= codes(draft(("C2", "A 24-piece farm jigsaw.", None), spoken=spoken))
-    assert codes(draft(("C2", "A 24-piece farm jigsaw.", "$24.50 is above your $20 budget"), spoken=spoken)) == set()
+    # ... and the sentence that is spoken says it too: a caveat on screen is not heard
+    assert codes(draft(("C2", "A 24-piece farm jigsaw.", "$24.50 is above your $20 budget"), spoken=spoken)) == {"spoken_over_budget"}
+    assert codes(draft(("C2", "A 24-piece farm jigsaw.", "$24.50 is above your $20 budget"), spoken="The farm jigsaw is $24.50, over your $20 budget.")) == set()
     # the spoken text may only quote prices of the items actually recommended
     assert "ungrounded_price" in codes(draft(("C2", "A 24-piece farm jigsaw.", "over budget at $24.50"), spoken="The farm jigsaw is $9.99."))
     live_over = Constraints(budget_max=13)
@@ -457,3 +459,23 @@ def test_the_spoken_sentence_is_about_a_product_the_answer_recommends() -> None:
     assert issues("The Barnyard jigsaw is $7.99, against $9.99 for the first one.") == set()          # a comparison names both
     assert issues("The Barnyard jigsaw fits your $8 budget.") == set()                                  # no price of the other product: nothing to object to
     assert issues("The Barnyard jigsaw is the closest one under your budget.") == set()
+
+
+def test_a_price_above_the_budget_is_not_said_aloud_without_saying_that_it_is() -> None:
+    """Asked to "make it eight dollars max", two ProofAgent runs said "... has a catalog price of $14.44" and "... at a catalog price of $29.99";
+    that the product was over the budget stood in its caveat, on screen only."""
+    budget = Constraints(budget_max=8)
+
+    def issues(spoken: str, *, focus: list[str] | None = None, abstain: bool = False) -> set[str]:
+        recs = () if abstain else (("C1", "Eight chunky wooden pieces.", "Its catalog price of $9.99 is over your $8 budget."),)
+        return {i.code for i in check_draft(draft(*recs, spoken=spoken, abstain=abstain), evidence(), budget, max_words=40, focus=focus) if i.severity != "info"}
+
+    assert issues("The Safari chunky puzzle has a catalog price of $9.99, with eight wooden pieces.") == {"spoken_over_budget"}
+    assert issues("The Safari chunky puzzle is $9.99 in the catalog, over your $8 budget.") == set()
+    assert issues("The Safari chunky puzzle is $9.99, more than you wanted to spend.") == set()
+    assert issues("The Safari chunky puzzle has eight wooden pieces for ages two to four.") == set()            # no price is said
+    # A sentence that also gives a price within the budget leads with something that fits.
+    assert issues("The Space Puzzle is $8.00 at Example Shop, against $9.99 for the Safari puzzle.", focus=["W2"]) == set()
+    # An abstention that reports a price is held to the same rule.
+    assert issues("I could not find one for eight dollars; the Safari puzzle is $9.99.", abstain=True) == {"spoken_over_budget"}
+    assert issues("Nothing fits eight dollars; the closest is the Safari puzzle at $9.99, over your budget.", abstain=True) == set()
