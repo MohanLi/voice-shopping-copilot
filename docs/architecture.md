@@ -79,6 +79,11 @@ document id. `finalize.build_answer` looks each handle up and copies the cells o
 citations and the safety notes from the evidence. A handle that does not exist is dropped. This is why a table
 cell cannot contain something the tools did not return, whatever the model writes.
 
+Arithmetic is code's as well. A price per item or per ounce is worked out when the evidence is built, for a
+catalog product at ingestion and for a live listing from its own title, by the same rules (`data/units.py`,
+`retriever.web_unit_prices`). The evidence then lists the unit prices in order, lowest first, so that the model
+reads a comparison off and does not make one.
+
 The free text the model does write (the reasons and the spoken sentence) is checked twice: by rules
 (`guardrails/output.py`: every dollar amount must be a price of a product the answer is about, a price above the
 budget is said to be above it, no availability without a live source, no rating that is not in the evidence, no unsupported sensitive claim, a recall notice

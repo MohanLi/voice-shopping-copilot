@@ -1018,10 +1018,11 @@ replay showed what happens there:
 - *The Answerer did the division itself.* The Critic found two prices that no source states, sent the answer
   back, found them again and let the template replace it. A single turn with the same question showed which
   prices: $3.58 and $2.50, the two unit prices, both right, both worked out by the model. The rules did what
-  they exist for, since a number the model worked out is exactly what they stop. So the division moved into code. The catalog's rules for pack sizes and net amounts (`data/units.py`, which never counts
-  "pieces" as a pack and never takes a load rating for an amount) are applied to a live listing's own title;
-  the table shows "$21.50 at Example Market; $3.58 each (6-pack)" and "$7.99 at Example Toys; $2.50/oz", exactly
-  as it does for catalog products.
+  they exist for, since a number the model worked out is exactly what they stop. So the division moved into
+  code. The catalog's rules for pack sizes and net amounts (`data/units.py`, which never counts "pieces" as a
+  pack and never takes a load rating for an amount) are applied to a live listing's own title; the table shows
+  "$21.50 at Example Market; $3.58 each (6-pack)" and "$7.99 at Example Toys; $2.50/oz", exactly as it does for
+  catalog products.
 - *Given the figures, the model compared an ounce with a tin.* "The Galaxy Tin is cheaper per ounce at $2.50,
   while the Party Pack lists $3.58 per item." Per tin the comparison is $7.99 against $3.58, and the pack wins.
   Two changes: the evidence now carries one note with the unit prices in order, lowest first, per item (a

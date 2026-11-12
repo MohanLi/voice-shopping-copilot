@@ -83,7 +83,8 @@ only when the first product has them, otherwise "One of the options contains mag
 
 `guardrails/output.py`, run before anything is shown or spoken:
 
-- a dollar amount must be a price of a product the answer is about (or the shopper's budget, or a difference of two such prices);
+- a dollar amount must be a price of a product the answer is about (or the shopper's budget, or a difference of two such prices). "About" means recommended, referred to on screen, or named by a word no other product in the evidence has in its title. A price per item or per ounce counts when code worked it out from the listing's own title (`data/units.py`); a figure the model divided out itself does not;
+- nothing is called cheaper per ounce unless at least two products of the answer have a price per ounce;
 - a rating or a review count must exist in the evidence;
 - "in stock", "ships today" need a live result that says so; a catalog price is not called current;
 - a claim such as non-toxic, BPA-free or eco-friendly must be stated by a source for that product;
