@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 import pytest
 
@@ -232,9 +233,13 @@ def test_a_listing_claim_may_be_repeated_only_when_the_listing_makes_it() -> Non
 def test_over_budget_or_constraint_misses_need_a_caveat() -> None:
     spoken = "The farm jigsaw is $24.50."
     assert {"over_budget_undisclosed", "constraint_miss_undisclosed"} <= codes(draft(("C2", "A 24-piece farm jigsaw.", None), spoken=spoken))
-    # ... and the sentence that is spoken says it too: a caveat on screen is not heard
-    assert codes(draft(("C2", "A 24-piece farm jigsaw.", "$24.50 is above your $20 budget"), spoken=spoken)) == {"spoken_over_budget"}
-    assert codes(draft(("C2", "A 24-piece farm jigsaw.", "$24.50 is above your $20 budget"), spoken="The farm jigsaw is $24.50, over your $20 budget.")) == set()
+    # ... and the sentence that is spoken says it too: a caveat on screen is not heard. The evidence has products within the
+    # budget, so an answer about the over-budget one alone must name one of them as well.
+    over = ("C2", "A 24-piece farm jigsaw.", "$24.50 is above your $20 budget")
+    assert codes(draft(over, spoken=spoken)) == {"spoken_over_budget", "no_alternative_within_budget"}
+    assert codes(draft(over, spoken="The farm jigsaw is $24.50, over your $20 budget.")) == {"no_alternative_within_budget"}
+    both = "The farm jigsaw is $24.50, over your $20 budget; the Safari chunky puzzle fits at $9.99."
+    assert codes(draft(over, ("C1", "Eight chunky wooden pieces.", None), spoken=both)) == set()
     # the spoken text may only quote prices of the items actually recommended
     assert "ungrounded_price" in codes(draft(("C2", "A 24-piece farm jigsaw.", "over budget at $24.50"), spoken="The farm jigsaw is $9.99."))
     live_over = Constraints(budget_max=13)
@@ -479,3 +484,71 @@ def test_a_price_above_the_budget_is_not_said_aloud_without_saying_that_it_is() 
     # An abstention that reports a price is held to the same rule.
     assert issues("I could not find one for eight dollars; the Safari puzzle is $9.99.", abstain=True) == {"spoken_over_budget"}
     assert issues("Nothing fits eight dollars; the closest is the Safari puzzle at $9.99, over your budget.", abstain=True) == set()
+
+
+def test_an_answer_about_an_over_budget_product_names_one_that_fits_when_the_evidence_has_one() -> None:
+    """Live run, turn 10: "I can only do eight dollars, but just show me the best one anyway" about the second product on screen. The reply
+    said that it costs $13.46 and is over the budget, and stopped. The first product on screen cost $7.99."""
+    barnyard = CatalogItem(ref="C1", doc_id="AMZ-B00HEZ0APE", sku="B00HEZ0APE", title="Barnyard Wooden Jigsaw Puzzle (24 pcs)", price=7.99)
+    abc = CatalogItem(ref="C3", doc_id="AMZ-B000F49UY8", sku="B000F49UY8", title="Jumbo ABC Wooden Chunky Puzzle (26 pcs)", price=13.46)
+    safari = CatalogItem(ref="C4", doc_id="AMZ-B000B9RHYC", sku="B000B9RHYC", title="Safari Wooden Chunky Puzzle", price=9.99,
+                         constraint_notes=["$9.99 is above the $8.00 budget"])
+    on_screen = Evidence(catalog=[barnyard, abc, safari])
+    eight = Constraints(budget_max=8)
+    said = "The Jumbo ABC puzzle is the second one on screen, and at a catalog price of $13.46 it is over your $8 budget."
+    alone = AnswerDraft(recommendations=[Recommendation(ref="C3", why="26 chunky letter pieces.", caveat="At $13.46 it is over your $8 budget.")], spoken=said)
+    found = [i for i in check_draft(alone, on_screen, eight, max_words=40, focus=["C3"]) if i.severity != "info"]
+    assert [i.code for i in found] == ["no_alternative_within_budget"] and "C1" in found[0].message and "C4" not in found[0].message
+    with_one = AnswerDraft(recommendations=[*alone.recommendations, Recommendation(ref="C1", why="24 wooden pieces.")],
+                           spoken="The Jumbo ABC puzzle is $13.46, over your $8 budget; the Barnyard jigsaw fits at $7.99.")
+    assert [i.code for i in check_draft(with_one, on_screen, eight, max_words=40, focus=["C3"]) if i.severity != "info"] == []
+    # Nothing in the evidence fits: saying that it is over the budget is all there is to say.
+    assert [i.code for i in check_draft(alone, Evidence(catalog=[abc, safari]), eight, max_words=40, focus=["C3"]) if i.severity != "info"] == []
+
+
+def test_a_question_about_a_price_gets_a_price_or_the_statement_that_none_was_found() -> None:
+    """Live run, turn 15: "can you check today's price for the Aqua Beads Mega Set?" The set had a recall notice and a listing at $18.99.
+    The reply gave the recall and nothing about the price."""
+    notice = WebItem(ref="W1", url="https://safety.example.org/recalls/aqua-beads-mega-set", title="Recall notice: Aqua Beads Mega Set", source="safety.example.org", cautions=["recalled"])
+    listing = WebItem(ref="W3", url="https://shop.example.com/aqua-beads-mega-set", title="Aqua Beads Mega Set, 2400 beads", price=18.99, source="Example Toys")
+    found = Evidence(web=[notice, listing])
+    wants = Constraints(product="Aqua Beads Mega Set", wants_current_info=True)
+    asked = "Ok, can you check today's price for the Aqua Beads Mega Set? It's for my daughter's birthday."
+
+    def issues(spoken: str, *, text: str = asked, constraints: Constraints = wants) -> list[str]:
+        return [i.code for i in check_draft(AnswerDraft(recommendations=[], abstain=True, spoken=spoken), found, constraints, max_words=45, user_text=text)
+                if i.code == "price_asked_not_given"]
+
+    recall_only = "The Aqua Beads Mega Set has a safety recall notice, so I can't recommend it for your daughter; the recall says the beads can expand if swallowed."
+    assert issues(recall_only) == ["price_asked_not_given"]
+    assert issues("The Aqua Beads Mega Set is listed at $18.99 at Example Toys, but it has a recall notice, so I do not recommend it.") == []
+    assert issues("It has a recall notice, so I do not recommend it, and I could not confirm today's price.") == []
+    assert issues("I couldn't find the Aqua Beads Mega Set in my sources.") == []
+    # Not a question about a price: a recall answer without one is complete.
+    assert issues(recall_only, text="Is the Aqua Beads Mega Set safe for my daughter?") == []
+    assert issues(recall_only, constraints=Constraints(product="Aqua Beads Mega Set")) == []
+
+
+def test_the_stock_status_is_not_called_unstated_while_a_matched_source_states_it() -> None:
+    """Live run, turn 25: a priced listing without stock information and a Walmart page that said "out of stock" were both matched to the
+    first product on screen. On screen the reply named the Walmart page; aloud it said that no source states whether it is in stock."""
+    barnyard = CatalogItem(ref="C1", doc_id="AMZ-B00HEZ0APE", sku="B00HEZ0APE", title="Melissa & Doug Barnyard Wooden Jigsaw Puzzle (24 pcs)", price=7.99,
+                           live=LiveOffer(web_ref="W17", url="https://shop.example/barnyard", source="usatoyfactory.com", price=9.99, availability=None))
+    listing = WebItem(ref="W17", url="https://shop.example/barnyard", title="Melissa Doug Barnyard Jigsaw Puzzle", price=9.99, source="usatoyfactory.com", matched_ref="C1")
+    walmart = WebItem(ref="W24", url="https://www.walmart.example/barnyard", title="Melissa & Doug Barnyard Wooden Jigsaw Puzzle (24 pcs)", source="walmart.com",
+                      availability="out_of_stock", matched_ref="C1")
+    other = WebItem(ref="W23", url="https://www.melissaanddoug.example/farm", title="Farm Animals Jigsaw Puzzles in a Box", price=17.99, source="melissaanddoug.com", availability="out_of_stock")
+    found = Evidence(catalog=[barnyard], web=[listing, other, walmart])
+
+    def issues(spoken: str, evidence: Evidence = found) -> list[Any]:
+        d = AnswerDraft(recommendations=[Recommendation(ref="C1", why="Its live listing shows $9.99; a Walmart page lists it as out of stock.")], spoken=spoken)
+        return [i for i in check_draft(d, evidence, Constraints(wants_current_info=True), max_words=45) if i.code == "availability_overlooked"]
+
+    unstated = "Neither the listing nor my sources state whether the first one on screen is in stock right now."
+    raised = issues(unstated)
+    assert len(raised) == 1 and "W24" in raised[0].message and "out of stock" in raised[0].message and raised[0].severity == "revise"
+    assert issues("The Walmart page lists the first one on screen as out of stock; its price is $9.99 at usatoyfactory.com.") == []
+    assert issues("The first one is $9.99 at usatoyfactory.com; Walmart lists it as out of stock, and no source states stock for the others.") == []
+    # A source about another product does not count, nor does a result that was flagged.
+    assert issues(unstated, Evidence(catalog=[barnyard], web=[listing, other])) == []
+    assert issues(unstated, Evidence(catalog=[barnyard], web=[listing, walmart.model_copy(update={"flagged": True})])) == []

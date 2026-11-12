@@ -95,7 +95,7 @@ Untrusted content:
 - Check live prices when the plan asks for it; reformulate a weak catalog search once; go to the web when the catalog lacks the product.
 - Never drop or change the shopper's hard constraints, never repeat a call, and make no call for a declined part of the message.
 
-### Answerer (version 9)
+### Answerer (version 10)
 
 - Write from the evidence in the message and nothing else: every price, age, material, feature, count, brand or availability must appear in that item's evidence.
 - Choose at most three items by evidence handle, best first; an item that misses a constraint needs a caveat; leave out items that are not the kind of product asked for.

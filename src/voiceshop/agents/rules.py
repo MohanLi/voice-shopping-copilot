@@ -139,6 +139,23 @@ def recipient_age(text: str) -> float | None:
     return None
 
 
+def upper_limits(text: str) -> list[float]:
+    """Every upper price limit a message states, in the order said: "under fifteen dollars, no wait, under twelve" -> [15, 12].
+
+    People correct themselves aloud, and the correction comes second. In the live evaluation the recogniser heard
+    "no wait" as "no weight" (the two sound the same), the Router took the first limit, and a $13.46 puzzle was shown
+    as within a budget the shopper had lowered to twelve dollars. So the later limit is the one applied, by rule.
+    """
+    low = " ".join(text.lower().split())
+    found: list[float] = []
+    for m in _BUDGET_MAX.finditer(low):
+        amount = words_to_number(m.group("amount"))
+        tail = low[m.end(): m.end() + 14]
+        if amount and amount > 0 and ("$" in m.group(0) or re.match(r"\s*(?:dollars?|bucks?|usd)\b", tail) or re.search(r"dollars?|bucks?", m.group(0))):
+            found.append(float(amount))
+    return found
+
+
 def extract_constraints(text: str) -> Constraints:
     """Budget, age, materials and the product words from one utterance."""
     low = " ".join(text.lower().split())
@@ -152,14 +169,13 @@ def extract_constraints(text: str) -> Constraints:
             c.budget_min, c.budget_max = lo, hi
             spans.append(m.span())
     if c.budget_max is None:
-        for m in _BUDGET_MAX.finditer(low):
+        for m in _BUDGET_MAX.finditer(low):            # no break: of two limits in one message the later one is meant (see upper_limits)
             amount = words_to_number(m.group("amount"))
             tail = low[m.end(): m.end() + 14]
             is_money = "$" in m.group(0) or re.match(r"\s*(?:dollars?|bucks?|usd)\b", tail) or re.search(r"dollars?|bucks?", m.group(0))
             if amount and amount > 0 and is_money:
                 c.budget_max = amount
                 spans.append((m.start(), m.end() + (re.match(r"\s*(?:dollars?|bucks?|usd)", tail).end() if re.match(r"\s*(?:dollars?|bucks?|usd)", tail) else 0)))
-                break
     if c.budget_max is None:
         m = _PRICED_NOUN.search(low)                  # "a fifty dollar drone": read as the price they have in mind
         amount = words_to_number(m.group("amount")) if m else None

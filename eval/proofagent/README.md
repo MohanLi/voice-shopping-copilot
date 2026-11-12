@@ -46,6 +46,14 @@ about $0.05 for the assistant and about $0.80 for the harness with a Haiku-class
 
 `report.bundle.json` (the conversation in clear, for the record's converter) is written too and is not committed.
 
+Two things are done to what a run writes, because the folder is committed. The harness's report files name paths
+inside the repository, not the folder of the machine that ran it. And for a live search result the turn record
+keeps what an answer cites (title, store, price, rating, address, time of retrieval) and leaves out the page
+excerpt and the image link; recorded and planted results are this project's own text and stay whole.
+
+The folders: `run1` to `run4` were made in the build workspace against recorded search results, `mac-live` on a
+laptop against the live search API with the laptop's speech models.
+
 ## Add a scenario
 
 Copy one of the files in `traps/shopping_scenarios/`, give it the next `order`, and keep the four sections

@@ -34,7 +34,9 @@ the draft before it is spoken. The same policy text is also in the prompts
 **Speech recognition.** A transcript that is empty or very unsure (confidence under 0.25) is not acted on: the
 assistant asks the shopper to say it again. Between 0.25 and 0.45 it is used and marked as uncertain on the
 screen, where what was heard is always shown and can be corrected. The recording is transcribed in memory and
-is not stored.
+is not stored. A recogniser cannot tell words that sound alike apart ("no wait" was heard as "no weight"), so a
+correction spoken aloud is not left to its cue words: of two price limits in one message the later one is
+applied.
 
 **Input screen** (`guardrails/input.py`, rules only, before any model).
 - Ends the turn with a fixed reply: a possible poisoning emergency, a statement of self-harm, a request to hurt
@@ -81,7 +83,9 @@ are added by code from the evidence and are not dropped when the spoken reply is
 - "in stock", "ships today" need a live result that says so; a catalog price is not called current;
 - a claim such as non-toxic, BPA-free or eco-friendly must be stated by a source for that product;
 - a recall or discontinuation that a source states must be said;
-- a product over the budget, or one that misses a constraint, must say so on screen, and a price above the budget must not be spoken without saying that it is;
+- a product over the budget, or one that misses a constraint, must say so on screen, and a price above the budget must not be spoken without saying that it is; when every product of an answer is over the budget and the evidence has one that fits, that one is named too;
+- a question about a price gets a price or the statement that none was found, also for a product that is not recommended;
+- the stock status is not called unstated while a live result matched to the product states it;
 - a web result is not recommended for a child under three;
 - absolute assurances are never given ("completely safe", "cures", "doctor recommended", "guaranteed to": `policy.FORBIDDEN_ASSURANCES`);
 - no code, link or address from the shopper's message is repeated, and nothing that reads like an instruction from a tool result;
@@ -129,11 +133,11 @@ Router model ("my son's eighteen months", "for my baby").
 
 ## 7. How this was tested
 
-- 589 unit and end-to-end tests, a large part of them on the rules above; each failure found in evaluation
+- 597 unit and end-to-end tests, a large part of them on the rules above; each failure found in evaluation
   became a test in the words of the turn that failed.
-- Four ProofAgent runs ([evaluation.md](evaluation.md)): an adversarial shopper, 30 turns each, with planted tool
-  faults (an injected instruction, a recalled product, an impossible listing, a failing search). Safety 84%,
-  99%, 98%, 93%; resistance to manipulation 100% in every run. No ballot in any run found an injected
+- Five ProofAgent runs ([evaluation.md](evaluation.md)): an adversarial shopper, 30 turns each, with planted tool
+  faults (an injected instruction, a recalled product, an impossible listing, a failing search); the fifth
+  against live web search. Safety 84%, 99%, 98%, 93%, and 97% live; resistance to manipulation 100% in every run. No ballot in any run found an injected
   instruction followed, harmful content produced, pressure given in to, or a tool called or an action taken that
   should not have been. What Safety lost was lost on refusals that were not clear enough about what they
   refused (failures 1, 12 and 15).

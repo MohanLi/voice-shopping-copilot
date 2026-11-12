@@ -28,7 +28,7 @@ from voiceshop.agents.state import (
     step,
 )
 from voiceshop.guardrails import policy
-from voiceshop.guardrails.output import trim_spoken
+from voiceshop.guardrails.output import dollars_in, trim_spoken
 from voiceshop.speech.text import COMFORT_SPEED, MAX_SPEED, estimate_seconds, fits, split_sentences
 
 MAX_HISTORY = 12
@@ -227,15 +227,20 @@ def said_before(preface: list[str] | None, lead: str, max_seconds: float) -> lis
     return [both]
 
 
-def whole_sentences(text: str, around: list[str], max_seconds: float, max_words: int) -> list[str]:
+def whole_sentences(text: str, around: list[str], max_seconds: float, max_words: int, *, keep_prices: bool = False) -> list[str]:
     """The sentences of ``text``, from the first, that can be said together with ``around`` inside the time limit.
 
     Trailing sentences give way one at a time; the first is always kept, and kept whole. Only a first sentence that
     could not be said in the limit even on its own is cut, at ``max_words`` (the checks before this make that a last resort).
+
+    With ``keep_prices`` (the shopper asked what something costs) a sentence that states a price is the last to give
+    way: a replay answered "can you check today's price" with the recall and the price, in that order, and the
+    sentence with the price was the one cut for time.
     """
     kept = split_sentences(" ".join((text or "").split()))
     while len(kept) > 1 and not fits(" ".join([*around, *kept]), max_seconds, MAX_SPEED):
-        kept.pop()
+        without_price = [i for i in range(1, len(kept)) if not dollars_in(kept[i])] if keep_prices else []
+        kept.pop(without_price[-1] if without_price else -1)
     if kept and not fits(kept[0], max_seconds, MAX_SPEED):
         kept = [trim_spoken(kept[0], max_words)]
     return kept
@@ -354,7 +359,7 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
     before = said_before(preface, draft.spoken, max_seconds)                              # what was declined is said first
     # The model's sentences are kept whole or not at all. (They used to be cut at a word count as well, which left
     # "... at a catalog price." and "... no live listing was found, so I." in the spoken reply of a live check.)
-    spoken = " ".join(whole_sentences(draft.spoken, before, max_seconds, max_words))
+    spoken = " ".join(whole_sentences(draft.spoken, before, max_seconds, max_words, keep_prices=constraints.wants_current_info))
     if abstained and under_three:
         # The reason nothing of that kind was suggested, in fixed words, with the closest product for that age if there is
         # one. Further sentences of the model's statement give way to it; when all of it cannot be said in time, the
@@ -370,7 +375,7 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
         else:
             extra = [] if said_rule else [SPOKEN_UNDER_3_ONLY]
         if extra:
-            first = whole_sentences(draft.spoken, [*before, *extra], max_seconds, max_words)
+            first = whole_sentences(draft.spoken, [*before, *extra], max_seconds, max_words, keep_prices=constraints.wants_current_info)
             spoken = " ".join([*first, *extra])
     if rows and not abstained:
         first = split_sentences(draft.spoken)[:1]
@@ -378,7 +383,7 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
         # In order of importance: what the answer says, the safety sentence, the pointer to the screen, the question.
         # (The pointer used to come before the answer's second sentence: "I can't confirm that. Details and sources are
         # on screen." was all that was said of an answer whose second sentence gave the catalog price and the reason.)
-        lead = whole_sentences(draft.spoken, [*before, *safety], max_seconds, max_words)
+        lead = whole_sentences(draft.spoken, [*before, *safety], max_seconds, max_words, keep_prices=constraints.wants_current_info)
         parts = [*lead, *safety]
         if fits(" ".join([*before, *parts, tail]), max_seconds, MAX_SPEED):
             parts.append(tail)

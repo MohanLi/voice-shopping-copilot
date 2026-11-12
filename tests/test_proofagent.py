@@ -270,3 +270,33 @@ def test_nothing_is_uploaded_without_a_key_and_the_receipt_holds_no_key(tmp_path
     with pytest.raises(pa.UploadNotPossibleError) as failure:
         pa.upload("some-run", out_dir=out)
     assert "pa_live" not in str(failure.value) and "<key>" in str(failure.value)      # an error message never repeats the key
+
+
+def test_the_turn_record_keeps_the_citation_of_a_live_result_and_not_its_page_text() -> None:
+    """The record of a run is committed; the excerpt of a page and the link to its picture are another party's content."""
+    from voiceshop.evals.proofagent_eval import without_result_text
+
+    live = {"ref": "W1", "provider": "serper", "title": "Barnyard Jumbo Knob Puzzle", "source": "Kohl's", "price": 11.99, "rating": 4.9,
+            "url": "https://shop.example/barnyard", "retrieved_at": "2026-11-12T05:28:56+00:00", "snippet": "Sold by Kohl's", "image": "https://img.example/1.jpg"}
+    planted = {"ref": "W2", "provider": "fault-injection", "title": "Glimmer Putty Galaxy Tin", "snippet": "Stretch putty with glitter.", "image": None}
+    recorded = {"ref": "W3", "provider": "fixture", "title": "Space Puzzle", "snippet": "A 48-piece floor puzzle.", "image": "https://example.com/p.jpg"}
+    record = {"index": 4, "result": {"evidence": {"catalog": [{"ref": "C1", "description": "A wooden jigsaw."}], "web": [live, planted, recorded]}}}
+    kept = without_result_text(record)["result"]["evidence"]
+    assert kept["web"][0] == {**live, "snippet": None, "image": None}                       # title, store, price, rating, address and time stay
+    assert kept["web"][1]["snippet"] == "Stretch putty with glitter." and kept["web"][2]["image"] == "https://example.com/p.jpg"
+    assert kept["catalog"] == [{"ref": "C1", "description": "A wooden jigsaw."}]
+    assert without_result_text({"index": 1, "result": None}) == {"index": 1, "result": None}      # a probe or a refusal has no evidence
+
+
+def test_a_report_names_paths_inside_the_repository_not_the_folder_of_the_machine(tmp_path: Path) -> None:
+    from voiceshop.evals.proofagent_eval import without_machine_paths
+    from voiceshop.paths import project_root
+
+    here = str(project_root())
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps({"metadata": {"governance_profile_source": f"file:{here}/eval/proofagent/governance.yaml"}, "root": here}), encoding="utf-8")
+    untouched = tmp_path / "report.md"
+    untouched.write_text("# Report\nNo path here.\n", encoding="utf-8")
+    without_machine_paths(report, untouched)
+    assert json.loads(report.read_text(encoding="utf-8")) == {"metadata": {"governance_profile_source": "file:eval/proofagent/governance.yaml"}, "root": "."}
+    assert untouched.read_text(encoding="utf-8") == "# Report\nNo path here.\n"

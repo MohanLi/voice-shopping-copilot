@@ -8,12 +8,13 @@ three-way comparison on screen where every cell can be traced to a source.
 
 ![The assistant after a spoken request: what was heard, the spoken reply, the comparison table, and the list of agent steps with their times](docs/images/ui-voice.png)
 
-> **Status (11 November 2026): the system runs end to end and has been evaluated four times with ProofAgent.**
+> **Status (12 November 2026): the system runs end to end and has been evaluated five times with ProofAgent,
+> the last time on a laptop against live web search.**
 > Built and tested: data pipeline, hybrid retrieval, the MCP server, the agents, speech in and out, the API, the
-> web UI, and the evaluation with its scorecards and fifteen failure analyses
-> ([docs/evaluation.md](docs/evaluation.md)). Not done yet: the same evaluation against live web search, the
-> presentation, and part of the written documentation. [PROGRESS.md](PROGRESS.md) is the build log;
-> [docs/objectives.md](docs/objectives.md) lists every requirement of the assignment with where it is met.
+> web UI, and the evaluation with its scorecards and nineteen failure analyses
+> ([docs/evaluation.md](docs/evaluation.md)). Not done yet: the presentation and part of the written
+> documentation. [PROGRESS.md](PROGRESS.md) is the build log; [docs/objectives.md](docs/objectives.md) lists
+> every requirement of the assignment with where it is met.
 
 ## How a request is answered
 
@@ -69,7 +70,7 @@ voiceshop voice question.m4a         # voice in, voice out; the reply is kept in
 voiceshop mcp tools                  # what the agents discover on the MCP server
 voiceshop eval retrieval             # the retrieval benchmark below
 voiceshop eval proofagent --label my-run --fallback-llm anthropic/claude-sonnet-5-5   # the ProofAgent evaluation below (15 min, $0.50 to $0.90)
-python -m pytest tests -q            # 589 tests, about 20 s, no key or network needed
+python -m pytest tests -q            # 597 tests, about 20 s, no key or network needed
 ```
 
 `LLM_MODEL=fake:rules` runs every agent on rules only (no key, no cost); `LLM_MODEL=ollama:<model>` or any other
@@ -81,29 +82,35 @@ provider LangChain supports swaps the model without code changes.
 assistant (two turns through real audio), and a jury of model calls votes on 46 checks per turn. Sixteen scenarios
 written for this project come first (discovery, constraints, comparison, live prices, conflicting sources,
 unsupported claims, a child under three, a recalled product, an instruction planted in a tool result, an unsafe
-request), then fourteen attacks the harness chooses itself. Four runs, each followed by fixes for what it found
-([scorecards, stage-by-stage attribution and fifteen failure analyses](docs/evaluation.md)):
+request), then fourteen attacks the harness chooses itself. Five runs, each followed by fixes for what it found:
+four in the build workspace against recorded search results, so that they can be compared, and one on the laptop
+against live web search with the real speech models
+([scorecards, stage-by-stage attribution and nineteen failure analyses](docs/evaluation.md)):
 
-| | Run 1 | Run 2 | Run 3 | Run 4 |
-|---|---:|---:|---:|---:|
-| Task Success | 66% | 85% | 83% | 86% |
-| Hallucination Resistance / Grounding | 86% | 87% | 91% | 90% |
-| Tool-Use Correctness | 100% | 100% | 100% | 100% |
-| Safety and Guardrail Compliance | 84% | 99% | 98% | 93% |
-| Response Quality (Instruction Following) | 88% | 99% | 98% | 95% |
-| **Behavioural score** | **87%** | **95%** | **95%** | **94%** |
-| Certification | NEEDS_ENHANCEMENT | SILVER | SILVER | SILVER |
-| ProofAgent Index (0-100) | 74.8 | 77.0 | 78.1 | 79.1 |
-| Spoken replies within 15 s | 100% | 100% | 100% | 100% |
+| | Run 1 | Run 2 | Run 3 | Run 4 | Live run |
+|---|---:|---:|---:|---:|---:|
+| Task Success | 66% | 85% | 83% | 86% | 82% |
+| Hallucination Resistance / Grounding | 86% | 87% | 91% | 90% | 88% |
+| Tool-Use Correctness | 100% | 100% | 100% | 100% | 100% |
+| Safety and Guardrail Compliance | 84% | 99% | 98% | 93% | 97% |
+| Response Quality (Instruction Following) | 88% | 99% | 98% | 95% | 98% |
+| **Behavioural score** | **87%** | **95%** | **95%** | **94%** | **94%** |
+| Certification | NEEDS_ENHANCEMENT | SILVER | SILVER | SILVER | SILVER |
+| ProofAgent Index (0-100) | 74.8 | 77.0 | 78.1 | 79.1 | 80.0 |
+| Spoken replies within 15 s | 100% | 100% | 100% | 100% | 100% |
+| Median time per turn | 10.2 s | 14.1 s | 14.6 s | 13.5 s | 8.4 s |
 
 What that table does and does not show: the step from run 1 to run 2 is real (in run 1, 17 of 30 replies were
 fixed text or a fallback template, often a refusal of a whole message of which one part had to be declined; since
-then that part is declined and the rest is answered). Runs 2
-to 4 are level within the noise of one conversation: every failure a run exposed is fixed and is a regression
-test, and the next run's attacker, which writes new messages each time, found different ones. One fix was itself
-wrong and cost run 4 its worst turn. Between a fifth and a third of the credit still lost in runs 2 to 4 belongs to
-ballots that the jury cast identically turn after turn, whatever the reply said; the scorecards report that part
-separately. The failures still open are named in the evaluation document, not hidden in the average.
+then that part is declined and the rest is answered). Since run 2
+the score is level within the noise of one conversation, with live data as with recorded data: every failure a
+run exposed is fixed and is a regression test, and the next run's attacker, which writes new messages each time,
+found different ones. One fix was itself wrong and cost run 4 its worst turn. The live run's largest loss began
+at the microphone: "no wait, under twelve dollars" was heard as "no weight under $12", and the first budget was
+used. Between a fifth and a third of the credit lost in runs 2 to 4 belongs to ballots that the jury cast
+identically turn after turn, whatever the reply said; the scorecards report that part separately. The failures
+still open are named in the evaluation document, not hidden in the average. Run 4 and the live run are also on
+the ProofAgent dashboard (release gate: pass).
 
 **Retrieval** — 600 spoken-style queries with one known target each, on an M2 Max
 ([full table](eval/results/retrieval/benchmark.md)):
@@ -135,9 +142,8 @@ to a brick box of the same brand, the assignment's own example answered with "I 
 shopping listings carry no description, and a safety rule that read "no source confirms it is eco-friendly" as an
 eco-friendly claim. They are written up in [docs/decisions.md](docs/decisions.md).
 
-Still to come: the ProofAgent run against live web search on the laptop (the four runs above used recorded
-search results with planted faults, so that they can be compared), reconciliation accuracy on live listings, and
-recordings of real speakers next to the synthetic voices.
+Still to come: reconciliation accuracy measured on a larger sample of live listings, and recordings of real
+speakers next to the synthetic voices.
 
 ## The MCP server
 

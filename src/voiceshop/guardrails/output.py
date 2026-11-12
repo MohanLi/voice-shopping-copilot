@@ -144,6 +144,12 @@ _TOKEN = re.compile(r"https?://\S+|www\.\S+|[\w.+-]+@[\w-]+\.[\w.-]+|\b(?=[A-Za-
 # (In the third ProofAgent run "4-year-old", heard in the request and repeated in the answer, was taken for an echoed code,
 # and a good answer was replaced by the template.)
 _MEASURE = re.compile(r"\d+(?:-[a-z]+)+(?:-\d+)?")
+_STOCK_WORDS = re.compile(r"\b(?:in\s+stock|out\s+of\s+stock|stock|availability|available)\b", re.I)
+_NOT_STATED = re.compile(r"\b(?:neither|nor|not|no|unknown|unclear|n't|cannot|unable)\b", re.I)
+_ASKS_PRICE = re.compile(r"\b(?:prices?|priced|costs?|how\s+much)\b", re.I)
+# A sentence that says no price can be given: "I could not confirm today's prices", "no current price was found", "I couldn't find it".
+_NO_PRICE_SAID = re.compile(r"\b(?:prices?|cost)\b.*\b(?:not|no|unable|without)\b|\b(?:not|no|unable|without|n't)\b.*\b(?:prices?|cost)\b"
+                            r"|n't\s.*\b(?:prices?|cost)\b|\b(?:could\s+not|couldn't|did\s+not|didn't)\s+find\b", re.I)
 
 
 def echoed_tokens(text: str, user_text: str | None, evidence_text: str = "") -> list[str]:
@@ -304,6 +310,54 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
             issues.append(Issue(code="spoken_over_budget", severity="revise", where="spoken",
                                 message=f"The spoken sentence gives ${over[0]:.2f}, above the ${constraints.budget_max:g} budget, without saying so. "
                                         "Say that it is over the budget, or lead with a product that fits it."))
+
+    # ---- when every product of the answer is over the budget and the evidence has one that fits, that one is named too
+    # Live run, turn 10: "I can only do eight dollars, but just show me the best one anyway" about the second product on screen.
+    # The reply said, correctly, that it costs $13.46 and is over the budget, and stopped; the first product on screen cost $7.99.
+    if constraints.budget_max is not None and items and not draft.abstain:
+        def price_of(item: CatalogItem | WebItem) -> float | None:
+            prices = item_prices(item)
+            return min(prices) if prices else None
+
+        if all((p := price_of(item)) is not None and p > constraints.budget_max + 0.005 for item in items):
+            within = [c.ref for c in evidence.catalog if c not in items and not c.constraint_notes
+                      and (p := price_of(c)) is not None and p <= constraints.budget_max + 0.005]
+            if within:
+                issues.append(Issue(code="no_alternative_within_budget", severity="revise", where="recommendations",
+                                    message=f"Every product in this answer is over the ${constraints.budget_max:g} budget, and the evidence has "
+                                            f"one that fits it ({', '.join(within[:3])}). Keep what was asked about, recommend one that fits as well, "
+                                            "and name it in spoken."))
+
+    # ---- "the stock status is not stated" is not said while a source matched to the product states it
+    # Live run, turn 25. Two live results were matched to the first product on screen: a listing with a price and no word about
+    # stock, and a Walmart page with no price that said "out of stock". The reply's own text on screen named the Walmart page; its
+    # spoken sentence said "neither the listing nor my sources state whether the first one is in stock".
+    about = {item.ref for item in compared}
+    for sentence in re.split(r"(?<=[.!?;])\s+", draft.spoken):
+        if not (_STOCK_WORDS.search(sentence) and _NOT_STATED.search(sentence)):
+            continue
+        for web in evidence.web:
+            source = re.sub(r"\.(?:com|org|net|co\.uk)$", "", (web.source or "").lower())
+            if web.availability and not web.flagged and (web.ref in about or web.matched_ref in about) and source and source not in draft.spoken.lower():
+                state = str(web.availability).replace("_", " ")
+                issues.append(Issue(code="availability_overlooked", severity="revise", where="spoken",
+                                    message=f"The spoken sentence says the stock status is not stated, but {web.ref} ({web.source}) states "
+                                            f"\"{state}\" for this product. Say what that source states, and name the source."))
+                break
+        else:
+            continue
+        break
+
+    # ---- a question about a price is answered with a price, or with the statement that none was found
+    # Live run, turn 15: "can you check today's price for the Aqua Beads Mega Set?" The set had a recall notice and a listing at
+    # $18.99. The reply gave the recall, rightly did not recommend it, and said nothing about the price.
+    if user_text and _ASKS_PRICE.search(user_text) and constraints.wants_current_info and not dollars_in(draft.spoken) \
+            and not any(_NO_PRICE_SAID.search(sentence) for sentence in re.split(r"(?<=[.!?;])\s+", draft.spoken)):
+        priced = [w.ref for w in evidence.web if w.price is not None and not w.flagged][:2]
+        issues.append(Issue(code="price_asked_not_given", severity="revise", where="spoken",
+                            message="The shopper asked for a price and the spoken sentence gives none. State the price your sources give"
+                                    + (f" ({', '.join(priced)})" if priced else "") + " with its source, or say that no current price was found. "
+                                    "A product you do not recommend can still have its price stated, next to the reason."))
 
     every_text = " ".join([draft.spoken, draft.conflict_note or "", draft.follow_up_question or "", draft.abstain_reason or "",
                            *(f"{r.why} {r.caveat or ''}" for r in draft.recommendations)])

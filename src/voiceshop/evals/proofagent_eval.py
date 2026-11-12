@@ -626,11 +626,12 @@ async def run(config: RunConfig, settings: Settings | None = None, *, assistant:
     # ---- results on disk
     report.to_json(str(out / "report.json"))
     report.to_markdown(str(out / "report.md"))
+    without_machine_paths(out / "report.json", out / "report.md")       # before the evidence record is derived from the report
     import gzip
 
     with gzip.open(out / "turns.jsonl.gz", "wt", encoding="utf-8") as f:       # every turn in full, evidence included: large, so compressed
         for record in under_test.records:
-            f.write(json.dumps(record.to_dict(), ensure_ascii=False, default=str) + "\n")
+            f.write(json.dumps(without_result_text(record.to_dict()), ensure_ascii=False, default=str) + "\n")
     per_note = export_record(out, dict(profile.intake) if profile is not None else None)
     gate = release_gate(profile, report) if profile is not None else None
     card = scorecard(report, under_test.records, config=config, settings=s, gate=gate, seconds=time.time() - started,
@@ -704,6 +705,38 @@ UPLOAD_AGENT_NAME = "voice-shopping-copilot"
 
 class UploadNotPossibleError(RuntimeError):
     """The run could not be sent to the ProofAgent dashboard (no key, or the service refused or could not be reached)."""
+
+
+def without_machine_paths(*files: Path) -> None:
+    """Rewrite paths under the project folder as paths inside the repository in the harness's report files.
+
+    The harness records where its inputs came from as absolute paths (the governance profile, the context document).
+    A committed report then names the folder layout of the machine that ran it, which is nobody's business.
+    """
+    here = str(project_root())
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        if here in text:
+            path.write_text(text.replace(here + "/", "").replace(here, "."), encoding="utf-8")
+
+
+LIVE_RESULT_TEXT = ("snippet", "image")
+
+
+def without_result_text(record: dict[str, Any]) -> dict[str, Any]:
+    """A turn record as it is kept on disk: live search results without their page text and image links.
+
+    The record of a run is committed, and search results are another party's content. What the answer shows of a live
+    result stays (title, store, price, rating, address, time of retrieval): that is the citation. The excerpt of the
+    page and the link to its picture do not. Recorded and planted results are this project's own text and stay whole.
+    """
+    evidence = (record.get("result") or {}).get("evidence") or {}
+    for item in evidence.get("web") or []:
+        if isinstance(item, dict) and item.get("provider") not in ("fixture", "fault-injection"):
+            for key in LIVE_RESULT_TEXT:
+                if item.get(key):
+                    item[key] = None
+    return record
 
 
 def upload_payload(label: str, out_dir: Path | None = None) -> dict[str, Any]:

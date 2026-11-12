@@ -1,0 +1,11 @@
+{
+  "label": "run4",
+  "uploaded_at": "2026-11-11T23:39:24",
+  "to": "https://app.proofagent.ai",
+  "run_id": "09a58c80-e1d8-4a27-ab05-950667826f79",
+  "gate_status": "pass",
+  "grade_label": "silver",
+  "final_score": 9.4,
+  "dashboard_url": "https://app.proofagent.ai/runs/09a58c80-e1d8-4a27-ab05-950667826f79",
+  "failed_rules": []
+}

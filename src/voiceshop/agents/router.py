@@ -86,6 +86,16 @@ _SHOPPING_WORDS = re.compile(
     r"|compare|comparison|difference|recommend(?:ed)?|pieces?|ages?|sizes?|materials?|brands?|budget)\b", re.I)
 
 
+def named_on_screen(text: str, shown: list[dict[str, Any]] | None) -> list[int]:
+    """Positions of the products on screen that a text names by a word the other products on screen do not share."""
+    if not shown:
+        return []
+    names = [_name_words(str(entry.get("name") or entry.get("title") or "")) for entry in shown]
+    shared = set.intersection(*names) if len(names) > 1 else set()
+    said = {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", text.lower())}
+    return [i for i, words in enumerate(names, 1) if {w for w in words - shared if len(w) > 3} & said]
+
+
 def product_question(text: str, shown: list[dict[str, Any]] | None) -> tuple[str, list[int]]:
     """The sentences of a message that ask about a product on screen, and the positions of the products they name.
 
@@ -145,6 +155,7 @@ _ADVICE = re.compile(
     r"|develop(?:ment|mental|mentally)|swallow\w*|poison\w*|chok\w+"
     r"|legal\w*|laws?|lawyers?|attorneys?|sue[sd]?|suing|lawsuits?|liab\w+|courts?|contracts?|regulations?"
     r"|financ\w+|invest\w*|loans?|credit|debts?|tax(?:es)?|insur\w+|mortgages?|stocks|shares|retirement|savings)\b", re.I)
+_PRICE_WORDS = re.compile(r"\$\s?\d|\b\d+(?:\.\d+)?\s*(?:dollars?|bucks?)\b|\b(?:dollars?|bucks?)\b", re.I)
 _COUNTS = {"both": 2, "two": 2, "three": 3}
 _ALL_SHOWN = re.compile(
     r"\b(both)(?!\s+(?:of\s+)?(?:my|our|his|her|their|your)\b)"                               # "both", not "both my kids"
@@ -176,6 +187,12 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
         c.budget_min = None
     if c.age_years is not None and not 0 <= c.age_years <= 120:
         c.age_years = None
+    # A price is a limit, never a property of the product: a mis-heard "no wait, under twelve dollars" came back as avoid=["no weight under $12"].
+    c.avoid = [a for a in c.avoid if not _PRICE_WORDS.search(a)]
+    c.must_have = [m for m in c.must_have if not _PRICE_WORDS.search(m)]
+    limits = rules.upper_limits(text)
+    if len(limits) > 1 and c.budget_max is not None and c.budget_max != limits[-1] and c.budget_max in limits[:-1]:
+        c.budget_max = limits[-1]                             # two limits in one message: the later one is the correction
     if c.age_years is None:                                   # "my son's eighteen months", "for my baby": the under-three rule is switched on by rule
         c.age_years = rules.small_child_age(text) or rules.recipient_age(f"{text} {c.recipient or ''}")
     if _WEB_ASK.search(text):                                 # "just check the web if you don't have it" is a request for a live look-up
@@ -203,6 +220,15 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
         if asked:                                             # one ordinary question about a product on screen, among things that are declined
             route.intent, route.refers_to, route.request = "follow_up", positions, asked
             route.safety = "ok" if route.safety == "refuse" else route.safety
+            route.say = [i for i in route.say if i not in ("off_topic", "greeting", "thanks")]      # type: ignore[assignment]
+    if route.intent in ("chitchat", "out_of_scope") and "no_harm" not in route.say and any(i.startswith("no_") for i in route.say):
+        # The Router restated a product question and still called the turn "not shopping": three turns in two runs, each left
+        # without an answer ("does the Farm Animals box at $31.91 have stock information"). Its restatement is believed over
+        # its label. The agents that search and write are given the restatement and nothing else of the message.
+        asked = restated(route, text)
+        if asked:
+            positions = named_on_screen(asked, shown)
+            route.intent, route.refers_to, route.request = ("follow_up" if positions else "product_search"), positions, asked
             route.say = [i for i in route.say if i not in ("off_topic", "greeting", "thanks")]      # type: ignore[assignment]
     if route.intent in ("follow_up", "compare") and not shown:
         route.intent = "product_search"                       # nothing on screen to refer to
@@ -275,6 +301,24 @@ def with_limits(asked: str, stated: Constraints) -> str:
     return f"{asked.rstrip('.?! ')}. Limits set in the same message: {', '.join(missing)}."
 
 
+def restated(route: RouteDecision, text: str) -> str:
+    """The Router's restatement of the product request, if it gave one that may be passed on; otherwise "".
+
+    It is screened like any message, kept short, and a code, link or address taken from the message is cut out of it.
+    """
+    from voiceshop.guardrails.output import echoed_tokens
+
+    asked = " ".join((route.request or "").split())
+    for token in echoed_tokens(asked, text):
+        asked = re.sub(re.escape(token), " ", asked, flags=re.I)
+    asked = " ".join(asked.split())
+    if asked and len(asked.split()) <= MAX_REQUEST_WORDS:
+        verdict = screen_input(asked)
+        if verdict.allowed and not verdict.removed:
+            return verdict.text
+    return ""
+
+
 def request_for_agents(route: RouteDecision, text: str, shown: list[dict[str, Any]] | None = None) -> str:
     """The shopper's request as the Planner, the Retriever, the Answerer and the Critic are given it.
 
@@ -288,16 +332,9 @@ def request_for_agents(route: RouteDecision, text: str, shown: list[dict[str, An
     """
     if route.intent not in SHOPPING or not route.say:        # what the input screen removed is already out of ``text``
         return text
-    from voiceshop.guardrails.output import echoed_tokens
-
-    asked = " ".join((route.request or "").split())
-    for token in echoed_tokens(asked, text):                  # a code, link or address taken from the message is not passed on either
-        asked = re.sub(re.escape(token), " ", asked, flags=re.I)
-    asked = " ".join(asked.split())
-    if asked and len(asked.split()) <= MAX_REQUEST_WORDS:
-        verdict = screen_input(asked)
-        if verdict.allowed and not verdict.removed:
-            return with_limits(verdict.text, route.constraints)
+    asked = restated(route, text)
+    if asked:
+        return with_limits(asked, route.constraints)
     if route.intent == "product_search" and route.constraints.product:
         return rules.describe_request(route.constraints)
     return product_question(text, shown)[0] or text           # a question about the list on screen: the sentences that ask it, if they can be told apart

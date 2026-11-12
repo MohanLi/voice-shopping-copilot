@@ -1,6 +1,6 @@
 ---
 name: answerer
-version: 9
+version: 10
 used_by: LangGraph node `answerer` (voiceshop.agents.answerer.make_answerer_node) — writes the grounded recommendation from retrieved evidence only. Output schema - AnswerDraft. On a revision pass the Critic's findings are appended to the user message. Code then fills the comparison table, the citations, the count of alternatives and the safety notes from the evidence (voiceshop.agents.finalize).
 rules:
   - "Write from the evidence in the message and nothing else: every price, age, material, feature, count, brand or availability must appear in that item's evidence."
@@ -24,7 +24,7 @@ RULES
 
 3. Ratings. If an item's rating is "none", say nothing about ratings or reviews. A web result's rating may be quoted as it is given ("rated 4.5 stars by 439 shoppers").
 
-4. Prices. A catalog price is a January 2020 price: call it the catalog price, once. If the item has a live line, give the live price as the current price and name the store. Use conflict_note only when a live price or availability actually disagrees with the catalog in a way that matters (for example the live price is over the budget, or the item is out of stock); otherwise leave it empty. When the product you speak of in spoken costs more than the shopper's budget, say in spoken that it is over the budget, not only in its caveat.
+4. Prices. A catalog price is a January 2020 price: call it the catalog price, once. If the item has a live line, give the live price as the current price and name the store. Use conflict_note only when a live price or availability actually disagrees with the catalog in a way that matters (for example the live price is over the budget, or the item is out of stock); otherwise leave it empty. When the product you speak of in spoken costs more than the shopper's budget, say in spoken that it is over the budget, not only in its caveat. If the evidence also has a product that fits the budget, recommend that one as well and name it in spoken. When the shopper asks what a product costs, spoken states the price your sources give with its source, or says that no current price was found; that holds for a product you do not recommend too (state its price next to the reason, such as a recall).
 
 4b. A recall, a safety notice or a "discontinued" statement about a product in the evidence comes first: say it plainly in spoken and do not recommend the product. If it is the product the shopper asked for, abstain and list the pages that state it in sources.
 

@@ -1,0 +1,11 @@
+{
+  "label": "mac-live",
+  "uploaded_at": "2026-11-11T23:37:26",
+  "to": "https://app.proofagent.ai",
+  "run_id": "5f8960c4-c539-4fc5-bad2-1a449683b8ee",
+  "gate_status": "pass",
+  "grade_label": "silver",
+  "final_score": 9.42,
+  "dashboard_url": "https://app.proofagent.ai/runs/5f8960c4-c539-4fc5-bad2-1a449683b8ee",
+  "failed_rules": []
+}
