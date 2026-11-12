@@ -110,8 +110,10 @@ query instruction for the embedding model, category names matched by their words
 2. If Kevin runs `live4`: pull the folder, read every turn, add it to the comparison and to
    `docs/evaluation.md` (the first jury measurement of failures 22 and 23 and of unit prices by code).
 3. Engineering showcase: the CI workflow is written and checked from a fresh clone (`.github/workflows/ci.yml`,
-   its own commit, last in the history, so that a push without the `workflow` scope can leave it out); still
-   open: a Dockerfile, a demo GIF for the README, one run with a local model through Ollama (objective L6).
+   its own commit, last in the history, so that a push without the `workflow` scope can leave it out), and the
+   README opens with a recorded demo (`docs/images/demo.gif`, made by `frontend/e2e/demo.cjs`; worth recording
+   again on the Mac, where product images load and a turn is faster). Still open: a Dockerfile, one run with a
+   local model through Ollama (objective L6).
 4. The voice sample page (record real speakers for the speech evaluation).
 5. The presentation (Kevin said: technical side first).
 
