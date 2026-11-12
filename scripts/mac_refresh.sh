@@ -2,7 +2,7 @@
 # Bring this machine up to date after pulling new code, and run the checks that need the
 # real models, the real index and the live search API.
 #
-#   bash scripts/mac_refresh.sh            # everything (about 15 minutes; the first index build adds ~4)
+#   bash scripts/mac_refresh.sh            # everything (about 18 minutes; the first index build adds ~4)
 #   bash scripts/mac_refresh.sh quick      # install + ingest + index + tests only
 #
 # Dependencies are installed at the exact versions recorded in uv.lock, so this machine runs
@@ -55,8 +55,9 @@ if [ "$MODE" != "quick" ]; then
   step "5/10 live web search (Serper)"
   python scripts/check_web_search.py || soft "web search check"
 
-  step "6/10 retrieval benchmark"
+  step "6/10 retrieval benchmarks (600 requests written from the listings, then 165 that share no word with the product's title)"
   voiceshop eval retrieval || soft "retrieval benchmark"
+  voiceshop eval retrieval --queries eval/datasets/retrieval_queries_paraphrase.jsonl --out eval/results/retrieval/paraphrase || soft "retrieval benchmark (paraphrases)"
 
   step "7/10 three live conversations through the agents"
   voiceshop ask "um i need a wooden puzzle for my three year old under twenty dollars" "is the second one in stock right now" || soft "ask (catalog + follow-up)"

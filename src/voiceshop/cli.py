@@ -133,9 +133,11 @@ def search(
         return
     console.print(f"filters applied: {res.applied_filters or '-'}   relaxed: {res.relaxed or '-'}   "
                   f"unmatched: {res.unmatched_filters or '-'}   strict matches: {res.strict_matches:,}   {res.timings_ms}")
-    table = Table("#", "doc_id", "price", "brand", "title", "age", "dense", "bm25", "re-rank", "notes")
+    table = Table("#", "doc_id", "price", "title", "age", "dense", "bm25", "re-rank", "notes")
+    for name in ("doc_id", "price", "dense", "bm25", "re-rank"):
+        next(c for c in table.columns if c.header == name).no_wrap = True
     for i, h in enumerate(res.results, 1):
-        table.add_row(str(i), h.doc_id, f"${h.price:.2f}", h.brand or "-", h.title[:60], h.age_label or "-",
+        table.add_row(str(i), h.doc_id, f"${h.price:.2f}", h.title[:60], h.age_label or "-",
                       str(h.dense_rank or "-"), str(h.lexical_rank or "-"), f"{h.rerank_score:.1f}" if h.rerank_score is not None else "-",
                       "; ".join(h.constraint_notes) or "-")
     console.print(table)
