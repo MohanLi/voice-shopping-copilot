@@ -223,6 +223,13 @@ TOOL_FAILED_SCREEN: dict[str, str] = {
     "rag.search": "The catalog search did not work just now. Please try again in a moment.",
 }
 NO_RATING_NOTE = "The catalog has no customer ratings, so none are shown."
+# The catalog had nothing suitable, so the live web was searched for the product (retriever.web_fallback_calls): what
+# the Answerer is told under the tool notes, and what the shopper reads above a table of web results.
+WEB_FALLBACK_WHY = {"nothing": "The catalog search found nothing suitable for this request", "failed": "The catalog search failed just now"}
+WEB_FALLBACK_FOUND = ('{why}, so the live web was searched for "{query}": {refs}. These are current listings at stores, not catalog products. '
+                      "When you recommend one, say where it is sold.")
+WEB_FALLBACK_EMPTY = '{why}, and a live web search for "{query}" returned no listing either.'
+WEB_FALLBACK_SCREEN = "Nothing suitable was found in the catalog, so these are current listings from a live web search."
 # The shopper asked for a current price or stock and no live offer was matched to what is shown.
 NO_LIVE_NOTE = "Current prices and stock could not be confirmed for these products."
 

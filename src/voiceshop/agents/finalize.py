@@ -38,6 +38,14 @@ SPOKEN_SAFETY: dict[str, str] = {
     "latex_balloons": "Balloons need adult supervision around young children.",
     "flammable": "The listing carries a flammability warning.",
 }
+# The same warnings when the product that carries one is not the one the spoken sentence is about. "It" after "My top pick is
+# the shape sorting set" meant the sorting set; the magnets were in the third product of the list (a replay of the second live run).
+SPOKEN_SAFETY_OTHER: dict[str, str] = {
+    "choking_hazard": "One of the options has small parts, so it is not for children under three.",
+    "contains_magnets": "One of the options contains magnets, so keep it away from young children.",
+    "latex_balloons": "Balloons need adult supervision around young children.",
+    "flammable": "One of the options carries a flammability warning.",
+}
 SPOKEN_CHEMICAL = "Follow the label and never mix cleaning products."
 SPOKEN_RECALL = "A source says it was recalled, so I do not recommend it."
 SPOKEN_UNDER_3 = "Please check the age label on the packaging."
@@ -132,11 +140,14 @@ def safety_notes(items: list[CatalogItem | WebItem], constraints: Constraints, r
     screen: list[str] = []
     spoken: list[str] = []
     flags = [f for item in items if isinstance(item, CatalogItem) for f in item.safety_flags]
-    for flag in dict.fromkeys(flags):
-        if flag in policy.FLAG_NOTES:
-            screen.append(policy.FLAG_NOTES[flag])
-        if flag in SPOKEN_SAFETY and not spoken:
-            spoken.append(SPOKEN_SAFETY[flag])
+    screen.extend(policy.FLAG_NOTES[flag] for flag in dict.fromkeys(flags) if flag in policy.FLAG_NOTES)
+    # One warning is said aloud: the first product's own if it has one (the spoken sentence is about that product), otherwise
+    # another product's, said as being about "one of the options".
+    first = items[0].safety_flags if items and isinstance(items[0], CatalogItem) else []
+    own = next((flag for flag in SPOKEN_SAFETY if flag in first), None)
+    other = next((flag for flag in SPOKEN_SAFETY_OTHER if flag in flags), None)
+    if own or other:
+        spoken.append(SPOKEN_SAFETY[own] if own else SPOKEN_SAFETY_OTHER[other])  # type: ignore[index]
     if constraints.age_years is not None and constraints.age_years < 3:
         screen.insert(0, policy.UNDER_3_NOTE)               # also when nothing is recommended: it is why nothing was
         if not spoken and items:
@@ -333,6 +344,8 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
     screen_notes, spoken_notes = safety_notes(items, constraints, route, evidence)
 
     notes: list[str] = list(screen_notes)
+    if evidence.web_fallback and items and all(isinstance(i, WebItem) for i in items) and "rag.search" not in evidence.failed_tools:
+        notes.append(policy.WEB_FALLBACK_SCREEN)              # a table of web results where the shopper asked the catalog: say why
     refs = {i.ref for i in items}
     # Disagreements the reconcile step measured, without the handle they are filed under ("C1 (Safari puzzle): ..." -> "Safari puzzle: ...").
     found = [re.sub(r"^[CW]\d+ \((.+?)\): ", r"\1: ", c) for c in evidence.conflicts if any(c.startswith(f"{ref} ") for ref in refs)]

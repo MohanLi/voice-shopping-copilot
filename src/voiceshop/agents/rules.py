@@ -337,12 +337,18 @@ def web_steps(constraints: Constraints, query: str) -> list[PlanStep]:
     quality ("eco-friendly", "fragrance-free") a second, ordinary web search looks for pages
     that state it. The budget goes into ``price_max`` - as query words it changes nothing.
     """
+    from voiceshop.agents.claims import asked_qualities
+
     product = constraints.product or query
-    wishes = " ".join(constraints.must_have)
-    steps = [PlanStep(tool="web.search", purpose="current listings with prices and ratings", query=f"{wishes} {product}".strip(), kind="shopping",
-                      price_max=constraints.budget_max)]
-    if constraints.must_have:
-        steps.append(PlanStep(tool="web.search", purpose=f"pages that state whether a product is {wishes}", query=f"{wishes} {product} ingredients".strip(),
+    # A quality goes in front as a listing title would have it ("eco-friendly stainless steel cleaner"); any other wish
+    # follows the product ("garden hose for a small yard"). Only a quality is something a page can state, so only a
+    # quality gets the second search: "garden hose for a small yard ingredients" finds nothing worth reading.
+    qualities = " ".join(w for w in constraints.must_have if asked_qualities([w]))
+    others = " ".join(w for w in constraints.must_have if not asked_qualities([w]))
+    steps = [PlanStep(tool="web.search", purpose="current listings with prices and ratings", query=" ".join(part for part in (qualities, product, others) if part),
+                      kind="shopping", price_max=constraints.budget_max)]
+    if qualities:
+        steps.append(PlanStep(tool="web.search", purpose=f"pages that state whether a product is {qualities}", query=f"{qualities} {product} ingredients".strip(),
                               kind="web"))
     return steps
 

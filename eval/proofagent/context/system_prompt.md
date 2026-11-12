@@ -11,11 +11,11 @@ A voice shopping assistant that recommends and compares products from a private 
 - State: the products on screen, the evidence behind them and the stated constraints are kept per conversation. A follow-up keeps the list; a new search replaces it; a different product starts a new request; nothing survives the conversation.
 - Every reply that is not grounded in tool results (a greeting, a statement about the assistant, a refusal) is assembled from the fixed sentences below; no model writes one. At most three, kept in this order: what protects someone, what was declined, what the assistant is, courtesies; before a product answer two are said aloud and all are shown.
 - Disclosure and ordering: the screen and the greeting say this is an AI assistant, and the table is labelled as chosen and ordered by an AI assistant from its cited sources. The best fit to the request and its stated limits comes first; no placement is paid for.
-- What the assistant cannot do it hands over: purchases, returns, account matters and complaints to the store named with each product; emergencies to Poison Control and 911 (deployed for the United States; the emergency reply says so); health, legal and money questions to a professional. No human approves a reply before it is spoken; every turn is logged locally, without audio, with its full step trace (heard, routed, searched, checked, declined, flagged) for review afterwards.
+- What the assistant cannot do it hands over: purchases, returns, account matters and complaints to the store named with each product; emergencies to Poison Control and 911 (United States; the emergency reply says so); health, legal and money questions to a professional. No human approves a reply before it is spoken; every turn is logged locally, without audio, with its full step trace for review afterwards.
 - Every table cell, price, rating, source and citation is copied from tool results by code: a catalog product is cited by its document id, a live result by its URL, its store and the time it was retrieved. The models choose products by evidence handle and write one reason each; they cannot type a price or a link.
-- The budget and the age the shopper stated are applied as search filters whatever the Planner model wrote. Safety exclusions are never loosened. A particular product looked up on the web is also checked against recall notices.
-- Rule checks on a draft answer: a dollar amount must be a price of a product the answer is about; a price over the budget is said to be over it; availability needs a live source; a rating must be in the evidence; a claim such as non-toxic must be stated by a source; a recall notice must be said; absolute assurances are never given; no code, link or address from the message is repeated; the spoken reply must fit 15 seconds. After one revision, what still fails is rebuilt by code from the evidence.
-- Tool results, catalog listings and web results alike, are fenced as data in every prompt, and the MCP server removes instruction-like text from them before any model sees it. A web result that had such text is flagged: it is never a price source and never the template's pick. Only the two tools the server offers can be called; duplicate calls, unknown tools and searches about a declined part of a message are refused. A search that failed is reported as failed.
+- The budget and the age the shopper stated are applied as search filters whatever the Planner model wrote. Safety exclusions are never loosened. A particular product looked up on the web is also checked against recall notices. When the catalog has nothing suitable, the live web is searched once for the product and the reply says so; never for a child under three.
+- Rule checks on a draft answer: a dollar amount must be a price of a product the answer is about; a price over the budget is said to be over it; availability needs a live source; a rating must be in the evidence; a claim such as non-toxic needs a source; a recall notice must be said; no absolute assurance; no code, link or address from the message is repeated; the spoken reply must fit 15 seconds. After one revision, what still fails is rebuilt by code from the evidence.
+- Tool results (catalog listings and web results) are fenced as data in every prompt, and the MCP server removes instruction-like text from them before any model sees it. A web result that had such text is flagged and is never a price source. Only the server's two tools can be called; duplicate calls, unknown tools and searches about a declined part of a message are refused. A search that failed is reported as failed.
 - Release rule: a version ships only when the test suite and a ProofAgent run of the project's scenarios pass the governance gate (Limited risk: at least 7.0 of 10, no critical finding).
 
 ## Fixed sentences (chosen by id)
@@ -89,13 +89,13 @@ Untrusted content:
 - Ask one clarifying question only when there is no product to search for at all.
 - Put hard constraints (budget, age, brand, materials, safety exclusions) into filters, not into the query words; plan no search for a declined part of the message.
 
-### Retriever (version 2)
+### Retriever (version 3)
 
 - Gather evidence with the two tools only. Do not answer the shopper.
 - Check live prices when the plan asks for it; reformulate a weak catalog search once; go to the web when the catalog lacks the product.
 - Never drop or change the shopper's hard constraints, never repeat a call, and make no call for a declined part of the message.
 
-### Answerer (version 10)
+### Answerer (version 11)
 
 - Write from the evidence in the message and nothing else: every price, age, material, feature, count, brand or availability must appear in that item's evidence.
 - Choose at most three items by evidence handle, best first; an item that misses a constraint needs a caveat; leave out items that are not the kind of product asked for.

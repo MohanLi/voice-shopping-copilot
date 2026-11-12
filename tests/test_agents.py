@@ -22,6 +22,7 @@ from langchain_core.messages import AIMessage
 from voiceshop.agents import rules
 from voiceshop.agents.answerer import CriticReport, Finding, real_findings
 from voiceshop.agents.finalize import build_answer, spoken_tail
+from voiceshop.agents.graph import NODE_TITLES
 from voiceshop.agents.reconcile import MATCH_THRESHOLD, match_score, model_numbers, reconcile
 from voiceshop.agents.state import (
     AnswerDraft,
@@ -1546,3 +1547,429 @@ def test_a_repair_by_code_keeps_the_models_sentence_where_it_can() -> None:
     # Any other finding, an abstention, or a finding outside the spoken sentence: nothing gentle to try.
     assert kept_by_code(others, [Issue(code="ungrounded_price", severity="revise", where="spoken", message="x")], found, ten, ["C3"]) == []
     assert kept_by_code(others, [*blocking, Issue(code="unknown_ref", severity="block", where="C9", message="x")], found, ten, ["C3"]) == []
+
+
+# ================================================== the two runs against live web search: the web fallback
+BRUSH = Constraints(product="scrub brush")
+PAINT_BRUSHES = ("I could not find a good scrub brush in my sources; the catalog has no real scrub brushes, only paint and craft brushes.")
+
+
+def record(tool: str, query: str, *, kind: str | None = None, ok: bool = True, n: int = 5, origin: str = "plan") -> Any:
+    from voiceshop.agents.state import ToolRecord
+
+    return ToolRecord(tool=tool, arguments={"query": query, **({"kind": kind} if kind else {})}, ok=ok, n_results=n if ok else 0, origin=origin)  # type: ignore[arg-type]
+
+
+def test_the_web_fallback_is_the_search_a_web_only_plan_makes_and_only_where_it_may_be_made() -> None:
+    """ "What's a good scrub brush?" went to the catalog in both runs against live search, came back with duvet covers and paint brushes in
+    one and a toy "Scrub Tub" in the other, and was answered "I could not find a scrub brush" with the live web never asked."""
+    from voiceshop.agents.retriever import already_searched, web_fallback_calls
+
+    ten = BRUSH.model_copy(update={"budget_max": 10.0})
+    assert web_fallback_calls(deps_stub(), BRUSH, []) == [("web.search", {"query": "scrub brush", "max_results": 5, "kind": "shopping"})]
+    assert web_fallback_calls(deps_stub(), ten, [record("rag.search", "scrub brush")]) == [
+        ("web.search", {"query": "scrub brush", "max_results": 5, "kind": "shopping", "price_max": 10.0})]          # the budget is enforced by the tool
+    green = web_fallback_calls(deps_stub(), Constraints(product="scrub brush", brand="TidyGrip", must_have=["eco-friendly"]), [])
+    assert [(args["kind"], args["query"]) for _, args in green] == [("shopping", "eco-friendly TidyGrip scrub brush"),
+                                                                    ("web", "eco-friendly TidyGrip scrub brush ingredients")]
+
+    # ---- where it is not made
+    assert web_fallback_calls(deps_stub(web=False), BRUSH, []) == []                                 # live search is switched off
+    assert web_fallback_calls(deps_stub(), Constraints(budget_max=10), []) == []                     # no product to search for
+    assert web_fallback_calls(deps_stub(), Constraints(product="marble run", age_years=1.5), []) == []      # a web result is never recommended under three
+    assert web_fallback_calls(deps_stub(), Constraints(product="cleaners to mix for a stronger bathroom cleaner"), []) == []     # not allowed by the safety policy
+    assert web_fallback_calls(deps_stub(), BRUSH, [record("web.search", "Storm Glider kite", kind="shopping", ok=False)]) == []  # a failing service is not called again
+
+    # ---- "already asked" is about listings of this product: one query's words within the other's
+    assert web_fallback_calls(deps_stub(), BRUSH, [record("web.search", "household scrub brush stiff bristle cleaning", kind="shopping", origin="agent")]) == []
+    assert web_fallback_calls(deps_stub(), Constraints(product="Zentrix Hoverboard Pro Nine Thousand"), [record("web.search", "Zentrix Hoverboard Pro", n=0)]) == []
+    price_check = record("web.search", "Crayola Scribble Scrubbie Pets Scrub Tub", kind="shopping", origin="agent")   # a look-up of something else
+    notices = record("web.search", "scrub brush recall safety notice", kind="web")                                  # pages, not listings
+    assert len(web_fallback_calls(deps_stub(), BRUSH, [price_check, notices])) == 1
+    assert already_searched("scrub brushes", [record("web.search", "Scrub Brush", kind="shopping")]) and not already_searched("scrub brush", [])
+    assert already_searched("toy set", [record("web.search", "toy set", kind="shopping")])              # filler words only: compared as written
+    # ---- once a turn: after the fallback has run, with or without results, it is not due again
+    for made in (record("web.search", "something else entirely", kind="shopping", origin="fallback", n=0),
+                 record("web.search", "eco-friendly scrub brush ingredients", kind="web", origin="fallback")):
+        assert web_fallback_calls(deps_stub(), BRUSH, [record("rag.search", "scrub brush"), made]) == []
+
+
+def test_the_catalog_has_nothing_close_when_its_searches_return_nothing_or_only_weak_matches() -> None:
+    from voiceshop.agents.retriever import nothing_close
+
+    searched = [record("rag.search", "scrub brush")]
+    assert nothing_close(searched, -9.74, -4.0) == "the best catalog match is weak (score -9.7)"         # first live run: bed sets and a chest of drawers
+    assert nothing_close([record("rag.search", "scrub brush", n=0)], None, -4.0) == "the catalog search returned nothing"
+    assert nothing_close(searched, 2.56, -4.0) is None        # second live run: a toy "Scrub Tub" scores as a match; only a reader can tell
+    assert nothing_close(searched, None, -4.0) is None        # no re-ranker, no score: nothing is concluded from numbers that are not there
+    assert nothing_close([], None, -4.0) is None and nothing_close([record("rag.search", "scrub brush", ok=False)], None, -4.0) is None
+    assert nothing_close([record("web.search", "scrub brush", kind="shopping", n=0)], None, -4.0) is None    # the catalog was not asked
+
+
+def state_after_first_draft(draft: AnswerDraft, *, intent: str = "product_search", refers_to: list[int] | None = None, constraints: Constraints = BRUSH,
+                            log: list[Any] | None = None, **more: Any) -> dict[str, Any]:
+    return {"draft": draft, "route": RouteDecision(intent=intent, constraints=constraints, refers_to=refers_to or []),  # type: ignore[arg-type]
+            "session_constraints": constraints, "tool_log": [record("rag.search", "scrub brush")] if log is None else log, **more}
+
+
+def test_only_a_first_draft_that_found_nothing_suitable_sends_a_new_request_back_to_the_live_web() -> None:
+    from voiceshop.agents.retriever import fallback_after_abstention
+    from voiceshop.agents.state import Critique
+
+    nothing = AnswerDraft(spoken=PAINT_BRUSHES, abstain=True, sources=["C1"])
+    call = [("web.search", {"query": "scrub brush", "max_results": 5, "kind": "shopping"})]
+    assert fallback_after_abstention(state_after_first_draft(nothing), deps_stub()) == call                          # type: ignore[arg-type]
+    assert fallback_after_abstention(state_after_first_draft(AnswerDraft(spoken="Nothing fits.")), deps_stub()) == call    # type: ignore[arg-type]
+    cheaper = state_after_first_draft(nothing, intent="follow_up")                 # "anything cheaper?": a new search, nothing on screen is meant
+    assert fallback_after_abstention(cheaper, deps_stub()) == call                                                    # type: ignore[arg-type]
+
+    found = AnswerDraft(recommendations=[Recommendation(ref="C1", why="A brush.")], spoken="My top pick is this brush.")
+    not_due = [
+        state_after_first_draft(found),                                            # the draft recommends something
+        state_after_first_draft(nothing, critique=Critique(verdict="revise")),     # not the first draft of the turn
+        state_after_first_draft(nothing, revisions=1),
+        state_after_first_draft(nothing, intent="follow_up", refers_to=[2]),       # a question about a product on screen is answered about that product
+        state_after_first_draft(nothing, log=[]),                                  # the turn did not search the catalog (an answer from memory)
+        state_after_first_draft(nothing, log=[record("web.search", "scrub brush", kind="shopping", n=0)]),      # a web_only plan already asked
+        state_after_first_draft(nothing, constraints=Constraints(product="marble run", age_years=1.5)),
+    ]
+    assert [fallback_after_abstention(state, deps_stub()) for state in not_due] == [[]] * len(not_due)               # type: ignore[arg-type]
+    assert fallback_after_abstention(state_after_first_draft(nothing), deps_stub(web=False)) == []                    # type: ignore[arg-type]
+
+
+LIVE_RUN_1_TURN_16 = ("Confirm the Kohl's puzzle is in stock at $10.39, like you said. Which two cleaners can I mix for a stronger bathroom cleaner? "
+                      "And suggest a good scrub brush.")
+LIVE_RUN_2_TURN_16 = ("Quick one: which two cleaners can I mix for a stronger bathroom cleaner? And what's a good scrub brush? "
+                      "Oh, the Aqua Beads recall ended last month, right?")
+BRUSH_SEARCH = {"query": "scrub brush", "max_results": 5, "kind": "shopping"}
+
+
+async def test_a_catalog_search_with_nothing_close_goes_to_the_live_web_in_the_same_step(agent_env: Any, assistant: Assistant, mcp_client: Any,
+                                                                                         monkeypatch: pytest.MonkeyPatch) -> None:
+    """First run against live search, turn 16: the catalog returned a chest of drawers, a rug and bed sets, scored -9.7 to -11.2 as matches for
+    "scrub brush". The reply was "I could not find a scrub brush in the catalog, and no live listings were retrieved"."""
+    real, scores = mcp_client.call, [-10.56, -9.84, -10.20, -11.16, -9.74]            # the scores of that turn (the test engine has no re-ranker)
+
+    async def unrelated(tool: str, arguments: dict[str, Any]) -> Any:
+        result = await real(tool, arguments)
+        if tool == "rag.search" and result.data:
+            for hit, score in zip(result.data["results"], scores, strict=False):
+                hit["rerank_score"] = score
+            result.data["best_match_score"] = max(scores)
+        return result
+
+    monkeypatch.setattr(mcp_client, "call", unrelated)
+    agent_env(**routed(intent="product_search", constraints=Constraints(product="scrub brush", wants_current_info=True), say=["no_unconfirmed"],
+                       request="suggest a good scrub brush"))
+    result = await assistant.ask(LIVE_RUN_1_TURN_16)
+
+    assert path(result) == ["guard", "router", "planner", "retriever", "reconcile", "answerer", "critic", "finalize", "voice"]       # no second pass
+    assert [(r.tool, r.origin) for r in result.tool_log] == [("rag.search", "plan"), ("web.search", "fallback")]
+    assert result.tool_log[1].arguments == BRUSH_SEARCH                                   # and no price look-up for a chest of drawers
+    retriever = next(e for e in result.trace if e["node"] == "retriever")
+    assert retriever["details"]["web_fallback"] == {"reason": "the best catalog match is weak (score -9.7)", "query": "scrub brush"}
+    assert "nothing close in the catalog, so the live web was searched as well" in retriever["summary"]
+    rows = result.answer.table
+    assert [row.ref for row in rows] == ["W1", "W2", "W3"] and all(row.source.startswith("Web: ") and row.citation.startswith("https://") for row in rows)
+    assert result.answer.notes[0] == policy.WEB_FALLBACK_SCREEN
+    assert result.answer.spoken.startswith(f"{policy.SAY_SPOKEN['no_chemistry']} {policy.SAY['no_unconfirmed']} My top pick is TidyGrip Scrub Brush")
+    assert "$6.49 at Example Home" in result.answer.spoken and result.evidence.web_fallback == "scrub brush"
+
+
+async def test_a_first_draft_that_finds_nothing_suitable_is_followed_by_one_live_search_and_a_second_draft(agent_env: Any, assistant: Assistant) -> None:
+    """Second run against live search, turn 16: a toy "Scrub Tub" scored 2.6 as a match, so nothing looked wrong to the Retriever. The Answerer
+    saw that the catalog had "no real scrub brushes, only paint and craft brushes", and that was the reply."""
+    prompts: list[str] = []
+    drafts = [AnswerDraft(spoken=PAINT_BRUSHES, abstain=True),
+              AnswerDraft(recommendations=[Recommendation(ref="W1", why="A scrub brush rated 4.6 stars by 1,840 shoppers."),
+                                           Recommendation(ref="W3", why="A two pack for grout and corners, the cheapest listed.")],
+                          spoken="On the web, the TidyGrip scrub brush is $6.49 at Example Home.")]
+
+    def answerer(messages: list[Any], tools: list[Any], schema: type | None) -> Any:
+        prompts.append(str(messages[-1].content))
+        return drafts[min(len(prompts), len(drafts)) - 1]
+
+    register_fake("brush-answerer", answerer)
+    script("critic-of-brushes", {CriticReport: [CriticReport()]})
+    agent_env(LLM_MODEL_ANSWERER="fake:brush-answerer", LLM_MODEL_CRITIC="fake:critic-of-brushes",
+              **routed(intent="product_search", constraints=BRUSH, say=["no_unconfirmed"], request="what's a good scrub brush"))
+    result = await assistant.ask(LIVE_RUN_2_TURN_16)
+
+    assert path(result) == ["guard", "router", "planner", "retriever", "reconcile", "answerer", "widen", "reconcile", "answerer", "critic", "finalize", "voice"]
+    assert result.plan.strategy == "catalog_only"                                         # the Planner sent it to the catalog, as in the run
+    assert [(r.tool, r.origin, r.arguments) for r in result.tool_log][1:] == [("web.search", "fallback", BRUSH_SEARCH)]
+    widen = next(e for e in result.trace if e["node"] == "widen")
+    assert widen["summary"] == 'The first draft found nothing suitable in the catalog results, so the live web was searched for "scrub brush": 3 result(s)'
+    assert widen["details"]["results"] == ["W1", "W2", "W3"] and NODE_TITLES["widen"] == "Web fallback (MCP tools)"
+
+    assert len(prompts) == 2 and "REJECTED" not in prompts[1]                             # a second first draft, not a revision
+    assert "LIVE WEB RESULTS: none retrieved" in prompts[0] and "live web was searched" not in prompts[0]
+    assert ('The catalog search found nothing suitable for this request, so the live web was searched for "scrub brush": W1, W2, W3. '
+            "These are current listings at stores, not catalog products.") in prompts[1]
+    assert result.answer.kind == "recommendation" and result.answer.revisions == 0 and result.answer.grounded_by == "llm+critic"
+    assert [(row.ref, row.price, row.rating, row.source) for row in result.answer.table] == [
+        ("W1", "$6.49 at Example Home", "4.6 (1,840)", "Web: Example Home"), ("W3", "$4.79 at Example Market", "4.3 (96)", "Web: Example Market")]
+    assert result.answer.notes == [policy.WEB_FALLBACK_SCREEN]
+    assert result.answer.spoken == (f"{policy.SAY_SPOKEN['no_chemistry']} {policy.SAY['no_unconfirmed']} "
+                                    "On the web, the TidyGrip scrub brush is $6.49 at Example Home. One more option and the sources are on screen.")
+
+
+def web_stub(results: list[dict[str, Any]] | None = None, error: str | None = None) -> Any:
+    """What the widen step needs from the outside: whether live search is on, and a web.search that returns these results or fails."""
+    from voiceshop.mcp_client import ToolCallResult
+
+    class Client:
+        async def call(self, tool: str, arguments: dict[str, Any]) -> ToolCallResult:
+            if error:
+                return ToolCallResult(tool=tool, arguments=arguments, ok=False, error=error)
+            return ToolCallResult(tool=tool, arguments=arguments, ok=True, data={"results": results or [], "provider": "fixture", "kind": arguments.get("kind")})
+
+    class Stub:
+        web_available = True
+        mcp = Client()
+    return Stub()
+
+
+async def test_fallback_results_join_the_evidence_of_the_turn_under_handles_of_their_own() -> None:
+    from voiceshop.agents.context import render_evidence
+    from voiceshop.agents.retriever import make_widen_node
+
+    tub = catalog_item("C1", "Crayola Scribble Scrubbie Pets Scrub Tub Animal Toy Set", 19.97)
+    notice = WebItem(ref="W1", url="https://safety.example.org/brushes", title="Recall notices: scrub brushes", source="safety.example.org", kind="web",
+                     snippet="No scrub brush is under recall.", from_query="scrub brush recall safety notice")
+    before = Evidence(catalog=[tub], web=[notice], notes=["This catalog has no customer ratings."])
+    log = [record("rag.search", "scrub brush"), record("web.search", "scrub brush recall safety notice", kind="web", n=1)]
+    state = state_after_first_draft(AnswerDraft(spoken=PAINT_BRUSHES, abstain=True), log=log, evidence=before)
+    listings = [{"title": "TidyGrip Scrub Brush", "url": "https://shop.example.com/tidygrip", "price": 6.49, "source": "Example Home"},
+                {"title": "CleanNook Grout Brush", "url": "https://market.example.com/cleannook", "price": 4.79, "source": "Example Market"}]
+
+    update = await make_widen_node(web_stub(listings))(state)                              # type: ignore[arg-type]
+    evidence = update["evidence"]
+    assert [(w.ref, w.source) for w in evidence.web] == [("W1", "safety.example.org"), ("W2", "Example Home"), ("W3", "Example Market")]
+    assert evidence.catalog == [tub] and evidence.web_fallback == "scrub brush" and evidence.failed_tools == []
+    assert [(r.tool, r.origin) for r in update["tool_log"]] == [("rag.search", "plan"), ("web.search", "plan"), ("web.search", "fallback")]
+    assert 'so the live web was searched for "scrub brush": W2, W3.' in render_evidence(evidence)          # the notice was there before; it is not one of them
+    assert update["trace"][0]["node"] == "widen" and update["trace"][0]["status"] == "ok"
+
+    # ---- the live search finds nothing either: the Answerer is told that it was made
+    empty = await make_widen_node(web_stub([]))(state)                                     # type: ignore[arg-type]
+    assert [w.ref for w in empty["evidence"].web] == ["W1"] and empty["trace"][0]["status"] == "warn"
+    assert ('The catalog search found nothing suitable for this request, and a live web search for "scrub brush" returned no listing either.'
+            in render_evidence(empty["evidence"]))
+
+    # ---- the live search fails: reported as failed, although an earlier web search of the turn worked
+    broken = await make_widen_node(web_stub(error="HTTP 503 from the search API"))(state)  # type: ignore[arg-type]
+    failed = broken["evidence"]
+    assert failed.failed_tools == ["web.search"] and policy.TOOL_FAILED_NOTE["web.search"] in failed.notes
+    assert "returned no listing" not in render_evidence(failed) and "the search failed" in broken["trace"][0]["summary"]
+    answer = build_answer(AnswerDraft(spoken=PAINT_BRUSHES, abstain=True), failed, BRUSH, None, max_words=40, grounded_by="llm+critic", revisions=0)
+    assert policy.TOOL_FAILED_SCREEN["web.search"] in answer.notes and policy.WEB_FALLBACK_SCREEN not in answer.notes
+
+    # ---- a follow-up: a handle that is on screen is never given to a fallback result
+    on_screen = Evidence(web=[WebItem(ref=f"W{n}", url=f"https://shop.example.com/{n}", title=f"Puzzle {n}", price=9.99) for n in (1, 2, 3, 4)])
+    cheaper = state_after_first_draft(AnswerDraft(spoken="Nothing cheaper.", abstain=True), intent="follow_up", evidence=Evidence(catalog=[tub]), last_evidence=on_screen)
+    later = await make_widen_node(web_stub(listings))(cheaper)                             # type: ignore[arg-type]
+    assert [w.ref for w in later["evidence"].web] == ["W5", "W6"]
+
+
+def test_a_table_of_fallback_results_says_why_it_is_not_from_the_catalog() -> None:
+    brush = WebItem(ref="W1", url="https://shop.example.com/tidygrip", title="TidyGrip Scrub Brush", price=6.49, source="Example Home", rating=4.6,
+                    rating_count=1840, from_query="scrub brush")
+    tub = catalog_item("C1", "Crayola Scribble Scrubbie Pets Scrub Tub Animal Toy Set", 19.97)
+    evidence = Evidence(catalog=[tub], web=[brush], web_fallback="scrub brush")
+    from_web = AnswerDraft(recommendations=[Recommendation(ref="W1", why="Rated 4.6 stars.")], spoken="On the web, the TidyGrip scrub brush is $6.49 at Example Home.")
+    mixed = from_web.model_copy(update={"recommendations": [*from_web.recommendations, Recommendation(ref="C1", why="A toy tub with a brush.")]})
+
+    def notes(draft: AnswerDraft, found: Evidence) -> list[str]:
+        return build_answer(draft, found, BRUSH, None, max_words=40, grounded_by="llm+critic", revisions=0).notes
+
+    assert notes(from_web, evidence)[0] == policy.WEB_FALLBACK_SCREEN
+    assert policy.WEB_FALLBACK_SCREEN not in notes(mixed, evidence)                        # the Source column tells the rows apart
+    assert policy.WEB_FALLBACK_SCREEN not in notes(from_web, evidence.model_copy(update={"web_fallback": None}))      # a web_only plan: the shopper was not sent to the catalog
+    catalog_down = evidence.model_copy(update={"failed_tools": ["rag.search"]})
+    assert policy.WEB_FALLBACK_SCREEN not in notes(from_web, catalog_down) and policy.TOOL_FAILED_SCREEN["rag.search"] in notes(from_web, catalog_down)
+    from voiceshop.agents.context import render_evidence
+
+    assert 'The catalog search failed just now, so the live web was searched for "scrub brush": W1.' in render_evidence(catalog_down)
+
+
+def test_a_wrong_superlative_costs_one_reason_not_the_answer() -> None:
+    """ "Lowest-priced scrub brush found", at $6.49, one row above a scrub brush at $4.79. If the revision keeps it, that one reason is written
+    by code from the product's evidence; the other reasons and the spoken sentence stay the model's."""
+    from voiceshop.agents.answerer import kept_by_code
+    from voiceshop.guardrails.output import check_draft
+
+    def brush(ref: str, title: str, price: float, rating: float, count: int, store: str) -> WebItem:
+        return WebItem(ref=ref, url=f"https://shop.example.com/{ref}", title=title, price=price, rating=rating, rating_count=count, source=store)
+
+    found = Evidence(web=[brush("W1", "TidyGrip Scrub Brush with Comfort Handle", 6.49, 4.6, 1840, "Example Home"),
+                          brush("W3", "CleanNook Grout and Corner Scrub Brush, 2 pack", 4.79, 4.3, 96, "Example Market")])
+    draft = AnswerDraft(recommendations=[Recommendation(ref="W1", why="Lowest-priced scrub brush found, listed at $6.49 by Example Home."),
+                                         Recommendation(ref="W3", why="A two pack for grout and corners, listed at $4.79 by Example Market.")],
+                        spoken="On the web, the TidyGrip scrub brush is $6.49 at Example Home.")
+    blocking = [i for i in check_draft(draft, found, BRUSH, max_words=40) if i.severity in ("block", "revise")]
+    assert [i.code for i in blocking] == ["superlative_not_true"]
+    [(how, fixed)] = kept_by_code(draft, blocking, found, BRUSH)
+    assert how == "reason_rebuilt" and fixed.spoken == draft.spoken and fixed.recommendations[1] == draft.recommendations[1]
+    assert fixed.recommendations[0].why == "$6.49 at Example Home; rated 4.6 stars by 1,840 shoppers."
+    assert [i for i in check_draft(fixed, found, BRUSH, max_words=40) if i.severity in ("block", "revise")] == []
+
+
+MARBLES = "No marble run is in my catalog results for eighteen months, so my closest pick is the Manhattan Toy activity center, at a catalog price of $49.89."
+
+
+def test_a_draft_that_abstains_and_lists_products_keeps_its_sentence() -> None:
+    """A check with the live model: "find me a marble run" for an eighteen-month-old. The draft said there was none and named the closest
+    toddler toy, marked as an abstention with that toy among its recommendations, twice. The template replaced it: "My top pick is Manhattan
+    Toy Playful Pony Wooden Activity Center, $49.89 in the catalog", with no word about marble runs."""
+    from voiceshop.agents.answerer import kept_by_code
+    from voiceshop.agents.state import Issue
+    from voiceshop.guardrails.output import check_draft
+
+    pony, walker = catalog_item("C1", "Manhattan Toy Playful Pony Wooden Toddler Activity Center", 49.89), catalog_item("C4", "PlayGo Roll'N Chime Walk & Push Along Toy", 14.98)
+    found, toddler = Evidence(catalog=[pony, walker]), Constraints(product="marble run", age_years=1.5)
+    both = AnswerDraft(recommendations=[Recommendation(ref="C1", why="A wooden activity center with bead runs."), Recommendation(ref="C4", why="A push toy.")],
+                       spoken=MARBLES, abstain=True, abstain_reason="no marble run for this age")
+    blocking = [i for i in check_draft(both, found, toddler, max_words=45) if i.severity in ("block", "revise")]
+    assert [i.code for i in blocking] == ["abstain_with_recommendations"]
+
+    [(how, fixed)] = kept_by_code(both, blocking, found, toddler)                           # a new request: an abstention that names what comes closest
+    assert how == "abstention_kept" and fixed.abstain and fixed.recommendations == [] and fixed.sources == ["C1", "C4"] and fixed.spoken == MARBLES
+    assert [i for i in check_draft(fixed, found, toddler, max_words=45) if i.severity in ("block", "revise")] == []
+    answer = build_answer(fixed, found, toddler, RouteDecision(intent="product_search", constraints=toddler), max_words=45, grounded_by="llm+critic", revisions=1)
+    assert answer.kind == "abstain" and answer.table == [] and answer.spoken.startswith("No marble run is in my catalog results")
+    assert "**Closest for this age: Manhattan Toy Playful Pony" in answer.text and [c.ref for c in answer.citations] == ["C1", "C4"]
+
+    # ---- a question about a product on screen: the product stays, the sentence says what is not known about it
+    unstated = both.model_copy(update={"recommendations": both.recommendations[:1], "spoken": "The listing does not state where the first one is made."})
+    [(how, kept)] = kept_by_code(unstated, blocking, found, Constraints(), ["C1"])
+    assert how == "products_kept" and not kept.abstain and kept.recommendations == unstated.recommendations
+    # ---- a sentence that recommends, wrongly marked as finding nothing
+    [(how, kept)] = kept_by_code(both.model_copy(update={"spoken": "My top pick is the Manhattan Toy activity center, at a catalog price of $49.89."}), blocking, found, toddler)
+    assert how == "products_kept" and not kept.abstain
+    # ---- together with any other finding there is nothing gentle to try
+    assert kept_by_code(both, [*blocking, Issue(code="ungrounded_price", severity="revise", where="spoken", message="x")], found, toddler) == []
+
+
+async def test_an_unresolved_abstention_with_products_ends_as_the_models_abstention_not_as_the_template(agent_env: Any, assistant: Assistant) -> None:
+    both = AnswerDraft(recommendations=[Recommendation(ref="C1", why="A board game.")], abstain=True,
+                       spoken="No cooperative board game is in my catalog results, so the closest is this strategy game.")
+    script("abstains-and-lists", {AnswerDraft: [both]})
+    script("critic-of-both", {CriticReport: [CriticReport()]})
+    agent_env(LLM_MODEL_ANSWERER="fake:abstains-and-lists", LLM_MODEL_CRITIC="fake:critic-of-both", WEB_PRICE_CHECK="never")    # no live search: no web fallback
+    result = await assistant.ask(BOARD_GAME)
+
+    assert path(result) == ["guard", "router", "planner", "retriever", "reconcile", "answerer", "critic", "answerer", "critic", "finalize", "voice"]
+    critics = [e["details"] for e in result.trace if e["node"] == "critic"]
+    assert [c["verdict"] for c in critics] == ["revise", "pass"] and "Passed after a repair by code" in result.trace[-3]["summary"]
+    assert [i["code"] for i in critics[1]["issues"] if i["code"] in ("abstain_with_recommendations", "abstention_kept")] == ["abstain_with_recommendations", "abstention_kept"]
+    assert result.answer.kind == "abstain" and result.answer.grounded_by == "llm+critic" and result.answer.table == []
+    assert result.answer.spoken.startswith("No cooperative board game is in my catalog results") and [c.ref for c in result.answer.citations] == ["C1"]
+
+
+def test_an_empty_section_of_the_evidence_says_whether_its_source_was_asked() -> None:
+    """ "None retrieved" read both ways. One abstention said "no live listings were retrieved" after no live search at all; another, in a check
+    with the live model, "a live web search returned no listing either", also after none."""
+    from voiceshop.agents.context import render_evidence
+    from voiceshop.agents.retriever import EvidenceBuilder
+    from voiceshop.mcp_client import ToolCallResult
+
+    tub = catalog_item("C1", "Crayola Scribble Scrubbie Pets Scrub Tub Animal Toy Set", 19.97)
+    brush = WebItem(ref="W1", url="https://shop.example.com/tidygrip", title="TidyGrip Scrub Brush", price=6.49, source="Example Home")
+    assert "LIVE WEB RESULTS: none retrieved (no live web search was made this turn)" in render_evidence(Evidence(catalog=[tub], searched=["rag.search"]))
+    assert "LIVE WEB RESULTS: none retrieved (a live web search was made and returned nothing)" in render_evidence(Evidence(catalog=[tub], searched=["rag.search", "web.search"]))
+    assert "CATALOG PRODUCTS: none retrieved (the catalog was not searched this turn)" in render_evidence(Evidence(web=[brush], searched=["web.search"]))
+    assert "CATALOG PRODUCTS: none retrieved (the catalog was searched and returned nothing)" in render_evidence(Evidence(web=[brush], searched=["rag.search", "web.search"]))
+    # A failed search is not "nothing": the tool note says what happened. And where it is not recorded which tools ran, nothing is claimed.
+    failed = render_evidence(Evidence(catalog=[tub], searched=["rag.search"], failed_tools=["web.search"], notes=[policy.TOOL_FAILED_NOTE["web.search"]]))
+    assert "LIVE WEB RESULTS: none retrieved\n" in failed and "live web search was made" not in failed and "The live web search failed just now" in failed
+    assert "LIVE WEB RESULTS: none retrieved\n" in render_evidence(Evidence(catalog=[tub], notes=["A note."]))
+
+    builder = EvidenceBuilder()
+    builder.add(ToolCallResult(tool="rag.search", arguments={"query": "scrub brush"}, ok=True, data={"results": []}), origin="plan", round_no=0)
+    assert builder.build().searched == ["rag.search"]
+    builder.add(ToolCallResult(tool="web.search", arguments={"query": "scrub brush"}, ok=False, error="HTTP 503"), origin="fallback", round_no=0)
+    assert builder.build().searched == ["rag.search"] and builder.build().failed_tools == ["web.search"]
+
+
+def test_only_a_quality_goes_in_front_of_the_product_and_only_a_quality_is_looked_up_on_pages() -> None:
+    """A check with the live model: for "a good garden hose for a small yard" the fallback searched for "suitable for a small yard garden hose",
+    and then for "suitable for a small yard garden hose ingredients"."""
+    from voiceshop.agents.planner import normalise_plan
+
+    hose = Constraints(product="garden hose", must_have=["suitable for a small yard"])
+    assert [(s.kind, s.query) for s in rules.web_steps(hose, "garden hose")] == [("shopping", "garden hose suitable for a small yard")]
+    green = Constraints(product="garden hose", must_have=["eco-friendly", "50 feet long"], budget_max=30)
+    assert [(s.kind, s.query, s.price_max) for s in rules.web_steps(green, "garden hose")] == [
+        ("shopping", "eco-friendly garden hose 50 feet long", 30.0), ("web", "eco-friendly garden hose ingredients", None)]
+    written = Plan(strategy="web_only", reason="not in the catalog", steps=[PlanStep(tool="web.search", purpose="find", query="garden hose", kind="shopping")])
+    plan, notes = normalise_plan(written, RouteDecision(intent="product_search", constraints=hose), hose, "a garden hose for a small yard", None, deps_stub())
+    assert [s.kind for s in plan.steps] == ["shopping"] and not any("pages that state" in note for note in notes)
+
+
+def test_a_spoken_warning_is_about_the_product_that_carries_it() -> None:
+    """A replay of the second live run, turn 30: "My top pick is Melissa & Doug Shape Sequence Sorting Set, $14.94 in the catalog. It contains
+    magnets, so keep it away from young children." The sorting set has no magnets; the third product of the list did."""
+    sorter = catalog_item("C1", "Melissa & Doug Shape Sequence Sorting Set (Wooden Toy)", 14.94)
+    letters = catalog_item("C3", "Melissa & Doug 52 Wooden Alphabet Magnets in a Box", 9.09, safety_flags=["contains_magnets"])
+    beads = catalog_item("C2", "Wooden Lacing Beads in a Box", 12.99, safety_flags=["choking_hazard"])
+
+    def spoken(*refs: str) -> str:
+        draft = AnswerDraft(recommendations=[Recommendation(ref=ref, why="A wooden set.") for ref in refs], spoken="My top pick is this wooden set.")
+        return build_answer(draft, Evidence(catalog=[sorter, beads, letters]), Constraints(), None, max_words=40, grounded_by="llm+critic", revisions=0,
+                            max_seconds=30).spoken
+
+    assert "One of the options contains magnets, so keep it away from young children." in spoken("C1", "C3") and "It contains magnets" not in spoken("C1", "C3")
+    assert "It contains magnets, so keep it away from young children." in spoken("C3", "C1")            # the first product's own warning: "it" is that product
+    assert "It contains magnets" in spoken("C3", "C2") and "small parts" not in spoken("C3", "C2")      # its own warning before another product's; one is said
+    assert "One of the options has small parts" in spoken("C1", "C3", "C2")                             # of two other products' warnings, the more urgent
+    assert "magnets" not in spoken("C1") and "small parts" not in spoken("C1")
+    answer = build_answer(AnswerDraft(recommendations=[Recommendation(ref="C1", why="A wooden set."), Recommendation(ref="C3", why="Letters.")],
+                                      spoken="My top pick is this wooden set."), Evidence(catalog=[sorter, letters]), Constraints(), None, max_words=40,
+                          grounded_by="llm+critic", revisions=0)
+    assert policy.FLAG_NOTES["contains_magnets"] in answer.notes                                        # on screen the note stands as before
+
+
+async def test_when_no_sentence_can_fit_the_models_products_stay_with_the_sentence_code_wrote(agent_env: Any, assistant: Assistant) -> None:
+    """A replay of the second live run, turn 30: three declined parts and a safety sentence left no room for any sentence about a product, so the
+    rebuilt one failed the length check like the model's, and the template took over the products and reasons of an answer with nothing else wrong."""
+    rambling = ("My top pick is this board game, which the whole family can play together on rainy weekends and long holiday evenings, "
+                "and which is recommended for this age and is in the catalog.")
+    stubborn = AnswerDraft(recommendations=[Recommendation(ref="C1", why="A board game recommended for this age.")], spoken=rambling)
+    script("never-fits", {AnswerDraft: [stubborn]})
+    script("critic-of-length", {CriticReport: [CriticReport()]})
+    agent_env(LLM_MODEL_ANSWERER="fake:never-fits", LLM_MODEL_CRITIC="fake:critic-of-length", TTS_MAX_SECONDS="3", WEB_PRICE_CHECK="never")
+    result = await assistant.ask(BOARD_GAME)
+
+    critics = [e["details"] for e in result.trace if e["node"] == "critic"]
+    assert [c["verdict"] for c in critics] == ["revise", "pass"] and "spoken_rebuilt" in {i["code"] for i in critics[1]["issues"]}
+    assert result.answer.grounded_by == "llm+critic" and result.answer.table[0].why == "A board game recommended for this age."
+    assert result.answer.spoken.startswith("My top pick is ") and "rainy weekends" not in result.answer.spoken
+    assert dollars_in(result.answer.spoken) == [result.answer.table[0].price_catalog]
+
+
+async def test_the_fallback_runs_once_and_an_abstention_after_it_stands(agent_env: Any, assistant: Assistant) -> None:
+    """The live search finds nothing either (the sample web data has no garden hose): one search, a second draft that says where it looked, no loop."""
+    prompts: list[str] = []
+    nothing = AnswerDraft(spoken="I could not find a garden hose in the catalog.", abstain=True)
+    nowhere = AnswerDraft(spoken="I could not find a garden hose. Neither the catalog nor a live web search turned one up.", abstain=True)
+
+    def answerer(messages: list[Any], tools: list[Any], schema: type | None) -> Any:
+        prompts.append(str(messages[-1].content))
+        return nothing if len(prompts) == 1 else nowhere
+
+    register_fake("hose-answerer", answerer)
+    script("critic-of-hoses", {CriticReport: [CriticReport()]})
+    agent_env(LLM_MODEL_ANSWERER="fake:hose-answerer", LLM_MODEL_CRITIC="fake:critic-of-hoses",
+              **routed(intent="product_search", constraints=Constraints(product="garden hose", must_have=["suitable for a small yard"])))
+    result = await assistant.ask("what's a good garden hose for a small yard")
+
+    assert path(result) == ["guard", "router", "planner", "retriever", "reconcile", "answerer", "widen", "reconcile", "answerer", "critic", "finalize", "voice"]
+    fallbacks = [r for r in result.tool_log if r.origin == "fallback"]
+    assert [(r.arguments["query"], r.arguments["kind"], r.n_results) for r in fallbacks] == [("garden hose suitable for a small yard", "shopping", 0)]
+    assert "LIVE WEB RESULTS: none retrieved (no live web search was made this turn)" in prompts[0]
+    assert "LIVE WEB RESULTS: none retrieved (a live web search was made and returned nothing)" in prompts[1]
+    assert 'and a live web search for "garden hose suitable for a small yard" returned no listing either.' in prompts[1]
+    assert len(prompts) == 2 and result.answer.kind == "abstain" and result.answer.table == [] and policy.WEB_FALLBACK_SCREEN not in result.answer.notes
+    assert result.answer.spoken == "I could not find a garden hose. Neither the catalog nor a live web search turned one up."
+    assert next(e for e in result.trace if e["node"] == "widen")["status"] == "warn"

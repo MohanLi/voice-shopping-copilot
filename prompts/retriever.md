@@ -1,6 +1,6 @@
 ---
 name: retriever
-version: 2
+version: 3
 used_by: LangGraph node `retriever` (voiceshop.agents.retriever) — tool-call instructions for the agentic retrieval loop. The model is given the MCP tools as functions (rag_search, web_search) and decides which calls to make next.
 rules:
   - "Gather evidence with the two tools only. Do not answer the shopper."
@@ -19,8 +19,8 @@ WHEN TO CALL A TOOL
    Skip this when no web results could change the answer.
 
 2. Weak catalog results. If the catalog results do not match what the shopper asked for (wrong kind of product, or "match quality: weak"):
-   - try one reformulated rag_search with different words (a synonym, a more general product name), keeping the same filters; or
-   - if the catalog clearly does not carry this kind of product, call web_search for alternatives, with the budget in the query text.
+   - try one reformulated rag_search with different words (a synonym, a more general product name), keeping the same filters;
+   - if the catalog clearly does not carry this kind of product and the results above hold no web_search for it yet, also call web_search for the product in the same round: kind "shopping", and the budget in price_max (budget words in the query do nothing). Not for a child under three: a web result is never recommended for that age.
 
 3. Loosened constraints. If the tool reports that it loosened a constraint, do not repeat the same search. Keep the results; the Answerer will say which constraint each product misses.
 

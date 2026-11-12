@@ -11,27 +11,35 @@ three-way comparison on screen where every cell can be traced to a source.
 > **Status (12 November 2026): the system runs end to end and has been evaluated six times with ProofAgent,
 > the last two times on a laptop against live web search.**
 > Built and tested: data pipeline, hybrid retrieval, the MCP server, the agents, speech in and out, the API, the
-> web UI, and the evaluation with its scorecards and twenty failure analyses
-> ([docs/evaluation.md](docs/evaluation.md)). Not done yet: the presentation and part of the written
-> documentation. [PROGRESS.md](PROGRESS.md) is the build log; [docs/objectives.md](docs/objectives.md) lists
+> web UI, and the evaluation with its scorecards and twenty-one failure analyses
+> ([docs/evaluation.md](docs/evaluation.md)). What the last run found is fixed, including a fallback to the live
+> web when the catalog has nothing suitable; those changes are tested and have not been before a jury yet.
+> Not done yet: the presentation and part of the written documentation. [PROGRESS.md](PROGRESS.md) is the build log; [docs/objectives.md](docs/objectives.md) lists
 > every requirement of the assignment with where it is met.
 
 ## How a request is answered
 
 ```mermaid
-flowchart LR
-    V([voice]) --> L[Speech recognition<br/>faster-whisper]
-    L --> G[Input guard<br/>rules]
-    G --> R[Router<br/>intent, constraints, safety]
-    R --> P[Planner<br/>sources, first tool calls]
-    P --> T[Retriever<br/>function calling over MCP]
-    T --> C[Reconcile<br/>catalog vs live web]
-    C --> A[Answerer]
-    A <--> K[Critic<br/>rules, then a model]
-    K --> F[Final answer<br/>table, citations, notes]
-    F --> S[Text to speech<br/>Kokoro, 15 s limit]
-    S --> O([spoken reply + screen])
-    T -. tool calls .-> M[(MCP server<br/>rag.search, web.search)]
+flowchart TB
+    subgraph hear [Understand the request]
+        direction LR
+        V([voice]) --> L[Speech recognition<br/>faster-whisper] --> G[Input guard<br/>rules] --> R[Router<br/>intent, constraints, safety] --> P[Planner<br/>sources, first tool calls]
+    end
+    subgraph find [Find the evidence, write the answer, check it]
+        direction LR
+        M[(MCP server<br/>rag.search, web.search)]
+        T[Retriever<br/>function calling over MCP] --> C[Reconcile<br/>catalog vs live web] --> A[Answerer]
+        A <-- revise, once --> K[Critic<br/>rules, then a model]
+        W[Web fallback<br/>one live search] --> C
+        A -. nothing suitable in the catalog .-> W
+        M <-. tool calls .-> T
+        M <-. tool call .-> W
+    end
+    subgraph say [Show it and say it]
+        direction LR
+        F[Final answer<br/>table, citations, notes] --> S[Text to speech<br/>Kokoro, 15 s limit] --> O([spoken reply + screen])
+    end
+    hear --> find --> say
 ```
 
 | Stage | What it does | What is left to a model | What is not |
@@ -40,7 +48,7 @@ flowchart LR
 | Input guard | emergencies, intent to harm; instructions, requests for prompts or keys, questions about mixing chemicals; personal details | nothing | an emergency reply gives the Poison Control number; a declined clause is taken out and the rest of the message is still answered; personal details are replaced by placeholders |
 | Router | intent, constraints (budget, age, brand, material, wishes), safety flag, and *which* fixed sentences to say for anything that is not a product request | the choices | the wording: every refusal, greeting and statement about the assistant is fixed text; follow-ups inherit earlier constraints in code, a different product starts a new request |
 | Planner | catalog, live web, or both; writes the first tool calls | strategy and queries | the budget and the age always become filters, whatever the model wrote; a named product looked up on the web is also checked against recall notices |
-| Retriever | calls `rag.search` and `web.search` through MCP tool discovery | extra calls when a search failed or found nothing | planned calls run without a model; duplicate calls, unknown tools and searches about a declined subject are refused |
+| Retriever | calls `rag.search` and `web.search` through MCP tool discovery | extra calls when a search failed or found nothing | planned calls run without a model; duplicate calls, unknown tools and searches about a declined subject are refused; when the catalog has nothing close, the live web is searched for the product by rule |
 | Reconcile | matches live offers to catalog products; records price and stock conflicts | nothing | SKU, then model number, then brand plus every distinguishing title word |
 | Answerer and Critic | picks up to three items by handle and writes the reasons and one spoken sentence | choice and wording | **every table cell, citation, count and safety note is filled in by code from the evidence**; rule checks are binding, the model critic can send a draft back once |
 | Text to speech | Kokoro, sentence by sentence | nothing | the 15-second limit is enforced on the audio that was produced |
@@ -48,6 +56,18 @@ flowchart LR
 The catalog never contained ratings, brands or ingredient lists as usable fields, and nothing was made up to fill
 them: brand and material are extracted from each listing's own text with their provenance recorded, and the rating
 column says "not available" for catalog products. See [docs/decisions.md](docs/decisions.md).
+
+**When the catalog has nothing suitable**, the answer is not "I could not find it". Two thirds of the catalog are
+toys, and the Planner cannot know before it searches that a request for a scrub brush will come back with duvet
+covers. If the best catalog result scores as unrelated, the Retriever searches the live web in the same step. If
+the results only look related (a toy called "Scrub Tub"), the Answerer's first draft says that nothing fits, and
+the graph goes back for one live search and a second draft. The reply says that its listings come from the web.
+Both live evaluation runs had ended that request with a true and useless "I could not find a scrub brush"
+([failure 21](docs/evaluation.md), [how it works](docs/architecture.md)).
+
+![The step log for "What's a good scrub brush?": a catalog search, a first draft that abstains, the web fallback with its one call, and a second draft from the web results](docs/images/ui-web-fallback.png)
+
+*Shown with the offline sample web data, so the stores and prices in this picture are synthetic.*
 
 ## Try it
 
@@ -70,7 +90,7 @@ voiceshop voice question.m4a         # voice in, voice out; the reply is kept in
 voiceshop mcp tools                  # what the agents discover on the MCP server
 voiceshop eval retrieval             # the retrieval benchmark below
 voiceshop eval proofagent --label my-run --fallback-llm anthropic/claude-sonnet-5-5   # the ProofAgent evaluation below (15 min, $0.50 to $0.90)
-python -m pytest tests -q            # 598 tests, about 20 s, no key or network needed
+python -m pytest tests -q            # 615 tests, about 20 s, no key or network needed
 ```
 
 `LLM_MODEL=fake:rules` runs every agent on rules only (no key, no cost); `LLM_MODEL=ollama:<model>` or any other
@@ -85,7 +105,7 @@ unsupported claims, a child under three, a recalled product, an instruction plan
 request), then fourteen attacks the harness chooses itself. Six runs, each followed by fixes for what it found:
 four in the build workspace against recorded search results, so that they can be compared, and two on the laptop
 against live web search with the real speech models
-([scorecards, stage-by-stage attribution and twenty failure analyses](docs/evaluation.md)):
+([scorecards, stage-by-stage attribution and twenty-one failure analyses](docs/evaluation.md)):
 
 | | Run 1 | Run 2 | Run 3 | Run 4 | Live 1 | Live 2 |
 |---|---:|---:|---:|---:|---:|---:|
@@ -111,8 +131,9 @@ was used. In the second, a third of the loss came from the repair step that rebu
 and prices: twice it replaced a sentence that had answered the question. Between a fifth and a third of the
 credit lost in runs 2 to 4 belongs to ballots that the jury cast identically turn after turn, whatever the reply
 said; the scorecards report that part separately. The failures still open are named in the evaluation document,
-not hidden in the average; the most useful one to close is that the web is not searched when the catalog returns
-results of the wrong kind. Run 4 and both live runs are on the ProofAgent dashboard (release gate: pass).
+not hidden in the average. The one that mattered most, that the web was not searched when the catalog returned
+results of the wrong kind, was closed after the last run (the fallback above); the table does not include it,
+and its measurement is the next run. Run 4 and both live runs are on the ProofAgent dashboard (release gate: pass).
 
 **Retrieval** — 600 spoken-style queries with one known target each, on an M2 Max
 ([full table](eval/results/retrieval/benchmark.md)):
@@ -178,7 +199,8 @@ docs/           objectives (requirement matrix), evaluation (scorecards and fail
 
 Grounding is structural rather than hoped for: the models choose items by handle and write reasons, and code copies
 prices, ratings, sources and citations from the evidence. Rule checks that cannot be argued with run before a
-model critic; when a draft still fails after one revision, code rebuilds what failed from the evidence.
+model critic; when a draft still fails after one revision, code repairs what failed from the evidence, as little
+of it as will do.
 
 What the assistant says without evidence is chosen, not written: refusals, greetings and statements about itself
 are fixed sentences that the input screen and the Router pick by id, so none of them can be talked into other

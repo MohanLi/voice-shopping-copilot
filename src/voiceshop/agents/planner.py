@@ -157,8 +157,9 @@ def normalise_plan(plan: Plan, route: RouteDecision, constraints: Constraints, u
         # The budget is a hard constraint: it is applied by the tool, whatever the query words say.
         steps = [s.model_copy(update={"price_max": constraints.budget_max}) if s.tool == "web.search" and s.kind == "shopping"
                  and constraints.budget_max and not s.price_max else s for s in steps]
-        if constraints.must_have and not any(s.tool == "web.search" and s.kind == "web" for s in steps):
-            steps.extend(rules.web_steps(constraints, query)[1:])        # listings carry no description: look for pages that state the quality
+        pages = rules.web_steps(constraints, query)[1:]                  # listings carry no description: look for pages that state the quality
+        if pages and not any(s.tool == "web.search" and s.kind == "web" for s in steps):
+            steps.extend(pages)
             notes.append("added a search for pages that state the requested quality (listings alone do not)")
     if not deps.rag_available:
         steps = [s for s in steps if s.tool != "rag.search"]

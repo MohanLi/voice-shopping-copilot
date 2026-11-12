@@ -19,6 +19,7 @@ from voiceshop.agents.context import render_constraints, render_evidence
 from voiceshop.agents.deps import Deps
 from voiceshop.agents.finalize import position_word, spoken_around_lead
 from voiceshop.agents.llm_utils import LLMCallError, call_structured, fallback_note
+from voiceshop.agents.retriever import searched_tools as tools_that_returned
 from voiceshop.agents.router import said_ids
 from voiceshop.agents.state import (
     AnswerDraft,
@@ -128,7 +129,7 @@ def focus_refs(state: TurnState) -> list[str]:
 
 def searched_tools(state: TurnState) -> set[str]:
     """The tools that ran in this turn and returned (with or without results): what "I couldn't find it" may speak about."""
-    return {record.tool for record in state.get("tool_log") or [] if record.ok}
+    return set(tools_that_returned(state.get("tool_log") or []))
 
 
 def in_shopper_words(draft: AnswerDraft, evidence: Evidence | None = None) -> AnswerDraft:
@@ -241,7 +242,11 @@ def _draft_block(draft: AnswerDraft) -> str:
 
 
 CODE_REPAIRABLE = ("spoken", "conflict_note")    # fields code can rebuild from the evidence when the model's version does not pass
+_NOT_FOUND = re.compile(r"\b(?:no|not|none|neither|nothing|cannot|can't|couldn't|n't)\b", re.I)    # "no marble run ...", "I could not find ..."
 REPAIRED = {
+    "abstention_kept": "The draft said that nothing fits and listed products as well; they are kept as the sources of that statement",
+    "products_kept": "The draft was marked as finding nothing although it answers about its products; the products stay",
+    "reason_rebuilt": "A reason that called a product the cheapest or the highest rated, wrongly, was rebuilt from that product's evidence",
     "asked_product_shown": "The product the spoken sentence is about was added to the answer",
     "spoken_shortened": "The spoken sentence was shortened at a clause",
     "spoken_rebuilt": "The spoken sentence was rebuilt from the evidence (name, price, source)",
@@ -261,10 +266,31 @@ def kept_by_code(draft: AnswerDraft, blocking: list[Issue], evidence: Evidence, 
 
     * The sentence is about a product on screen that the answer does not show: that product is added to the answer.
     * The sentence is only too long: it is cut at a clause, the longest version first.
+    * A reason on screen calls a product the cheapest or the highest rated and the answer's own table says otherwise:
+      that one reason is written by code from the product's evidence. Everything else stays.
+    * The draft abstains and lists products as well, twice. When its sentence says that something was not found, for a
+      new request, that is an abstention which names what comes closest ("no marble run for eighteen months; the
+      closest is the activity center, at $49.89"): the products become its sources. The template in its place opened
+      with "My top pick is" the activity center and never said that there was no marble run. Otherwise, and for a
+      question about products on screen, the products stay and the sentence stands as the answer about them.
     """
-    if draft.abstain or not draft.recommendations or not blocking or any(i.where != "spoken" for i in blocking):
+    if not draft.recommendations or not blocking:
         return []
     codes = {i.code for i in blocking}
+    if codes == {"abstain_with_recommendations"}:
+        if focus or not _NOT_FOUND.search(draft.spoken):
+            return [("products_kept", draft.model_copy(update={"abstain": False}))]
+        refs = list(dict.fromkeys([*draft.sources, *(rec.ref for rec in draft.recommendations)]))[:4]
+        return [("abstention_kept", draft.model_copy(update={"recommendations": [], "sources": refs}))]
+    if draft.abstain:
+        return []
+    if codes == {"superlative_not_true"}:
+        wrong = {i.where for i in blocking}
+        recs = [rules.recommendation_for(item, constraints).model_copy(update={"caveat": rec.caveat})
+                if rec.ref in wrong and (item := evidence.get(rec.ref)) is not None else rec for rec in draft.recommendations]
+        return [("reason_rebuilt", draft.model_copy(update={"recommendations": recs}))]
+    if any(i.where != "spoken" for i in blocking):
+        return []
     if codes == {"spoken_about_another_product"}:
         shown = {rec.ref for rec in draft.recommendations}
         asked = [item for ref in (focus or []) if ref not in shown and (item := evidence.get(ref)) is not None]
@@ -367,13 +393,22 @@ def make_critic_node(deps: Deps):  # type: ignore[no-untyped-def]
                 before, after = spoken_around_lead(fixed, evidence, constraints, state.get("route"), said_ids(state.get("preface"), state.get("route"), state.get("user_text")))
                 left = [i for i in check_draft(fixed, evidence, constraints, max_words=budget, total_seconds=settings.tts_max_seconds,
                                                spoken_after=[*before, *after], user_text=state.get("user_text"), focus=focus_refs(state)) if i.severity in ("block", "revise")]
+                # Name, price and source is the shortest sentence there is. When even that is too long for the time the
+                # declined parts and a safety sentence leave, the template's would be too: its sentence is built the same
+                # way. So the model's products and reasons are kept with the rebuilt sentence, and the reply is cut to time
+                # where every reply is, when it is assembled. (A replay of the second live run, turn 30: three declined
+                # parts, a product with magnets, and the template took over an answer with nothing else wrong.)
+                if how == "spoken_rebuilt" and left and all(i.code == "spoken_too_long" for i in left):
+                    left = []
                 if not left:                                  # the rest of the model's answer passed: keep it
                     for issue in blocking:
                         issue.severity = "info"
                     if how == "spoken_rebuilt" and fixed.spoken == draft.spoken:
                         how = "note_dropped"
-                    issues.append(Issue(code=how, severity="info", where="conflict_note" if how == "note_dropped" else "spoken",
-                                        message=f"{REPAIRED[how]}; the recommendations and reasons are the model's."))
+                    where = {"note_dropped": "conflict_note", "reason_rebuilt": "recommendations", "abstention_kept": "recommendations",
+                             "products_kept": "recommendations"}.get(how, "spoken")
+                    rest = "the recommendations and reasons are" if where in ("spoken", "conflict_note") else "the rest of the answer is"
+                    issues.append(Issue(code=how, severity="info", where=where, message=f"{REPAIRED[how]}; {rest} the model's."))
                     draft, verdict, rebuilt = fixed, "pass", True
                     break
         critique = Critique(verdict=verdict, issues=issues, checked_by=checked,

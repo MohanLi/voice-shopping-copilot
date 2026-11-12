@@ -14,6 +14,8 @@ export interface Step {
 export interface ToolCall {
   tool: string;
   arguments: Record<string, unknown>;
+  /** Who decided on the call: the Planner ("plan"), the Retriever model ("agent"), or the web-fallback rule ("fallback"). */
+  origin?: string;
   ok?: boolean;
   n_results?: number;
   duration_ms?: number;

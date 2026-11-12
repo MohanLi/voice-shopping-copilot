@@ -336,7 +336,11 @@ def test_a_search_query_about_a_declined_subject_is_never_sent_to_a_tool() -> No
     assert unsafe_query("which bathroom cleaners are safe to mix stronger cleaner safety warning") == "dangerous_chemistry"
     assert unsafe_query("which household cleaners should never be mixed bleach ammonia vinegar safety") == "dangerous_chemistry"
     assert unsafe_query("what can poison my neighbour's dog") == "harmful"
-    for ordinary in ("bathroom scrub brush stiff bristles", "kids chemistry set mixing experiments", "eco-friendly stainless steel cleaner", "LEGO City police set"):
+    # The question as a query built from a product name would put it (the web fallback writes its query from the Router's product field).
+    for as_a_product in ("two cleaners to mix for a stronger bathroom cleaner", "cleaners I can mix", "household cleaners you can combine"):
+        assert unsafe_query(as_a_product) == "dangerous_chemistry"
+    for ordinary in ("bathroom scrub brush stiff bristles", "kids chemistry set mixing experiments", "eco-friendly stainless steel cleaner", "LEGO City police set",
+                     "all purpose cleaner to use with a mop", "paint mixing cups", "a science kit where kids mix chemicals"):
         assert unsafe_query(ordinary) is None
 
 
@@ -552,3 +556,48 @@ def test_the_stock_status_is_not_called_unstated_while_a_matched_source_states_i
     # A source about another product does not count, nor does a result that was flagged.
     assert issues(unstated, Evidence(catalog=[barnyard], web=[listing, other])) == []
     assert issues(unstated, Evidence(catalog=[barnyard], web=[listing, walmart.model_copy(update={"flagged": True})])) == []
+
+
+def test_a_product_is_not_called_the_cheapest_or_the_highest_rated_next_to_one_that_beats_it() -> None:
+    """A check with the live model after the web fallback was built: "Lowest-priced scrub brush found, listed at $6.49" stood on screen one row
+    above a scrub brush at $4.79."""
+    def brush(ref: str, title: str, price: float, rating: float, count: int, store: str) -> WebItem:
+        return WebItem(ref=ref, url=f"https://shop.example.com/{ref}", title=title, price=price, rating=rating, rating_count=count, source=store)
+
+    found = Evidence(web=[brush("W1", "TidyGrip Scrub Brush with Comfort Handle", 6.49, 4.6, 1840, "Example Home"),
+                          brush("W2", "BristlePro Heavy-Duty Deck and Tile Scrub Brush", 11.99, 4.4, 412, "Example Hardware"),
+                          brush("W3", "CleanNook Grout and Corner Scrub Brush, 2 pack", 4.79, 4.3, 96, "Example Market")])
+
+    def issues(first: str, third: str = "A two pack for grout and corners at $4.79.", *, caveat: str | None = None) -> list[Any]:
+        draft = AnswerDraft(recommendations=[Recommendation(ref="W1", why=first), Recommendation(ref="W3", why=third, caveat=caveat),
+                                             Recommendation(ref="W2", why="A heavy-duty brush for decks and tile.")],
+                            spoken="On the web, the TidyGrip scrub brush is $6.49 at Example Home.")
+        return [i for i in check_draft(draft, found, Constraints(product="scrub brush"), max_words=40) if i.code == "superlative_not_true"]
+
+    [wrong] = issues("Lowest-priced scrub brush found, listed at $6.49 by Example Home, with a 4.6 rating from 1840 ratings.")
+    assert (wrong.where, wrong.severity) == ("W1", "revise") and "W3 in the same answer costs $4.79" in wrong.message
+    assert len(issues("The cheapest of the three and rated 4.6 stars.")) == 1 and len(issues("The most affordable scrub brush here.")) == 1
+    [rating] = issues("Rated 4.6 stars.", "The best-rated brush here, a two pack at $4.79.")
+    assert rating.where == "W3" and "W1 in the same answer is rated 4.6" in rating.message
+    # True, or not claimed: nothing to fix.
+    assert issues("The highest rated of the three, 4.6 stars from 1,840 shoppers, at $6.49.", "The cheapest listed, a two pack at $4.79.") == []
+    assert issues("Not the cheapest here, but rated 4.6 stars by 1,840 shoppers.") == []
+    # "The cheapest that fits" is not contradicted by a cheaper product that the same answer says does not fit.
+    assert issues("The cheapest full-size brush, at $6.49.", caveat="a narrow grout brush, not a general scrub brush") == []
+
+
+def test_the_catalog_price_of_the_product_a_live_listing_was_matched_to_may_be_said() -> None:
+    """A check with the live model: the answer recommended the live listing of a board game and added "Its catalog price is $37.01". The listing
+    had been matched to that catalog product, and the sentence was sent back for a price "of no product this answer is about"."""
+    game = CatalogItem(ref="C1", doc_id="AMZ-B0000AAAAA", sku="B0000AAAAA", title="Carmarace Board Game", price=37.01)
+    listing = WebItem(ref="W1", url="https://games.example.com/carmarace-board-game", title="Carmarace Board Game", price=41.99, source="Example Games",
+                      availability="in_stock", matched_ref="C1")
+    said = "The Carmarace Board Game is listed at $41.99 now at Example Games, in stock. Its catalog price is $37.01."
+
+    def ungrounded(evidence: Evidence) -> list[str]:
+        draft = AnswerDraft(recommendations=[Recommendation(ref="W1", why="The live listing, at $41.99; the catalog had it at $37.01.")], spoken=said)
+        return [i.where or "" for i in check_draft(draft, evidence, Constraints(wants_current_info=True), max_words=45) if i.code == "ungrounded_price"]
+
+    assert ungrounded(Evidence(catalog=[game], web=[listing])) == []
+    unmatched = listing.model_copy(update={"matched_ref": None})                    # not the same product as far as the evidence knows: the price is someone else's
+    assert ungrounded(Evidence(catalog=[game], web=[unmatched])) == ["W1", "spoken"]

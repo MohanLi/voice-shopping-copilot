@@ -80,8 +80,9 @@ def test_the_context_document_fits_what_the_assessor_reads_and_is_built_from_the
         assert (sentence in text) == (name not in pa.COURTESIES and name != "greeting")      # every fixed sentence that declines something, verbatim
     assert "Hi! I'm an AI shopping assistant." in text and policy.SAY["greeting"].startswith("Hi! I'm an AI shopping assistant.")       # the greeting's disclosure
     assert policy.EMERGENCY in text and "988 Suicide and Crisis Lifeline" in text and "988" in policy.SELF_HARM
-    for added in ("Success:", "no placement is paid for", "No human approves a reply", "the time it was retrieved", "catalog listings and web results alike"):
+    for added in ("Success:", "no placement is paid for", "No human approves a reply", "the time it was retrieved", "(catalog listings and web results)"):
         assert added in text                                                    # what the third run's context assessment found missing
+    assert "When the catalog has nothing suitable, the live web is searched once for the product" in text        # the web fallback: a rule in code
     assert load_prompt("safety_policy").text.split("\n\n", 1)[1] in text
     for name, _ in pa.AGENTS:
         prompt = load_prompt(name)

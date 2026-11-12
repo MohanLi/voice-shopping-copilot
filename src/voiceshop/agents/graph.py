@@ -10,15 +10,19 @@
                |                                        v                     v
              planner --clarify----------------------> respond ------------> voice -> END
                |    \\--from_memory--> recall --.                             ^
-               v                               |                             |
-           retriever -> reconcile -> answerer <-'                            |
-                                       ^   |                                 |
-                              revise   |   v                                 |
-                                       '- critic --pass / fallback--> finalize
+               v                               v                             |
+           retriever -> reconcile ---------> answerer --> critic --pass / fallback--> finalize
+                            ^                 |  ^          |
+                            |                 |  '--revise--'
+                          widen <-------------'
+                          (the first draft found nothing suitable in the catalog results)
 
 ``listen`` only does something on a voice turn (it records what the recogniser heard).
-Each box is one node; ``docs/architecture.md`` describes them and ``prompts/README.md`` maps
-each prompt to its node. The checkpointer keeps conversation memory per ``thread_id``.
+``widen`` is the web fallback: when the first draft finds nothing suitable in what the catalog
+returned, the live web is searched for the product and the Answerer writes again, at most once
+a turn (``retriever.fallback_after_abstention``). Each box is one node; ``docs/architecture.md``
+describes them and ``prompts/README.md`` maps each prompt to its node. The checkpointer keeps
+conversation memory per ``thread_id``.
 """
 
 from __future__ import annotations
@@ -36,7 +40,7 @@ from voiceshop.agents.finalize import make_finalize_node, respond_node
 from voiceshop.agents.listen import after_listen, listen_node
 from voiceshop.agents.planner import make_planner_node
 from voiceshop.agents.reconcile import reconcile_node
-from voiceshop.agents.retriever import make_retriever_node
+from voiceshop.agents.retriever import fallback_after_abstention, make_retriever_node, make_widen_node
 from voiceshop.agents.router import begin_node, guard_node, make_router_node
 from voiceshop.agents.state import Evidence, TurnState, step
 
@@ -47,6 +51,7 @@ NODE_TITLES = {
     "planner": "Planner",
     "recall": "Memory",
     "retriever": "Retriever (MCP tools)",
+    "widen": "Web fallback (MCP tools)",
     "reconcile": "Reconcile sources",
     "answerer": "Answerer",
     "critic": "Critic",
@@ -109,6 +114,14 @@ def _after_planner(state: TurnState) -> Literal["respond", "recall", "retriever"
     return "recall" if plan.strategy == "from_memory" else "retriever"
 
 
+def make_after_answerer(deps: Deps):  # type: ignore[no-untyped-def]
+    def after_answerer(state: TurnState) -> Literal["widen", "critic"]:
+        """To the Critic, unless the first draft found nothing suitable and the live web has not been asked for the product yet."""
+        return "widen" if fallback_after_abstention(state, deps) else "critic"
+
+    return after_answerer
+
+
 def _after_critic(state: TurnState) -> Literal["answerer", "finalize"]:
     critique = state.get("critique")
     return "answerer" if critique is not None and critique.verdict == "revise" else "finalize"
@@ -124,6 +137,7 @@ def build_graph(deps: Deps, checkpointer: Any = None) -> Any:
     graph.add_node("planner", make_planner_node(deps))
     graph.add_node("recall", recall_node)
     graph.add_node("retriever", make_retriever_node(deps))
+    graph.add_node("widen", make_widen_node(deps))
     graph.add_node("reconcile", reconcile_node)
     graph.add_node("answerer", make_answerer_node(deps))
     graph.add_node("critic", make_critic_node(deps))
@@ -140,7 +154,8 @@ def build_graph(deps: Deps, checkpointer: Any = None) -> Any:
     graph.add_edge("retriever", "reconcile")
     graph.add_edge("reconcile", "answerer")
     graph.add_edge("recall", "answerer")
-    graph.add_edge("answerer", "critic")
+    graph.add_conditional_edges("answerer", make_after_answerer(deps), ["widen", "critic"])
+    graph.add_edge("widen", "reconcile")
     graph.add_conditional_edges("critic", _after_critic, ["answerer", "finalize"])
     graph.add_edge("finalize", "voice")
     graph.add_edge("respond", "voice")

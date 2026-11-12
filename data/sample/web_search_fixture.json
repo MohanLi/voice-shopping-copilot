@@ -1,5 +1,5 @@
 {
-  "_about": "SYNTHETIC results for tests, CI and offline demos (WEB_SEARCH_PROVIDER=fixture). Nothing here is a real offer: every URL is on the reserved example.com domain and every brand, price and rating is made up. Keys are lower-case substrings matched against the query; the first key found in the query wins. An entry with \"kind\" is returned only for that kind of search. The 'stainless' entries copy the SHAPE of real responses: shopping listings carry a name, a store, a price and a rating and nothing else, while ordinary web results carry the snippets in which makers and reviewers describe a product.",
+  "_about": "SYNTHETIC results for tests, CI and offline demos (WEB_SEARCH_PROVIDER=fixture). Nothing here is a real offer: every URL is on the reserved example.com domain and every brand, price and rating is made up. Keys are lower-case substrings matched against the query; the first key found in the query wins. An entry with \"kind\" is returned only for that kind of search. The 'stainless' entries copy the SHAPE of real responses: shopping listings carry a name, a store, a price and a rating and nothing else, while ordinary web results carry the snippets in which makers and reviewers describe a product. The 'scrub brush' entries are a household product the sample catalog does not carry, for the web fallback (the live web is searched when the catalog has nothing suitable).",
   "carmarace": [
     {
       "title": "Carmarace Board Game",
@@ -184,6 +184,46 @@
       "rating": 4.8,
       "rating_count": 730,
       "source": "Example Toys"
+    }
+  ],
+  "scrub brush": [
+    {
+      "kind": "shopping",
+      "title": "TidyGrip Scrub Brush with Comfort Handle",
+      "url": "https://shop.example.com/offer/tidygrip-scrub-brush",
+      "snippet": "Sold by Example Home · $6.49",
+      "price": "$6.49",
+      "rating": 4.6,
+      "rating_count": 1840,
+      "source": "Example Home",
+      "image": "https://img.example.com/tidygrip-scrub-brush.jpg"
+    },
+    {
+      "kind": "shopping",
+      "title": "BristlePro Heavy-Duty Deck and Tile Scrub Brush",
+      "url": "https://shop.example.com/offer/bristlepro-deck-tile-brush",
+      "snippet": "Sold by Example Hardware · $11.99",
+      "price": "$11.99",
+      "rating": 4.4,
+      "rating_count": 412,
+      "source": "Example Hardware"
+    },
+    {
+      "kind": "shopping",
+      "title": "CleanNook Grout and Corner Scrub Brush, 2 pack",
+      "url": "https://market.example.com/cleannook-grout-brush-2pk",
+      "snippet": "Sold by Example Market · $4.79",
+      "price": "$4.79",
+      "rating": 4.3,
+      "rating_count": 96,
+      "source": "Example Market"
+    },
+    {
+      "kind": "web",
+      "title": "The scrub brushes we would buy again",
+      "url": "https://reviews.example.com/best-scrub-brushes",
+      "snippet": "TidyGrip Scrub Brush with Comfort Handle has stiff nylon bristles and a non-slip grip; it cleaned tile and a tub fastest in our test. CleanNook Grout and Corner Scrub Brush reaches grout lines but sheds bristles.",
+      "source": "reviews.example.com"
     }
   ]
 }

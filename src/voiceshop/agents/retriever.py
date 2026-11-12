@@ -8,6 +8,11 @@
    calls each) and identical calls are never repeated.
 3. **Fast path.** When the planned results are already strong and no live check was asked
    for, no model call is spent on deciding that nothing more is needed.
+4. **Web fallback.** When the catalog has nothing suitable, the live web is searched for the
+   product, by rule: in this step when the catalog search returns nothing or nothing the
+   re-ranker scores as related to the request, and after the Answerer's first draft
+   (``widen``) when the scores looked fine and the draft still found nothing of the kind
+   asked for. See :func:`web_fallback_calls`.
 
 Everything retrieved is collected into :class:`Evidence` with short handles (C1, W1 ...).
 """
@@ -21,17 +26,21 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 
+from voiceshop.agents import rules
 from voiceshop.agents.claims import stated_cautions, stated_claims
 from voiceshop.agents.context import render_constraints
 from voiceshop.agents.deps import Deps
 from voiceshop.agents.llm_utils import log_call, render, rules_mode
+from voiceshop.agents.reconcile import distinguishing_words
 from voiceshop.agents.router import said_ids
 from voiceshop.agents.state import (
+    AnswerDraft,
     CatalogItem,
     Constraints,
     Evidence,
     Plan,
     PlanStep,
+    RouteDecision,
     ToolRecord,
     TurnState,
     WebItem,
@@ -90,6 +99,25 @@ def search_limits(records: list[ToolRecord]) -> str:
     return ", ".join(parts)
 
 
+def failed_tools(records: list[ToolRecord]) -> list[str]:
+    """The tools whose search did not work. A search that failed is not a search that found nothing: the answer has to be able to tell the two apart.
+
+    A tool none of whose calls succeeded; and the live web when the fallback's search for listings failed, whatever else
+    succeeded, because that is the one search the answer then depends on.
+    """
+    failed = [tool for tool in ("rag.search", "web.search")
+              if any(r.tool == tool and not r.ok for r in records) and not any(r.tool == tool and r.ok for r in records)]
+    if "web.search" not in failed and any(r.tool == "web.search" and r.origin == "fallback" and not r.ok
+                                          and str(r.arguments.get("kind") or "shopping") == "shopping" for r in records):
+        failed.append("web.search")
+    return failed
+
+
+def searched_tools(records: list[ToolRecord]) -> list[str]:
+    """The tools that returned in this turn, with or without results: what "nothing was found" may be said about."""
+    return [tool for tool in ("rag.search", "web.search") if any(r.tool == tool and r.ok for r in records)]
+
+
 class EvidenceBuilder:
     """Accumulates tool results into evidence items with stable handles."""
 
@@ -104,6 +132,7 @@ class EvidenceBuilder:
         self.best_match_score: float | None = None
         self.records: list[ToolRecord] = []
         self.seen_calls: set[str] = set()
+        self.web_fallback: str | None = None      # what the live web was searched for because the catalog had nothing close
         self._catalog_base = 0
         self._web_base = 0
 
@@ -181,9 +210,7 @@ class EvidenceBuilder:
         return record
 
     def build(self) -> Evidence:
-        # A search that failed is not a search that found nothing: the answer has to be able to tell the two apart.
-        failed = [tool for tool in ("rag.search", "web.search")
-                  if any(r.tool == tool and not r.ok for r in self.records) and not any(r.tool == tool and r.ok for r in self.records)]
+        failed = failed_tools(self.records)
         notes = [*self.notes, *(policy.TOOL_FAILED_NOTE[tool] for tool in failed)]
         limits = search_limits(self.records)
         if limits and not self.relaxed:
@@ -192,7 +219,8 @@ class EvidenceBuilder:
             notes.append(f"Every catalog search of this turn returned only products {limits}. A product outside these limits is "
                          "not among the results; that does not mean the catalog does not carry it.")
         return Evidence(catalog=list(self.catalog.values()), web=list(self.web.values()), notes=notes, relaxed=self.relaxed,
-                        safety_rules=self.safety_rules, unmatched_filters=self.unmatched, strict_matches=self.strict_matches, failed_tools=failed)
+                        safety_rules=self.safety_rules, unmatched_filters=self.unmatched, strict_matches=self.strict_matches, failed_tools=failed,
+                        web_fallback=self.web_fallback, searched=searched_tools(self.records))
 
 
 def _emit(event: dict[str, Any]) -> None:
@@ -235,6 +263,94 @@ def named_product_lookup(constraints: Constraints, builder: EvidenceBuilder, dep
     query = product if brand.lower() in product.lower() else f"{brand} {product}".strip()
     call = ("web.search", {"query": query[:200], "max_results": 5, "kind": "shopping"})
     return [] if call_key(*call) in builder.seen_calls else [call]
+
+
+def nothing_close(records: list[ToolRecord], best_match_score: float | None, weak_score: float) -> str | None:
+    """Why the catalog has nothing close to the request, by what its searches returned, or None when it has (or was not asked).
+
+    This is the cheap signal, read from numbers the tool returns. It misses the case the numbers cannot show: a toy
+    "Scrub Tub" scored 2.6 as a match for "scrub brush". That one is left to the Answerer (:func:`fallback_after_abstention`).
+    """
+    searches = [r for r in records if r.tool == "rag.search" and r.ok]
+    if not searches:
+        return None                                           # the catalog was not searched, or the search failed: nothing is known about what it has
+    if not any(r.n_results for r in searches):
+        return "the catalog search returned nothing"
+    if best_match_score is not None and best_match_score < weak_score:
+        return f"the best catalog match is weak (score {best_match_score:.1f})"
+    return None
+
+
+def already_searched(product: str, records: list[ToolRecord]) -> bool:
+    """Has the live web been asked for listings of this product in this turn? The product's words within a query's, or the query's within the product's."""
+    def words(text: str) -> set[str]:
+        return distinguishing_words(text) or set(text.lower().split())      # a product named in filler words only ("toy set") is compared as written
+
+    wanted = words(product)
+    for record in records:
+        if record.tool != "web.search" or str(record.arguments.get("kind") or "shopping") != "shopping":
+            continue
+        asked = words(str(record.arguments.get("query") or ""))
+        if asked and wanted and (asked <= wanted or wanted <= asked):
+            return True
+    return False
+
+
+def web_fallback_calls(deps: Deps, constraints: Constraints, records: list[ToolRecord]) -> list[tuple[str, dict[str, Any]]]:
+    """The live search for the kind of product asked for, made when the catalog had nothing suitable: the calls a ``web_only`` plan makes.
+
+    The Planner sends a request to the catalog whenever the catalog might carry the product, and it cannot know
+    beforehand that it does not. "What's a good scrub brush?" went to the catalog in both runs against live web search
+    and came back with bed sets and paint brushes in one and a toy "Scrub Tub" in the other. Both replies were
+    "I could not find a scrub brush", with the live web one call away and never asked. Two places now ask it, with the
+    calls written here: the Retriever, when the catalog search returns nothing close (:func:`nothing_close`), and the
+    ``widen`` step, when the Answerer's first draft finds nothing suitable in what was returned.
+
+    Nothing is returned when the search may not be made or would add nothing:
+
+    * it has been made in this turn already: once a turn, whoever made it;
+    * live search is switched off, or the Router found no product to search for;
+    * the product is for a child under three: a web result is never recommended for that age, because a listing has
+      nothing to check its suitability against;
+    * a web search of this turn failed (a failing service is reported, not called again), or the web has already been
+      asked for listings of this product (a ``web_only`` plan, the look-up of a named brand, the agent's own search);
+    * the safety policy does not allow the query.
+    """
+    product = " ".join((constraints.product or "").split())
+    if not product or not deps.web_available or any(r.origin == "fallback" for r in records):
+        return []
+    if constraints.age_years is not None and constraints.age_years < 3:
+        return []
+    if any(r.tool == "web.search" and not r.ok for r in records):
+        return []
+    brand = " ".join((constraints.brand or "").split())
+    if brand and brand.lower() not in product.lower():
+        product = f"{brand} {product}"
+    steps = rules.web_steps(constraints.model_copy(update={"product": product[:160]}), product[:160])
+    if any(unsafe_query(s.query) for s in steps) or already_searched(product, records):
+        return []
+    made = {call_key(r.tool, r.arguments) for r in records}
+    return [call for call in ((s.tool, step_arguments(s)) for s in steps) if call_key(*call) not in made]
+
+
+def fallback_after_abstention(state: TurnState, deps: Deps) -> list[tuple[str, dict[str, Any]]]:
+    """The live search to make when the Answerer's first draft found nothing suitable in what the catalog returned; empty when none is due.
+
+    Only the first draft of a turn can send it back for more evidence, only a turn that searched the catalog for
+    something new, and never a question about products already on screen: that one is answered about those products.
+    """
+    draft: AnswerDraft | None = state.get("draft")
+    route: RouteDecision | None = state.get("route")
+    if draft is None or route is None or state.get("critique") is not None or state.get("revisions"):
+        return []
+    if not (draft.abstain or not draft.recommendations):
+        return []
+    log: list[ToolRecord] = state.get("tool_log") or []
+    if not any(r.tool == "rag.search" for r in log):
+        return []
+    if route.intent != "product_search" and route.refers_to:
+        return []
+    return web_fallback_calls(deps, state.get("session_constraints") or Constraints(), log)
 
 
 def needs_agent(plan: Plan, builder: EvidenceBuilder, results: list[ToolCallResult], weak_score: float, seeded: bool = False) -> tuple[bool, str]:
@@ -328,7 +444,8 @@ async def _rule_round(deps: Deps, plan: Plan, constraints: Constraints, builder:
         return ["rule-based mode: no further calls"]
     from voiceshop.agents.rules import short_name
 
-    top = list(builder.catalog.values())[:VERIFY_TOP_N]
+    weak = deps.settings.weak_match_score                    # a product the re-ranker scores as unrelated to the request is not worth a look-up
+    top = [item for item in builder.catalog.values() if item.rerank_score is None or item.rerank_score >= weak][:VERIFY_TOP_N]
     calls = [("web.search", {"query": short_name(item), "max_results": 5, "kind": "shopping"}) for item in top]
     calls = [c for c in calls if call_key(*c) not in builder.seen_calls]
     if calls:
@@ -367,6 +484,14 @@ def make_retriever_node(deps: Deps):  # type: ignore[no-untyped-def]
             planned += await _run_calls(deps, builder, named, origin="plan", round_no=0)
 
         go, why = needs_agent(plan, builder, planned, deps.settings.weak_match_score, seeded)
+        # The catalog returned nothing close to the request: the live web is asked for the product in this same step, by
+        # rule. Whether a model round is worth spending was decided on the planned results, so a weak catalog search still
+        # gets its one reformulation; the agent then sees these results as well.
+        lacking = None if seeded else nothing_close(builder.records, builder.best_match_score, deps.settings.weak_match_score)
+        wider = web_fallback_calls(deps, constraints, builder.records) if lacking else []
+        if wider:
+            builder.web_fallback = str(wider[0][1].get("query") or "")
+            planned += await _run_calls(deps, builder, wider, origin="fallback", round_no=0)
         model_calls, notes, error = 0, [], None
         if go and rules_mode("retriever"):
             notes = await _rule_round(deps, plan, constraints, builder)
@@ -381,7 +506,8 @@ def make_retriever_node(deps: Deps):  # type: ignore[no-untyped-def]
         evidence = builder.build()
         failed = [r for r in builder.records if not r.ok]
         summary = (f"{len(builder.records)} tool call(s): {len(evidence.catalog)} catalog product(s), {len(evidence.web)} web result(s)"
-                   + (f" | {len(failed)} failed" if failed else "") + (f" | constraints loosened: {', '.join(evidence.relaxed)}" if evidence.relaxed else ""))
+                   + (f" | {len(failed)} failed" if failed else "") + (f" | constraints loosened: {', '.join(evidence.relaxed)}" if evidence.relaxed else "")
+                   + (" | nothing close in the catalog, so the live web was searched as well" if wider else ""))
         return {
             "evidence": evidence,
             "tool_log": builder.records,
@@ -389,7 +515,50 @@ def make_retriever_node(deps: Deps):  # type: ignore[no-untyped-def]
                            tool_calls=[r.model_dump(exclude_none=True) for r in builder.records],
                            agent_rounds=model_calls, agent_decision=why, agent_notes=notes or None,
                            seeded_from_screen=[c.ref for c in builder.catalog.values()] if seeded else None, kept_from_screen=kept or None,
+                           web_fallback={"reason": lacking, "query": builder.web_fallback} if wider else None,
                            best_match_score=builder.best_match_score, strict_matches=evidence.strict_matches, error=error)],
         }
 
     return retriever_node
+
+
+def make_widen_node(deps: Deps):  # type: ignore[no-untyped-def]
+    async def widen_node(state: TurnState) -> dict[str, Any]:
+        """The Answerer's first draft found nothing suitable in the catalog results: search the live web for the product, then answer again.
+
+        The second of the two places that make the web fallback (:func:`web_fallback_calls`). The results join the
+        evidence of the turn under handles of their own; ``reconcile`` and the Answerer then run again on all of it.
+        """
+        started = time.perf_counter()
+        previous: Evidence = state.get("evidence") or Evidence()
+        log: list[ToolRecord] = list(state.get("tool_log") or [])
+        route: RouteDecision | None = state.get("route")
+        calls = fallback_after_abstention(state, deps)
+        if not calls:                                         # the edge into this step is taken only when a search is due
+            return {"trace": [step("widen", "No live search was due", started=started)]}
+        builder = EvidenceBuilder()
+        builder.reserve(previous)                             # a handle of this turn is never given to another result
+        on_screen: Evidence | None = state.get("last_evidence")
+        if on_screen is not None and route is not None and route.intent in ("follow_up", "compare"):
+            builder.reserve(on_screen)                        # nor a handle that is on screen
+        await _run_calls(deps, builder, calls, origin="fallback", round_no=0)
+        records = [*log, *builder.records]
+        failed = failed_tools(records)
+        notes = [n for n in previous.notes if n not in policy.TOOL_FAILED_NOTE.values()]
+        notes += [n for n in builder.notes if n not in notes and n not in previous.safety_rules]
+        notes += [policy.TOOL_FAILED_NOTE[tool] for tool in failed]
+        query = str(calls[0][1].get("query") or "")
+        evidence = previous.model_copy(update={"web": [*previous.web, *builder.web.values()], "notes": notes, "failed_tools": failed, "web_fallback": query,
+                                               "searched": searched_tools(records)})
+        found = len(builder.web)
+        broke = [r for r in builder.records if not r.ok]
+        summary = (f'The first draft found nothing suitable in the catalog results, so the live web was searched for "{query}": '
+                   + ("the search failed" if broke and not found else f"{found} result(s)"))
+        return {
+            "evidence": evidence,
+            "tool_log": records,
+            "trace": [step("widen", summary, status="warn" if broke or not found else "ok", started=started,
+                           tool_calls=[r.model_dump(exclude_none=True) for r in builder.records], results=[w.ref for w in builder.web.values()] or None)],
+        }
+
+    return widen_node

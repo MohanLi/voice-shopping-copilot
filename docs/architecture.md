@@ -36,6 +36,7 @@ flowchart TD
     planner -- from memory --> recall --> answerer
     planner --> retriever --> reconcile --> answerer
     answerer --> critic
+    answerer -- nothing suitable, once --> widen --> reconcile
     critic -- revise, once --> answerer
     critic -- pass, or fall back to the template --> finalize
     finalize --> voice
@@ -49,10 +50,11 @@ flowchart TD
 | `guard` | `agents/router.py`, `guardrails/input.py` | no | An emergency, a statement of self-harm or an intent to hurt someone ends the turn with a fixed reply. A clause that tries to change the instructions, asks for prompts or keys, dictates the wording of the reply or asks which chemicals to mix is taken out, and the rest of the message goes on. Personal details are replaced by placeholders. |
 | `router` | `agents/router.py` | yes | Intent, constraints, safety flag, which on-screen items a follow-up refers to, and the ids of the fixed sentences for everything that is not a product request. When it declines part of a message it restates the product request for the agents that follow. Constraints of earlier turns are merged in code; a different product starts a new request. |
 | `planner` | `agents/planner.py` | yes | Strategy (`catalog_only`, `catalog_then_web`, `web_only`, `from_memory`, `clarify`), first tool calls, retrieval fields, comparison criteria. `normalise_plan` then enforces what must hold whatever the model wrote. |
-| `retriever` | `agents/retriever.py` | sometimes | Runs the planned calls without a model. A model with function calling is asked only when something is missing: a live price check, an empty or failed search, no match-quality signal. Calls of one round run concurrently. |
+| `retriever` | `agents/retriever.py` | sometimes | Runs the planned calls without a model. A model with function calling is asked only when something is missing: a live price check, an empty or failed search, no match-quality signal. Calls of one round run concurrently. When the catalog search returns nothing, or nothing the re-ranker scores as related to the request, the live web is searched for the product in the same step, by rule. |
+| `widen` | `agents/retriever.py` | no | The web fallback after a first draft that found nothing suitable in what the catalog returned: one live search for the product, added to the evidence of the turn; `reconcile` and the Answerer then run again. At most once a turn. |
 | `reconcile` | `agents/reconcile.py` | no | Matches live offers to catalog products, links listings to pages that describe them, records conflicts. |
 | `answerer` | `agents/answerer.py` | yes | Chooses up to three items by handle (`C1`, `W2`), writes one reason each and one spoken sentence. |
-| `critic` | `agents/answerer.py`, `guardrails/output.py` | rules, then a model | Rule findings are binding. The model critic can send a draft back once; after that its findings are advisory. When all that still fails is the spoken sentence, code rebuilds that sentence and keeps the rest. |
+| `critic` | `agents/answerer.py`, `guardrails/output.py` | rules, then a model | Rule findings are binding. The model critic can send a draft back once; after that its findings are advisory. What still fails a rule after the revision is repaired by code, the gentlest repair first: the one field that is wrong (a sentence cut at a clause, one reason rewritten from the evidence), then the spoken sentence rebuilt, and only then the whole answer from the template. |
 | `respond` | `agents/finalize.py`, `guardrails/policy.py` | no | Replies that need no retrieval (a greeting, a question about the assistant, a declined request): assembled from fixed sentences chosen by id. |
 | `finalize` | `agents/finalize.py` | no | Builds the table, citations, notes and the spoken text from the evidence. |
 | `voice` | `agents/graph.py`, `speech/tts.py` | no | Synthesizes sentence by sentence within the time limit and streams each sentence as it is ready. |
@@ -82,6 +84,39 @@ The free text the model does write (the reasons and the spoken sentence) is chec
 budget is said to be above it, no availability without a live source, no rating that is not in the evidence, no unsupported sensitive claim, a recall notice
 must be said, no code or link copied from the shopper's message, speakable text, time budget), then by a model
 critic that lists findings with the evidence it compared against.
+
+### When the catalog has nothing suitable: the web fallback
+
+The Planner chooses its sources before anything has been retrieved, and it sends a request to the catalog
+whenever the catalog might carry the product. It cannot know that the search will come back with duvet covers
+for "scrub brush". Two places notice, and both make the same search (`retriever.web_fallback_calls`: the product,
+with a brand and an asked-for quality if there is one, as a shopping search with the budget as its price limit):
+
+1. **The Retriever, from numbers.** The catalog search returned nothing, or its best result is below the score
+   at which the re-ranker's results stop being related to the query (`WEAK_MATCH_SCORE`, -4). The live search runs
+   in the same step, and the Retriever model is still asked for its one reformulation of the catalog search.
+2. **The `widen` step, from the Answerer's reading.** A score cannot tell a scrub brush from a toy called
+   "Scrub Tub" (2.6, a good score). The Answerer can: it abstains. When the first draft of a turn recommends
+   nothing, the turn searched the catalog for something new, and the question is not about products on screen,
+   the graph goes to `widen`, then through `reconcile` to the Answerer again, with the web results under handles
+   of their own. This happens at most once a turn; a revision asked for by the Critic never starts it.
+
+The search is not made for a child under three (a web result is never recommended for that age, because a
+listing has nothing to check its suitability against), after a web search of the same turn has failed, when the
+web was already asked for listings of that product, when live search is switched off, or for a query the
+safety screen refuses. The Answerer is told in the tool notes why the web results are there and which they are,
+or that the live search found nothing either; an empty section of the evidence now says whether its source was
+searched at all. A table that holds only such results carries the note "Nothing suitable was found in the
+catalog, so these are current listings from a live web search", and the spoken sentence begins "On the web".
+In the step log the call is listed with the step that made it, and the tool log records who decided on each
+call: the plan, the Retriever model, or this rule (`origin`).
+
+The idea is that of corrective retrieval-augmented generation (Yan et al., 2024, arXiv:2401.15884): a judgment
+of what was retrieved decides whether the web is searched. Here the judgment needs no model call of its own. The
+re-ranker's score is already there, and so is the Answerer's reading of the results; a turn that needs no
+fallback pays nothing for having one. A turn that needs it pays one search and, on the second path, one more
+draft: about three seconds. Why it was built and what it was tested on: failure 21 in
+[evaluation.md](evaluation.md).
 
 ### Replies that are chosen, not written
 
@@ -123,10 +158,11 @@ two prices side by side with each product called by its place on screen.
 | Failure | What happens |
 |---|---|
 | A model call fails, times out or returns something unusable | One retry, then the rule-based version of that agent takes over for the turn (`agents/rules.py`); the step log says so. |
-| The draft fails the checks twice | What still fails is rebuilt by code from the evidence: the spoken sentence alone when that is all that fails (the model's choices and reasons are kept), otherwise the whole answer from the template. |
+| The draft fails the checks twice | What still fails is repaired by code, as little of it as will do: a sentence that is only too long is cut at a clause, a reason that wrongly calls a product the cheapest is rewritten from that product's evidence, a draft that says nothing fits and lists products keeps its sentence with the products as its sources; otherwise the spoken sentence is rebuilt from the evidence (the model's choices and reasons are kept), and only when none of that passes the checks is the whole answer taken from the template. |
 | A tool call fails | The error goes back to the Retriever model, which may try another call. If no call of that tool succeeded, the Answerer is told the search failed and the screen says so: a failed search is not reported as "nothing found". |
 | Live web search is unavailable or switched off | The plan is reduced to the catalog and a note explains it. |
-| Nothing relevant is found | The answer says so and suggests what would help; no product is invented. |
+| The catalog has nothing suitable | The live web is searched once for the product (see the web fallback above), and the answer says its listings come from the web. |
+| Nothing relevant is found anywhere | The answer says where it looked and suggests what would help; no product is invented. |
 | The cost ceiling is reached | The turn stops with an explanation (`llm/ledger.py`). |
 | Speech synthesis fails | The reply is returned as text. |
 

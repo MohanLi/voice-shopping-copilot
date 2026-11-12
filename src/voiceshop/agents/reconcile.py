@@ -67,6 +67,8 @@ def model_numbers(text: str) -> set[str]:
 def _singular(word: str) -> str:
     if len(word) > 3 and word.endswith("ies"):
         return word[:-3] + "y"
+    if len(word) > 4 and word.endswith(("shes", "ches", "xes", "sses")):
+        return word[:-2]                                      # brushes, watches, boxes, glasses
     if len(word) > 3 and word.endswith("s") and not word.endswith(("ss", "us")):
         return word[:-1]
     return word

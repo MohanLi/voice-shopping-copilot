@@ -26,7 +26,7 @@ operative rules one line each; the document the ProofAgent evaluation is given a
 generated from those lists, the safety policy and the fixed sentences (`voiceshop eval proofagent` writes it to
 `eval/proofagent/context/system_prompt.md`).
 
-Current versions: router 6, planner 4, retriever 2, answerer 10, critic 7, safety policy 4. What changed in each
+Current versions: router 6, planner 4, retriever 3, answerer 11, critic 7, safety policy 4. What changed in each
 and why is in [docs/evaluation.md](../docs/evaluation.md) and [docs/decisions.md](../docs/decisions.md).
 
 Tool descriptions are prompts too. The models read the descriptions of `rag.search` and `web.search` that the

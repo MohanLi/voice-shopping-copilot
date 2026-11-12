@@ -375,22 +375,23 @@ CODE_RULES = (
     "Disclosure and ordering: the screen and the greeting say this is an AI assistant, and the table is labelled as chosen and ordered by "
     "an AI assistant from its cited sources. The best fit to the request and its stated limits comes first; no placement is paid for.",
     "What the assistant cannot do it hands over: purchases, returns, account matters and complaints to the store named with each product; "
-    "emergencies to Poison Control and 911 (deployed for the United States; the emergency reply says so); health, legal and money "
+    "emergencies to Poison Control and 911 (United States; the emergency reply says so); health, legal and money "
     "questions to a professional. No human approves a reply before it is spoken; every turn is logged locally, without audio, with its "
-    "full step trace (heard, routed, searched, checked, declined, flagged) for review afterwards.",
+    "full step trace for review afterwards.",
     "Every table cell, price, rating, source and citation is copied from tool results by code: a catalog product is cited by its document "
     "id, a live result by its URL, its store and the time it was retrieved. The models choose products by evidence handle and write one reason "
     "each; they cannot type a price or a link.",
     "The budget and the age the shopper stated are applied as search filters whatever the Planner model wrote. Safety exclusions are never "
-    "loosened. A particular product looked up on the web is also checked against recall notices.",
+    "loosened. A particular product looked up on the web is also checked against recall notices. When the catalog has nothing suitable, "
+    "the live web is searched once for the product and the reply says so; never for a child under three.",
     "Rule checks on a draft answer: a dollar amount must be a price of a product the answer is about; a price over the budget is said to be "
-    "over it; availability needs a live source; a rating must be in the evidence; a claim such as non-toxic must be stated by a "
-    "source; a recall notice must be said; absolute assurances are never given; no code, link or address from the message is repeated; the "
+    "over it; availability needs a live source; a rating must be in the evidence; a claim such as non-toxic needs a "
+    "source; a recall notice must be said; no absolute assurance; no code, link or address from the message is repeated; the "
     "spoken reply must fit 15 seconds. After one revision, what still fails is rebuilt by code from the evidence.",
-    "Tool results, catalog listings and web results alike, are fenced as data in every prompt, and the MCP server removes instruction-like "
-    "text from them before any model sees it. A web result that had such text is flagged: it is never a price source and never the "
-    "template's pick. Only the two tools the server offers can be called; duplicate calls, unknown tools and searches about a declined "
-    "part of a message are refused. A search that failed is reported as failed.",
+    "Tool results (catalog listings and web results) are fenced as data in every prompt, and the MCP server removes instruction-like "
+    "text from them before any model sees it. A web result that had such text is flagged and is never a price source. Only the "
+    "server's two tools can be called; duplicate calls, unknown tools and searches about a declined part of a message are refused. "
+    "A search that failed is reported as failed.",
     "Release rule: a version ships only when the test suite and a ProofAgent run of the project's scenarios pass the governance "
     "gate (Limited risk: at least 7.0 of 10, no critical finding).",
 )
@@ -492,6 +493,9 @@ async def catalog_facts(assistant: Assistant) -> str:
         "say what a product is made of or whether it is in stock.",
         "- Web pages (product pages, reviews) state properties in their snippet; they usually state no price.",
         "- A live result is cited by its URL and the store or site name, with the time it was retrieved.",
+        "- When a catalog search finds nothing suitable for a request, the assistant searches the live web for the product once and may "
+        "answer from live listings alone: they are said to come from the web and shown with the store as their source. It does not do "
+        "this for a child under three, for whom a web result is never recommended.",
         "",
     ])
 

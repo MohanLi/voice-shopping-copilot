@@ -18,7 +18,7 @@ the draft before it is spoken. The same policy text is also in the prompts
 |---|---|---|---|
 | A price, rating, material or source that no tool returned | the model returns evidence handles; code fills every table cell and citation from the evidence | `agents/finalize.py` | `tests/test_agents.py`; ProofAgent Tool Use 100% in four runs |
 | A claim in the model's own sentences that the evidence does not support | rule checks on every draft (list in section 3), then a model critic | `guardrails/output.py`, `agents/answerer.py` | `tests/test_guardrails.py`; failures 3, 4, 11 in [evaluation.md](evaluation.md) |
-| A product that is unsafe for the child it is for | under three, only products whose own listing says they suit babies or toddlers; safety flags from the listing are shown and spoken | `retrieval/filters.py`, `guardrails/policy.py` (`FLAG_NOTES`) | scenario 11 of the ProofAgent set; `tests/test_retrieval.py` |
+| A product that is unsafe for the child it is for | under three, only products whose own listing says they suit babies or toddlers, and never a web result (the web fallback is not made for that age); safety flags from the listing are shown, and one is spoken, about the product that carries it | `retrieval/filters.py`, `guardrails/policy.py` (`FLAG_NOTES`), `agents/retriever.py` (`web_fallback_calls`), `agents/finalize.py` (`safety_notes`) | scenario 11 of the ProofAgent set; `tests/test_retrieval.py`, `tests/test_agents.py` |
 | A recalled or discontinued product | a named product looked up on the web is also searched for recall notices; a recalled product is never recommended and the notice is said first | `agents/planner.py`, `guardrails/output.py` (`recall_undisclosed`) | planted fault "Aqua Beads Mega Set"; failure 4 |
 | A dangerous request (mixing chemicals, hurting someone) | declined by fixed text before any model sees it; the ordinary rest of the message is still answered | `guardrails/input.py` | scenario 16; failures 1 and 9 |
 | An emergency in the message (a child swallowed something) or a statement of self-harm | the turn ends with one fixed reply: Poison Control and 911, or the 988 Lifeline (United States; the reply says so) | `guardrails/input.py`, `policy.EMERGENCY`, `policy.SELF_HARM` | `tests/test_guardrails.py` |
@@ -59,8 +59,11 @@ alcohol, prescription medicines, adult content) are declined here.
 
 **Planner and Retriever.** The budget and the age are applied as search filters whatever the Planner wrote, and
 safety exclusions are never loosened. A search about a declined subject is refused by code whoever asked for it
-(`unsafe_query`). Only the two tools the MCP server advertises can be called. A search that failed is reported
-as failed, never as "nothing found".
+(`unsafe_query`), in the form of a question and in the form a query built from a product name takes. Only the
+two tools the MCP server advertises can be called. A search that failed is reported as failed, never as "nothing
+found". When the catalog has nothing suitable the live web is searched once for the product, by rule, with the
+budget as the price limit; not for a child under three, not after a web search of the turn has failed, and not
+for a query the screen refuses. The answer then says that its listings come from the web.
 
 **MCP server.** Tool results are third-party text. The server strips markup and invisible characters, removes
 sentences that address an AI, and flags the result; catalog listings pass the same filter. Web search is
@@ -72,7 +75,9 @@ call is written to an audit log with its arguments and the sources returned. Det
 draft is checked by rules; one revision is allowed; what still fails is rebuilt by code from the evidence or
 replaced by a template that only copies. The model critic can send a draft back once and can only make an
 answer stricter. Safety sentences (a choking-hazard flag, the under-three rule, a recall, cleaning products)
-are added by code from the evidence and are not dropped when the spoken reply is cut to 15 seconds.
+are added by code from the evidence and are not dropped when the spoken reply is cut to 15 seconds. A warning
+said aloud is about the product that carries it: "It contains magnets" after a sentence about the first product
+only when the first product has them, otherwise "One of the options contains magnets".
 
 ## 3. The rule checks on a draft
 
@@ -85,6 +90,7 @@ are added by code from the evidence and are not dropped when the spoken reply is
 - a recall or discontinuation that a source states must be said;
 - a product over the budget, or one that misses a constraint, must say so on screen, and a price above the budget must not be spoken without saying that it is; when every product of an answer is over the budget and the evidence has one that fits, that one is named too;
 - a question about a price gets a price or the statement that none was found, also for a product that is not recommended;
+- a product is not called the cheapest or the highest rated next to one in the same answer that beats it;
 - the stock status is not called unstated while a live result matched to the product states it;
 - a web result is not recommended for a child under three;
 - absolute assurances are never given ("completely safe", "cures", "doctor recommended", "guaranteed to": `policy.FORBIDDEN_ASSURANCES`);
@@ -133,7 +139,7 @@ Router model ("my son's eighteen months", "for my baby").
 
 ## 7. How this was tested
 
-- 598 unit and end-to-end tests, a large part of them on the rules above; each failure found in evaluation
+- 615 unit and end-to-end tests, a large part of them on the rules above; each failure found in evaluation
   became a test in the words of the turn that failed.
 - Six ProofAgent runs ([evaluation.md](evaluation.md)): an adversarial shopper, 30 turns each, with planted tool
   faults (an injected instruction, a recalled product, an impossible listing, a failing search); the last two
@@ -155,6 +161,8 @@ Router model ("my son's eighteen months", "for my baby").
 - Emergency numbers are for the United States.
 - A price from a store outside the United States is read as dollars. The second live run met Australian store
   pages; none of their prices reached an answer.
+- An answer that rests on web listings alone, where the shopper had been sent to the catalog (the web fallback),
+  has been tested on sample data and by replays with the live model. No jury run has seen it yet.
 - No person approves a reply before it is spoken. The governance profile used in evaluation declares that, and
   the compliance assessment marks it down for it.
 - The assistant cannot yet correct a false statement about an earlier turn ("the brush you showed me"), because

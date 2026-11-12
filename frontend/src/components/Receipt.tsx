@@ -71,12 +71,20 @@ export function Receipt({ turn }: { turn: Turn | undefined }) {
   }
   const result = turn.result;
   const working = turn.state === "working" || turn.state === "listening";
+  // Tool calls are listed under the step that made them. The web fallback is made by the retriever when the catalog has
+  // nothing close, or by a step of its own after a first draft that found nothing suitable.
+  const widened = turn.steps.some((step) => step.node === "widen");
+  const callsOf = (node: string): ToolCall[] => {
+    if (node === "retriever") return turn.tools.filter((call) => !(widened && call.origin === "fallback"));
+    if (node === "widen") return turn.tools.filter((call) => call.origin === "fallback");
+    return [];
+  };
   return (
     <aside className="receipt" aria-label="How this answer was made">
       <h2>How this answer was made</h2>
       <ol className="steps" aria-live="polite">
         {turn.steps.map((step, index) => (
-          <StepLine key={`${step.node}-${index}`} step={step} calls={step.node === "retriever" ? turn.tools : []} />
+          <StepLine key={`${step.node}-${index}`} step={step} calls={callsOf(step.node)} />
         ))}
         {working && (
           <li className="step step--running">

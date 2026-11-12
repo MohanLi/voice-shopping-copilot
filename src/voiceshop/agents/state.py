@@ -195,7 +195,11 @@ class Evidence(BaseModel):
     unmatched_filters: dict[str, str] = Field(default_factory=dict)
     strict_matches: int | None = None
     conflicts: list[str] = Field(default_factory=list, description="Disagreements between the catalog and the live web")
-    failed_tools: list[str] = Field(default_factory=list, description="Tools none of whose calls succeeded this turn (the answer says the check did not work)")
+    failed_tools: list[str] = Field(default_factory=list, description="Tools whose search did not work this turn (retriever.failed_tools); the answer says so")
+    web_fallback: str | None = Field(default=None, description="What the live web was searched for because the catalog had nothing suitable "
+                                                                "(retriever.web_fallback_calls); None when no such search was made")
+    searched: list[str] | None = Field(default=None, description="The tools that returned this turn, with or without results; None when not recorded. "
+                                                                  "An empty section of the evidence then says whether its source was asked at all")
 
     def get(self, ref: str) -> CatalogItem | WebItem | None:
         for item in (*self.catalog, *self.web):
@@ -214,7 +218,7 @@ class ToolRecord(BaseModel):
     tool: str
     arguments: dict[str, Any]
     ok: bool
-    origin: Literal["plan", "agent"] = "plan"
+    origin: Literal["plan", "agent", "fallback"] = "plan"     # who decided on the call: the Planner, the Retriever model, or the web-fallback rule
     round: int = 0
     n_results: int = 0
     duration_ms: float = 0.0

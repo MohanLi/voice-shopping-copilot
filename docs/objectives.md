@@ -44,7 +44,7 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 | O1 | Router identifies the user's task | `agents/router.py` | ✅ |
 | O2 | Router extracts constraints: budget, material, brand, category, preferences | `agents/router.py`, `agents/state.py` | ✅ |
 | O3 | Router detects basic safety concerns | `agents/router.py`, `guardrails/input.py` | ✅ |
-| O4 | Planner decides which sources and tools to use (private RAG, live web, or both) | `agents/planner.py` | ✅ |
+| O4 | Planner decides which sources and tools to use (private RAG, live web, or both) | `agents/planner.py`; when the catalog then has nothing suitable, the live web is searched once by rule (`agents/retriever.py`, `web_fallback_calls`; `docs/architecture.md`, "the web fallback") | ✅ |
 | O5 | Planner defines retrieval fields and comparison criteria | `agents/planner.py` | ✅ |
 | O6 | Retriever searches the private catalog with vector search + metadata filters | `agents/retriever.py`, `retrieval/engine.py` | ✅ |
 | O7 | Retriever invokes MCP tools for current prices / availability when appropriate | `agents/retriever.py` (function calling over the MCP-discovered tools; live Serper run 2026-11-11) | ✅ |
@@ -125,7 +125,7 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 | E4 | Adversarial/edge cases: ambiguous requests, conflicting private vs live data, out-of-budget products, missing products, incorrect tool results, unsupported claims, unsafe requests | scenarios 5, 6, 10, 12 to 16; planted tool faults in `eval/proofagent/tool_faults.json`; 14 traps per run from the harness library | ✅ |
 | E5 | Failures located along ASR → Router → Planner → RAG/MCP → Answerer → TTS | credit lost by stage in every `scorecard.md` (`stage_attribution`), read against the step traces in `docs/evaluation.md` §3 and §4 | ✅ |
 | E6 | Final scorecard/results included | `eval/results/proofagent/run1` to `run4`, and `mac-live` and `final`, the two runs against live web search on the laptop (scorecard, the harness's report, evidence record, every turn), `comparison.md`; the table is in the README and in `docs/evaluation.md`. Run 4 and both live runs are on the ProofAgent dashboard (`upload.json` in each folder; release gate: pass) | ✅ |
-| E7 | At least two failure cases analysed, with improvements | twenty, from speech recognition to the spoken reply, each with what was observed, the stage, the cause, the change and what the next run showed: `docs/evaluation.md` §4; what is still wrong: §5; improvements not yet made: §6 | ✅ |
+| E7 | At least two failure cases analysed, with improvements | twenty-one, from speech recognition to the spoken reply, each with what was observed, the stage, the cause, the change and what the next run showed: `docs/evaluation.md` §4; what is still wrong: §5; improvements not yet made: §6 | ✅ |
 | E8 | Evaluation configuration submitted | `eval/proofagent/` (governance profile, scenarios, planted faults, generated context and domain knowledge, README), `scripts/run_proofagent.sh` | ✅ |
 
 ### 2.9 Choice of LLM
@@ -173,7 +173,9 @@ Built in this order, each only after the required feature it extends is ✅.
 1. **Retrieval & grounding** — BM25 + dense fusion (RRF) on top of the required vector + filter search;
    cross-encoder reranking; graceful constraint relaxation ("nothing under $15, the closest is $16.20");
    prices and ratings *injected from evidence* instead of generated (the "hydration" idea Amazon describes
-   for Rufus); claim-level critic; a retrieval benchmark with ablations.
+   for Rufus); claim-level critic; a retrieval benchmark with ablations; a corrective step when the catalog
+   has nothing suitable: one live web search and a second draft (the idea of corrective RAG, Yan et al. 2024,
+   with the re-ranker's score and the Answerer's own abstention as the judgment, so no extra model call).
 2. **Evaluation & safety rigor** — a custom e-commerce trap pack for ProofAgent; all four axes
    (behaviour, context, compliance, governance) and the readiness index; measured before/after scores once
    failures are fixed; per-stage metrics (WER by accent, router accuracy, tool-selection accuracy);

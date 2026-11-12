@@ -36,13 +36,13 @@ function applyEvent(turn: Turn, event: StreamEvent): Turn {
       return { ...turn, steps: [...turn.steps, step] };
     }
     case "tool_call":
-      return { ...turn, tools: [...turn.tools, { tool: event.tool, arguments: event.arguments, done: false }] };
+      return { ...turn, tools: [...turn.tools, { tool: event.tool, arguments: event.arguments, origin: event.origin, done: false }] };
     case "tool_result": {
       const tools = [...turn.tools];
       const key = JSON.stringify(event.arguments);
       const at = tools.findIndex((call) => !call.done && call.tool === event.tool && JSON.stringify(call.arguments) === key);
-      const finished = { tool: event.tool, arguments: event.arguments, ok: event.ok, n_results: event.n_results, duration_ms: event.duration_ms,
-                         cached: event.cached, provider: event.provider, error: event.error, done: true };
+      const finished = { tool: event.tool, arguments: event.arguments, origin: event.origin, ok: event.ok, n_results: event.n_results,
+                         duration_ms: event.duration_ms, cached: event.cached, provider: event.provider, error: event.error, done: true };
       if (at >= 0) tools[at] = finished; else tools.push(finished);
       return { ...turn, tools };
     }

@@ -40,6 +40,9 @@ _CURRENT_TALK = re.compile(r"\b(?:currently|current\s+price|right\s+now|today(?:
 _UNSPEAKABLE = re.compile(r"https?://|www\.|\[[CW]\d+\]|\b[CW]\d+\b|AMZ-[A-Z0-9]{6,}|[*#`_|<>{}\[\]]", re.I)
 _SECRET = re.compile(r"\bsk-[A-Za-z0-9_-]{16,}|\bAIza[0-9A-Za-z_-]{20,}|\b[A-Fa-f0-9]{32,}\b|api[_-]?key\s*[:=]", re.I)
 _BUDGET_WORDS = re.compile(r"\b(?:budget|over|above|more\s+than|exceeds?|higher|pricier|beyond|limit|too\s+expensive)\b", re.I)
+# A superlative is a statement about the other products too, and the table next to it shows whether it holds.
+_CHEAPEST = re.compile(r"\b(?:cheapest|lowest[-\s]priced?|lowest\s+(?:price|cost)|least\s+expensive|most\s+affordable)\b", re.I)
+_TOP_RATED = re.compile(r"\b(?:highest|best|top)[-\s]rated\b|\bhighest\s+(?:star\s+)?rating\b", re.I)
 
 
 _HEDGE = re.compile(
@@ -132,10 +135,19 @@ def _claims_in(text: str) -> list[tuple[str, tuple[str, ...]]]:
 
 
 def known_prices(item: CatalogItem | WebItem, evidence: Evidence) -> list[float]:
-    """An item's own prices plus the prices of web results matched to it (a rejected offer may be mentioned as such)."""
+    """An item's own prices plus those of what it was matched to: the web results matched to a catalog product (a rejected
+    offer may be mentioned as such), and the catalog product a live listing was matched to.
+
+    The second half was missing. An answer that recommended the live listing of a board game and added "its catalog price
+    is $37.01" was sent back for an ungrounded price, and came back without it (a check with the live model).
+    """
     prices = item_prices(item)
     if isinstance(item, CatalogItem):
         prices += [w.price for w in evidence.web if w.matched_ref == item.ref and w.price is not None]
+    elif item.matched_ref:
+        matched = evidence.get(item.matched_ref)
+        if isinstance(matched, CatalogItem):
+            prices += item_prices(matched)
     return prices
 
 
@@ -259,6 +271,23 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
         if constraints.age_years is not None and constraints.age_years < 3 and isinstance(item, WebItem):
             issues.append(Issue(code="under_three_web_item", severity="revise", where=rec.ref,
                                 message=f"{rec.ref} is a web result; for a child under three recommend only catalog products that passed the under-three rule."))
+        # "The lowest-priced scrub brush found", at $6.49, stood on screen one row above a scrub brush at $4.79 (a check with the
+        # live model after the web fallback was built). Compared with the other products of the answer that it recommends
+        # without a caveat: "the cheapest that fits" is not contradicted by a cheaper one that does not fit.
+        rivals = [(other, o) for other in draft.recommendations if other.ref != rec.ref and not other.caveat and (o := evidence.get(other.ref)) is not None
+                  and not (isinstance(o, CatalogItem) and o.constraint_notes)]
+        if price is not None and asserted(_CHEAPEST, rec.why):
+            below = [(other.ref, p) for other, o in rivals if (p := best_price(o)) is not None and p < price - 0.005]
+            if below:
+                issues.append(Issue(code="superlative_not_true", severity="revise", where=rec.ref,
+                                    message=f"{rec.ref} is called the cheapest at ${price:.2f}, but {below[0][0]} in the same answer costs ${below[0][1]:.2f}. "
+                                            "Remove the claim or give it to the right product."))
+        if item.rating is not None and asserted(_TOP_RATED, rec.why):
+            above = [(other.ref, o.rating) for other, o in rivals if o.rating is not None and o.rating > item.rating]
+            if above:
+                issues.append(Issue(code="superlative_not_true", severity="revise", where=rec.ref,
+                                    message=f"{rec.ref} is called the highest rated at {item.rating:g}, but {above[0][0]} in the same answer is rated {above[0][1]:g}. "
+                                            "Remove the claim or give it to the right product."))
 
     # ---- spoken text and notes
     for where, text in spoken_fields:

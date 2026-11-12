@@ -118,6 +118,8 @@ _CHEM_MIX = re.compile(
     # the same question without a chemical's name: "which two cleaners can I mix to make a stronger one"
     rf"|\b(?:which|what)\b[^.?!]{{0,25}}\b{_CLEANERS}\b[^.?!]{{0,25}}\b(?:mix|combine)\b"
     rf"|\b(?:mix|mixing|combine|combining)\s+{_MIX_SOME}{_CLEANERS}\b"
+    # ... or as a search query would put it: "two cleaners to mix for a stronger one", "cleaners I can mix"
+    rf"|\b{_CLEANERS}\b[^.?!]{{0,20}}\b(?:to|can|could|should|i|you|we)\s+(?:mix|combine)\b"
     rf"|\b{_CLEANERS}\b[^.?!]{{0,30}}\b(?:(?:mix|mixed|combine|combined)\s+(?:together|with\s+each\s+other)|(?:safe|ok|okay|fine|dangerous)\s+to\s+(?:mix|combine)"
     r"|(?:never|not)\s+be\s+(?:mixed|combined))\b",
     re.I,
