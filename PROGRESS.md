@@ -30,7 +30,7 @@ Legend: ✅ done · 🔄 in progress · ⏳ waiting on Kevin · ⬜ not started
 | 5 | FastAPI service + React UI | ✅ | `src/voiceshop/api/`, `frontend/` (bundle in `frontend/dist`), `voiceshop serve`, `tests/test_api.py`, `frontend/e2e/smoke.cjs` (a spoken request through a fake microphone, a follow-up, a reply that keeps the earlier table on screen); tried on the Mac by Kevin; screenshots in `docs/images/` |
 | 6 | ProofAgent evaluation, component metrics, failure analysis with before/after | ✅ (⏳ live run and upload on the Mac) | four runs in `eval/results/proofagent/run1..run4` with scorecards, stage attribution and the comparison; `docs/evaluation.md` (fifteen failure analyses, what is still wrong); speech and retrieval evaluations in `eval/results/` |
 | 7 | Beyond-requirements bundles (retrieval & grounding, eval rigor, voice UX, engineering showcase) | 🔄 | retrieval & grounding and eval rigor in place (replay tool, repeated-ballot report, upload to the ProofAgent dashboard); open: CI, Docker, demo GIF, second-provider run |
-| 8 | Documentation, verification pass against `docs/objectives.md` | 🔄 | `README.md`, `docs/architecture.md`, `docs/mcp.md`, `docs/evaluation.md`, `docs/decisions.md`, `prompts/README.md`, `eval/proofagent/README.md`; still to write: data, retrieval, safety, checkpoints, the ingestion notebook |
+| 8 | Documentation, verification pass against `docs/objectives.md` | 🔄 | `README.md`, `docs/architecture.md`, `docs/mcp.md`, `docs/evaluation.md`, `docs/safety.md`, `docs/decisions.md`, `prompts/README.md`, `eval/proofagent/README.md`; still to write: data, retrieval, checkpoints, the ingestion notebook |
 
 Tests: 589 passing (`python -m pytest tests -q`, ~20 s, no key or network needed) plus one behind `--run-models`,
 and the browser check `node frontend/e2e/smoke.cjs` against a running server.
@@ -79,8 +79,8 @@ live-search run (reported apart from runs 1 to 4: its scenarios meet real search
 a defect of the live path.
 
 **Then, in this order:**
-1. `docs/data.md` (the dataset, what was derived and with what provenance, the age field), `docs/safety.md`
-   (the guardrail layers in one place), `docs/retrieval.md`; the ingestion notebook.
+1. `docs/data.md` (the dataset, what was derived and with what provenance, the age field), `docs/retrieval.md`;
+   the ingestion notebook.
 2. Engineering showcase: CI (tests and lint on push), a Dockerfile, a demo GIF for the README, one run with a
    local model through Ollama.
 3. The voice sample page (record real speakers for the speech evaluation), task "join claims and prices for

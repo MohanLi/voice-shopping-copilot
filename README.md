@@ -162,8 +162,8 @@ src/voiceshop/
 prompts/        every prompt, versioned, with a map of which node uses it     frontend/    the React UI (bundle committed)
 eval/           datasets, experiments, results; proofagent/ holds the         tests/       unit and end-to-end tests
                 scenarios, planted tool faults and governance profile
-docs/           objectives (requirement matrix), evaluation (scorecards and failure analyses), architecture,
-                decisions (dated, with the evidence), the MCP reference
+docs/           objectives (requirement matrix), evaluation (scorecards and failure analyses), safety,
+                architecture, decisions (dated, with the evidence), the MCP reference
 ```
 
 ## Safety
@@ -183,6 +183,9 @@ because the dataset's age field proved unreliable below three years. A named pro
 web is checked against recall notices, and a recalled product is never recommended. Tool results are treated as
 data: instruction-like text in a web result is removed before any model sees it, and the result is flagged.
 Keys stay in `.env`; logs redact them.
+
+The risks, the layer that handles each, how each was tested and what is not covered are in
+[docs/safety.md](docs/safety.md).
 
 ## How this was built
 

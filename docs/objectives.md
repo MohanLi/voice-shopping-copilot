@@ -93,7 +93,7 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 | M9 | Tool names and JSON schemas defined | `mcp_server/schemas.py`, `docs/mcp.md` | ✅ |
 | M10 | stdio or streamable HTTP/SSE transport | both | ✅ |
 | M11 | Tool requests, responses, timestamps and sources logged | `logs/mcp_calls.jsonl` | ✅ |
-| M12 | API terms and source restrictions respected | `docs/safety.md`, provider code | 🔄 |
+| M12 | API terms and source restrictions respected | search API only, no page fetched or scraped; allow and block lists; cache and rate limit; `docs/safety.md` §6, `docs/mcp.md` | ✅ |
 
 ### 2.6 Text-to-speech
 
@@ -157,13 +157,13 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 | D2 | Docs: data preprocessing and indexing | `docs/data.md`, `notebooks/01_data_ingestion.ipynb` | ⬜ |
 | D3 | Docs: LangGraph architecture | `docs/architecture.md` (workflow, node responsibilities, state and memory, evidence handles, failure handling, event stream) | ✅ |
 | D4 | Docs: MCP server and tool schemas | `docs/mcp.md` | ✅ |
-| D5 | Docs: safety considerations | `docs/safety.md` | ⬜ |
+| D5 | Docs: safety considerations | `docs/safety.md` (risks and where each is handled, the layers in the order of a turn, the rule checks, children under three, privacy, sources and terms, how it was tested, what it does not cover) | ✅ |
 | D6 | Docs: evaluation methodology | `docs/evaluation.md` (ProofAgent: configuration, scenarios, four scorecards, stage attribution, fifteen failure analyses, what is still wrong), `eval/proofagent/README.md`, `eval/results/` | ✅ |
 | D7 | Setup instructions, `.env.example`, run/build scripts (index + MCP) | `README.md` (quick start), `.env.example`, `uv.lock`, `scripts/bootstrap_mac.sh`, `scripts/mac_refresh.sh`, `voiceshop ingest / index / mcp serve / serve` | ✅ |
 | D8 | `prompts/` folder: system, router, planner, tool-call, answerer/critic, guardrail prompts and few-shots, each mapped to its node/agent/tool | `prompts/` | ✅ |
 | D9 | Checkpoint 1: proposal, problem definition, data slice, tools, ingestion notebook, related work | `docs/checkpoints/checkpoint1.md` | ⬜ |
 | D10 | Checkpoint 2: architecture diagram, LangGraph flow, MCP/tool calls, UI wireframe, RAG evaluation plan, MCP README + schemas, initial ProofAgent plan | `docs/checkpoints/checkpoint2.md` | ⬜ |
-| D11 | Repository with clean code and README | repo: README with the measured results; still to write: `docs/data.md`, `docs/safety.md`, the checkpoint documents, the notebook | 🔄 |
+| D11 | Repository with clean code and README | repo: README with the measured results; still to write: `docs/data.md`, the checkpoint documents, the notebook | 🔄 |
 | D12 | ≤7-minute live demo and short presentation | later (not part of the technical build) | ⬜ |
 
 ## 3. Beyond the requirements
