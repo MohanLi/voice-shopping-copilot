@@ -25,7 +25,7 @@ Intent = Literal["product_search", "follow_up", "compare", "chitchat", "out_of_s
 SafetyLevel = Literal["ok", "caution", "refuse"]
 # Fixed sentences the Router may choose (the wording lives in guardrails.policy.SAY; a model never writes one).
 SayId = Literal["greeting", "thanks", "identity", "capabilities", "limits", "no_actions", "no_instructions", "no_harm", "no_chemistry",
-                "no_restricted", "no_fabrication", "no_unconfirmed", "no_personal_data", "no_advice", "off_topic", "calm"]
+                "no_restricted", "no_fabrication", "no_unconfirmed", "no_personal_data", "no_advice", "no_records", "off_topic", "calm"]
 
 
 # ----------------------------------------------------------------------- router

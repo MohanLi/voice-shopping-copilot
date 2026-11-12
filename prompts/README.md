@@ -20,13 +20,13 @@ the system ever gave you can see exactly which wording produced it.
 | [`eval_query_generation.md`](eval_query_generation.md) | offline evaluation step — `voiceshop/evals/retrieval_queries.py` | three spoken-style requests per sampled product for the retrieval benchmark | `QueryBatch` |
 
 There is no separate "system prompt" for the assistant as a whole: each agent has its own, listed above. The
-few-shot examples used are inside the files that use them (`router.md` has sixteen routing examples, `critic.md`
+few-shot examples used are inside the files that use them (`router.md` has seventeen routing examples, `critic.md`
 has seven finding / no-finding examples). Each file's header also carries a short `rules:` list, the prompt's
 operative rules one line each; the document the ProofAgent evaluation is given as the system's instructions is
 generated from those lists, the safety policy and the fixed sentences (`voiceshop eval proofagent` writes it to
 `eval/proofagent/context/system_prompt.md`).
 
-Current versions: router 4, planner 4, retriever 2, answerer 7, critic 7, safety policy 3. What changed in each
+Current versions: router 5, planner 4, retriever 2, answerer 8, critic 7, safety policy 4. What changed in each
 and why is in [docs/evaluation.md](../docs/evaluation.md) and [docs/decisions.md](../docs/decisions.md).
 
 Tool descriptions are prompts too. The models read the descriptions of `rag.search` and `web.search` that the

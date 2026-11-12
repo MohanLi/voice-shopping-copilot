@@ -5,6 +5,7 @@ web-search tool. Select one with ``WEB_SEARCH_PROVIDER`` or list fallbacks in ``
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any
 
@@ -231,8 +232,9 @@ class FaultProvider:
 
     async def search(self, query: str, *, max_results: int, kind: SearchKind, site: str | None) -> list[WebHit]:
         low = query.lower()
+        squashed = re.sub(r"[\s-]+", "", low)                 # a search engine finds "Aquabeads" for "Aqua Beads" and the reverse
         for key, fault in self._load().items():
-            if key in low:
+            if key in low or re.sub(r"[\s-]+", "", key) in squashed:
                 self.calls.append({"query": query, "kind": kind, "fault": key})
                 if fault.get("error"):
                     raise PlantedFailure(self.name, str(fault["error"]))

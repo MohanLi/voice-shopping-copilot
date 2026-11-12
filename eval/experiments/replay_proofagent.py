@@ -4,15 +4,15 @@ A ProofAgent run costs about $0.85 and a quarter of an hour, most of it for the 
 models. Its questions are kept (``turns.jsonl.gz``), so a change to the assistant can be tried
 against the same conversation for about $0.10 and three minutes, without a jury: this prints,
 turn by turn, which stage wrote the reply in the recorded run and which writes it now, the
-routing, the plan, the Critic's verdict and the reply. It is how the fixes between the first
-and the second run were developed: five replays, each read in full, before one more paid run.
+routing, the plan, the Critic's verdict and the reply. It is how the fixes between the runs
+were developed: a few replays, each read in full, before one more paid run.
 
 The questions were written by the harness in response to the answers it got at the time, so a
 replay is not a new evaluation: later questions may refer to things the assistant no longer
 says. It shows what the code does now with the inputs that broke it then.
 
-    python eval/experiments/replay_proofagent.py baseline            # every turn
-    python eval/experiments/replay_proofagent.py baseline 9 13 22    # only these turns are printed (all are run, for the memory)
+    python eval/experiments/replay_proofagent.py run1            # every turn
+    python eval/experiments/replay_proofagent.py run1 9 13 22    # only these turns are printed (all are run, for the memory)
 
 Needs the same environment as a run (index, model key); web.search answers from the planted
 faults of eval/proofagent/tool_faults.json where they apply.

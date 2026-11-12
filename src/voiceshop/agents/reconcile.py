@@ -173,6 +173,21 @@ def text_about(offer: WebItem, page: WebItem) -> str | None:
     return " ".join(sentences) or None
 
 
+def same_name(offer: WebItem, page: WebItem) -> bool:
+    """Does ``page`` mention a product whose name starts like ``offer``'s (a page about "Glimmer Putty" for the listing "Glimmer Putty Galaxy Tin")?
+
+    Much weaker than :func:`text_about`, and used for less: ``text_about`` decides whose claims a listing is credited
+    with, this only tells the Answerer where to read. Without it the evidence said of that listing "claims about
+    materials or ingredients: none stated in any result" while a page about the product line called it silicone-based,
+    and the answer repeated both (third ProofAgent run, turn 14).
+    """
+    words = _product_words(offer.title)[:2]
+    if len(words) < 2:
+        return False
+    there = {_singular(w) for w in _norm(f"{page.title} {page.snippet}").split()}
+    return all(_in(w, there) for w in words)
+
+
 def link_descriptions(web: list[WebItem]) -> None:
     """Attach to each priced listing the claims and cautions that other results state about the same product."""
     from voiceshop.agents.claims import stated_cautions, stated_claims

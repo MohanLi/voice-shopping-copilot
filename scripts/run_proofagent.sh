@@ -12,6 +12,11 @@
 # What it costs: the assistant itself about $0.05; the harness (the adversary, the jury and
 # the reporter, on Claude Haiku with Sonnet as backup for calls Haiku cannot complete) about
 # $0.80. The project's spending limit in .env (LLM_BUDGET_USD) applies to both.
+#
+# The ProofAgent dashboard: if .env holds a PROOFAGENT_API_KEY, the finished run is then sent
+# to app.proofagent.ai (scores, findings, the jury's votes and the conversation of the run;
+# no key, no local path). Without the key nothing leaves this machine. A run can also be
+# sent later:  voiceshop eval proofagent --label <label> --upload
 set -uo pipefail
 cd "$(dirname "$0")/.."
 LABEL="${1:-mac-live}"
@@ -28,11 +33,17 @@ grep -q '^SERPER_API_KEY=.\+' .env 2>/dev/null || echo "Note: no SERPER_API_KEY 
 echo "code: $(git log --oneline -1 2>/dev/null || echo 'not a git checkout')"
 echo "ProofAgent run '$LABEL', $TURNS turns. Progress is quiet; the scorecard prints at the end (about 15 minutes for 30 turns)."
 START=$(date +%s)
-if voiceshop eval proofagent --label "$LABEL" --turns "$TURNS" --channel auto --fallback-llm anthropic/claude-sonnet-5-5 --quiet 2>&1 | tee "$LOG"; then
-  echo
-  echo "PROOFAGENT RUN COMPLETE in $(( ($(date +%s) - START) / 60 )) min: eval/results/proofagent/$LABEL/scorecard.md  (log: $LOG)"
-else
+voiceshop eval proofagent --label "$LABEL" --turns "$TURNS" --channel auto --fallback-llm anthropic/claude-sonnet-5-5 --quiet 2>&1 | tee "$LOG"
+if [ "${PIPESTATUS[0]}" -ne 0 ]; then
   echo
   echo "PROOFAGENT RUN FAILED  (log: $LOG)"
   exit 1
+fi
+echo
+echo "PROOFAGENT RUN COMPLETE in $(( ($(date +%s) - START) / 60 )) min: eval/results/proofagent/$LABEL/scorecard.md  (log: $LOG)"
+if grep -q '^PROOFAGENT_API_KEY=.\+' .env 2>/dev/null; then
+  echo "Sending the run to the ProofAgent dashboard (PROOFAGENT_API_KEY is set in .env) ..."
+  voiceshop eval proofagent --label "$LABEL" --upload 2>&1 | tee -a "$LOG" || echo "The upload did not work; the run itself is complete. Try again with: voiceshop eval proofagent --label $LABEL --upload"
+else
+  echo "Not uploaded (no PROOFAGENT_API_KEY in .env). To send it later: voiceshop eval proofagent --label $LABEL --upload"
 fi

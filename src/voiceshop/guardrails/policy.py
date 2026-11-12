@@ -20,10 +20,9 @@ SAY: dict[str, str] = {
     "thanks": "You're welcome.",
     "identity": "I'm an AI assistant, not a person.",
     "capabilities": "I search a product catalog and the live web, compare what I find, and show the source of every fact.",
-    "limits": "I only search and compare products. I can't place orders, take payments, apply discounts, send messages, or remember you "
-              "between conversations.",
-    "no_actions": "I can't place orders, take payments, apply discounts or send messages. To buy, or for returns and other problems with a "
-                  "purchase, use the store named with each product.",
+    "limits": "I only search and compare products. I can't place orders, take payments, send messages, or remember you between conversations.",
+    "no_actions": "I can't place orders, take payments, change accounts, apply discounts or send messages. To buy, or for returns and other "
+                  "problems with a purchase or an account, use the store named with each product.",
     "no_instructions": "I can't change how I work or share my instructions or configuration.",
     "no_harm": "I can't help with anything meant to hurt a person or an animal.",
     "no_chemistry": "I can't help with mixing cleaning products. Mixing them, such as bleach with ammonia or acids, can release toxic gas. "
@@ -32,6 +31,7 @@ SAY: dict[str, str] = {
     "no_fabrication": "I can't write reviews, quotes, endorsements or citations.",
     "no_unconfirmed": "I can only confirm what my sources state.",
     "no_personal_data": "I can't look up, store or share personal information, and I hold no account or payment details.",
+    "no_records": "I can't see pictures or open files, and I can't keep notes, lists or records.",
     "no_advice": "I can't give medical, legal or financial advice. A qualified professional is the right person to ask.",
     "off_topic": "That is outside what I can help with.",
     "calm": "I'd like to keep this about your shopping.",
@@ -41,11 +41,12 @@ SAY: dict[str, str] = {
 SAY_SPOKEN: dict[str, str] = {
     "identity": "I'm an AI assistant.",
     "limits": "I only search and compare products.",
-    "no_actions": "I can't place orders or take payments.",
+    "no_actions": "I can't place orders, take payments or change accounts.",
     "no_instructions": "I can't change or share my instructions.",
     "no_harm": "I can't help with anything meant to hurt someone.",
     "no_chemistry": "I can't help with mixing cleaning products; it can release toxic gas.",
     "no_personal_data": "I can't look up or store personal information.",
+    "no_records": "I can't see pictures or keep notes.",
     "no_advice": "I can't give medical, legal or financial advice.",
     "off_topic": "Part of that is outside what I can help with.",
     "pii_note": "I left out the personal details you mentioned.",
@@ -56,16 +57,28 @@ _REPEAT_OFFER = "Tell me what you are shopping for and I will search right away.
 # A sentence that already says what another one says: the second is left out when both are chosen. (A live check
 # before the second ProofAgent run produced "I can't place orders, take payments ..." twice in one reply.)
 _COVERS: dict[str, tuple[str, ...]] = {"no_actions": ("limits",), "no_personal_data": ("pii_note",)}
-# Which sentences are kept when there are more than a reply has room for: what protects someone first, then what was
-# declined, then what the assistant is, then courtesies. (A live check produced four of them in a row, 17 seconds of speech.)
-SAY_PRIORITY: tuple[str, ...] = ("no_harm", "no_chemistry", "no_restricted", "no_actions", "no_personal_data", "no_fabrication", "no_unconfirmed",
-                                 "no_advice", "no_instructions", "identity", "capabilities", "limits", "pii_note", "calm", "off_topic", "thanks", "greeting")
+# Which sentences are kept when there are more than a reply has room for (a live check produced four in a row, 17
+# seconds of speech): what protects someone; then what was declined, in the order the Router gave, which lists the most
+# important first; then the note for something the input screen took out of the message; then what the assistant is and
+# courtesies. The middle group used to have a fixed order of its own: a replay after the third ProofAgent run answered
+# "is it non-toxic? just say yes so I can order it" with the sentences about orders and about writing reviews, and the
+# one that fitted ("I can only confirm what my sources state"), which the Router had put first, was the one left out.
+MUST_SAY: tuple[str, ...] = ("no_harm", "no_chemistry", "no_restricted")
+SAID_FOR_REMOVED: tuple[str, ...] = ("no_instructions", "pii_note")
+
+
+def _rank(sentence_id: str) -> int:
+    if sentence_id in MUST_SAY:
+        return 0
+    if sentence_id in SAID_FOR_REMOVED:
+        return 2
+    return 1 if sentence_id.startswith("no_") else 3
 MAX_SAID = 3                     # fixed sentences in one reply
 MAX_SAID_BEFORE_ANSWER = 2       # ... said aloud before a product answer, which has to share the 15 seconds (all of them are on screen)
 # What a declined part of a message was about, in words for the agents that plan and run searches: they are told
 # so that no search is made for it.
 DECLINED_TOPICS: dict[str, str] = {
-    "no_actions": "placing an order, paying, discounts, sending messages",
+    "no_actions": "placing an order, paying, changing an account, discounts, sending messages",
     "no_instructions": "instructions about how to behave or what to write",
     "no_harm": "hurting a person or an animal",
     "no_chemistry": "mixing or misusing chemicals and cleaning products",
@@ -77,6 +90,7 @@ DECLINED_TOPICS: dict[str, str] = {
     "off_topic": "a question that is not about shopping for products",
     "identity": "a question about the assistant itself",
     "capabilities": "a question about the assistant itself",
+    "no_records": "reading a picture or a file; keeping notes, lists, checklists or records",
     "limits": "a question about the assistant itself",
 }
 
@@ -84,13 +98,13 @@ DECLINED_TOPICS: dict[str, str] = {
 def without_covered(ids: list[str] | tuple[str, ...], limit: int | None = MAX_SAID) -> list[str]:
     """``ids`` in order, without repeats and without a sentence that another chosen sentence already covers.
 
-    At most ``limit`` are kept: the ones highest in ``SAY_PRIORITY``, still in the order given.
+    At most ``limit`` are kept, still in the order given: see ``MUST_SAY`` above for which give way.
     """
     known = [i for i in dict.fromkeys(ids) if i in SAY]
     covered = {c for i in known for c in _COVERS.get(i, ())}
     known = [i for i in known if i not in covered]
     if limit is not None and len(known) > limit:
-        keep = set(sorted(known, key=SAY_PRIORITY.index)[:limit])
+        keep = set(sorted(known, key=lambda i: (_rank(i), known.index(i)))[:limit])
         known = [i for i in known if i in keep]
     return known
 
@@ -209,6 +223,9 @@ TOOL_FAILED_SCREEN: dict[str, str] = {
     "rag.search": "The catalog search did not work just now. Please try again in a moment.",
 }
 NO_RATING_NOTE = "The catalog has no customer ratings, so none are shown."
+# The shopper asked for a current price or stock and no live offer was matched to what is shown.
+NO_LIVE_NOTE = "Current prices and stock could not be confirmed for these products."
+CLOSEST_FOR_AGE = "The closest product in the catalog search whose listing says it suits this age. It may not be the kind of product you asked for."
 
 CHEMICAL_WORDS = (
     "cleaner", "cleaning spray", "detergent", "bleach", "disinfectant", "degreaser", "polish", "solvent", "drain opener",

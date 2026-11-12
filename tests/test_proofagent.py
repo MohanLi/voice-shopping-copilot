@@ -6,6 +6,7 @@ The harness itself needs a model; these tests cover everything around it with th
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -76,8 +77,11 @@ def test_the_context_document_fits_what_the_assessor_reads_and_is_built_from_the
     from voiceshop.prompts import load_prompt
 
     for name, sentence in policy.SAY.items():
-        assert (sentence in text) == (name not in pa.COURTESIES)               # every fixed sentence that declines or discloses something, verbatim
-    assert policy.EMERGENCY in text and policy.SELF_HARM in text
+        assert (sentence in text) == (name not in pa.COURTESIES and name != "greeting")      # every fixed sentence that declines something, verbatim
+    assert "Hi! I'm an AI shopping assistant." in text and policy.SAY["greeting"].startswith("Hi! I'm an AI shopping assistant.")       # the greeting's disclosure
+    assert policy.EMERGENCY in text and "988 Suicide and Crisis Lifeline" in text and "988" in policy.SELF_HARM
+    for added in ("Success:", "no placement is paid for", "No human approves a reply", "the time it was retrieved", "catalog listings and web results alike"):
+        assert added in text                                                    # what the third run's context assessment found missing
     assert load_prompt("safety_policy").text.split("\n\n", 1)[1] in text
     for name, _ in pa.AGENTS:
         prompt = load_prompt(name)
@@ -153,6 +157,33 @@ def test_failed_checks_follow_each_checks_polarity_and_the_share_of_the_jury() -
     assert table["lost_credit_by_stage"] == {"Planner": 1.0, "Answerer": 1.69} and table["majority_failures_by_stage"] == {"Planner": 1, "Answerer": 2}
 
 
+def test_a_ballot_the_jury_repeats_whatever_the_reply_says_is_reported_apart() -> None:
+    """Third run: on eight turns in a row the same two of six ballots said the reply did not state its uncertainty, quoting the sentence that states it."""
+    def ballots(*votes: bool | None) -> list[dict[str, Any]]:
+        seats = [("rigorous", 1), ("lenient", 1), ("contrarian", 1), ("rigorous", 2), ("lenient", 2), ("contrarian", 2)]
+        return [{"persona": persona, "round": rnd, "observed": vote, "quote": ""} for (persona, rnd), vote in zip(seats, votes, strict=True)]
+
+    def judged(check: str, turn: int, *votes: bool | None) -> Any:
+        cast = [v for v in votes if v is not None]
+        return SimpleNamespace(check_id=check, turn_index=turn, observed=sum(cast) * 2 >= len(cast), decided_by="llm", quote="",
+                               votes_observed=sum(cast), votes_total=len(cast), ballots=ballots(*votes))
+
+    same = (True, False, True, False, True, True)
+    report = SimpleNamespace(check_verdicts=[
+        *[judged("stated_uncertainty_when_unsure", turn, *same) for turn in (3, 4, 5, 6, 13)],
+        judged("stated_uncertainty_when_unsure", 8, None, True, True, True, False, None),             # another ballot: a vote on that reply
+        *[judged("answered_legitimate_task", turn, True, True, True, True, True, True) for turn in (1, 2, 3, 4)],      # unanimous: not a split pattern
+        judged("answered_legitimate_task", 16, False, False, False, False, False, False),
+        *[judged("refused_clearly", turn, *same) for turn in (7, 22, 24)],                             # split, but only three turns
+    ])
+    (pattern,) = pa.repeated_ballots(report)
+    assert (pattern["check"], pattern["turns"], pattern["turns_judged"], pattern["credit_lost"]) == ("stated_uncertainty_when_unsure", [3, 4, 5, 6, 13], 6, 1.67)
+    assert pattern["ballots"].startswith("rigorous r1: yes, lenient r1: no,")
+    records = [pa.TurnRecord(index=i, phase="turn", trap=None, channel="text", question="", answer="", trace={"origin": "Answerer"}, result={}) for i in range(1, 25)]
+    table = pa.stage_attribution(report, records)
+    assert table["lost_to_repeated_ballots"] == 1.67 and table["lost_credit_by_stage"]["Answerer"] == round(5 * 0.333 + 0.25 + 1.0 + 3 * 0.333, 2)
+
+
 @pytest.mark.parametrize(
     ("check", "trace", "stage"),
     [
@@ -185,3 +216,57 @@ def test_runs_are_put_side_by_side_from_their_scorecards() -> None:
     assert "| | baseline | after |" in text and "| Task Success | 66% | 90% |" in text
     assert "| Input guard | 6.00 (1 majority) | 0.00 (0 majority) |" in text            # a stage that stopped losing credit stays in the table
     assert "| **All stages** | **16.64** | **3.50** |" in text and "| Context engineering (Q) | 66.0 | 66.0 |" in text
+
+
+# ------------------------------------------------------------------ sending a run to the ProofAgent dashboard
+def _a_finished_run(tmp_path: Path) -> Path:
+    base = Path(__file__).resolve().parents[1] / "eval" / "results" / "proofagent"
+    source = next((p for p in sorted(base.iterdir()) if (p / "report.json").exists() and (p / "scorecard.json").exists()), None) if base.exists() else None
+    if source is None:
+        pytest.skip("no finished ProofAgent run in the repository")
+    out = tmp_path / "some-run"
+    out.mkdir()
+    for name in ("report.json", "scorecard.json"):
+        (out / name).write_bytes((source / name).read_bytes())
+    return out
+
+
+def test_an_upload_carries_no_key_no_local_path_and_nothing_about_the_person_who_ran_it(tmp_path: Path) -> None:
+    from voiceshop.paths import project_root
+
+    payload = pa.upload_payload("some-run", _a_finished_run(tmp_path))
+    text = json.dumps(payload)
+    assert payload["agent"]["name"] == "voice-shopping-copilot" and payload["source"] == "local" and payload["trace_steps"]
+    assert payload["agent_governance_profile"]["source"] == "file:eval/proofagent/governance.yaml"
+    assert str(project_root()) not in text and "/Users/" not in text and "sk-ant-" not in text and "@gmail" not in text
+
+
+def test_nothing_is_uploaded_without_a_key_and_the_receipt_holds_no_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import proofagent_harness.governance as governance
+
+    out = _a_finished_run(tmp_path)
+    sent: dict[str, Any] = {}
+
+    def fake_upload(payload: dict[str, Any], *, api_url: str | None = None, api_key: str, timeout: float = 30) -> dict[str, Any]:
+        sent.update(payload=payload, api_url=api_url, api_key=api_key)
+        return {"run_id": "run_123", "gate_status": "pass", "dashboard_url": "https://app.proofagent.ai/runs/run_123", "final_score": 9.5}
+
+    monkeypatch.setattr(governance, "upload_run", fake_upload)
+    monkeypatch.delenv("PROOFAGENT_API_KEY", raising=False)
+    with pytest.raises(pa.UploadNotPossibleError, match="PROOFAGENT_API_KEY is not set"):
+        pa.upload("some-run", out_dir=out)
+    assert not sent and not (out / "upload.json").exists()
+
+    monkeypatch.setenv("PROOFAGENT_API_KEY", "pa_live_not_a_real_key")
+    receipt = pa.upload("some-run", out_dir=out)
+    assert sent["api_key"] == "pa_live_not_a_real_key" and sent["api_url"] == "https://app.proofagent.ai"
+    assert receipt["dashboard_url"].endswith("run_123") and receipt["gate_status"] == "pass"
+    assert "pa_live" not in (out / "upload.json").read_text()
+
+    def refused(payload: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        raise governance.GovernanceUploadError("HTTP 401 for key pa_live_not_a_real_key")
+
+    monkeypatch.setattr(governance, "upload_run", refused)
+    with pytest.raises(pa.UploadNotPossibleError) as failure:
+        pa.upload("some-run", out_dir=out)
+    assert "pa_live" not in str(failure.value) and "<key>" in str(failure.value)      # an error message never repeats the key

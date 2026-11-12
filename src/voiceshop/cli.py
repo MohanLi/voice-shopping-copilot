@@ -465,9 +465,10 @@ def eval_proofagent(
     no_compliance: Annotated[bool, typer.Option("--no-compliance", help="Skip the framework compliance assessment (C axis)")] = False,
     quiet: Annotated[bool, typer.Option("--quiet", help="No live progress display")] = False,
     refresh: Annotated[bool, typer.Option("--refresh", help="Run nothing: rebuild the scorecard and the evidence record of the finished run --label")] = False,
-    compare: Annotated[str | None, typer.Option(help="Run nothing: put finished runs side by side, e.g. --compare baseline,after (writes comparison.md)")] = None,
+    compare: Annotated[str | None, typer.Option(help="Run nothing: put finished runs side by side, e.g. --compare run1,run4 (writes comparison.md)")] = None,
+    upload: Annotated[bool, typer.Option("--upload", help="Run nothing: send the finished run --label to the ProofAgent dashboard (needs PROOFAGENT_API_KEY)")] = False,
 ) -> None:
-    """Evaluate the whole assistant with the ProofAgent harness and write the scorecard."""
+    """Evaluate the whole assistant with the ProofAgent harness and write the scorecard. Nothing is uploaded unless --upload is given."""
     import asyncio
 
     from voiceshop.evals import proofagent_eval as pa
@@ -480,6 +481,15 @@ def eval_proofagent(
         return
     if compare:
         console.print(pa.compare([name.strip() for name in compare.split(",") if name.strip()]), markup=False, highlight=False)
+        return
+    if upload:
+        try:
+            receipt = pa.upload(label)
+        except pa.UploadNotPossibleError as exc:
+            console.print(f"Not uploaded: {exc}", markup=False, highlight=False)
+            raise typer.Exit(1) from None
+        console.print(f"Uploaded run '{label}' to {receipt['to']}" + (f": {receipt['dashboard_url']}" if receipt.get("dashboard_url") else "")
+                      + (f" (gate: {receipt['gate_status']})" if receipt.get("gate_status") else ""), markup=False, highlight=False)
         return
     if channel not in ("auto", "text", "voice"):
         console.print("[red]--channel must be auto, text or voice[/red]")

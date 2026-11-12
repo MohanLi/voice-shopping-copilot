@@ -15,6 +15,7 @@ grounded by construction.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from typing import Any
 
 from voiceshop.agents.state import (
@@ -448,6 +449,13 @@ def template_comparison(items: list[CatalogItem | WebItem], labels: dict[str, st
     "Is the second one cheaper than the first?" used to get the template's sentence about one product, which answers
     nothing. Two prices next to each other, each product called by its place on screen, do answer it.
     """
+    catalog_only = all(isinstance(i, CatalogItem) and not (i.live is not None and i.live.price is not None) for i in items)
+    if len(items) > 2 and catalog_only and all(labels.get(i.ref) and _best_price(i) is not None for i in items):
+        # Three products with their names and prices take about twenty seconds to say. Each is called by its place on
+        # screen, where its name stands next to it: "The third one is $8.92, the first one $9.99 and the second one $9.99".
+        parts = [f"{labels[item.ref]} {'is ' if n == 0 else ''}${_best_price(item):.2f}" for n, item in enumerate(items)]
+        text = ", ".join(parts[:-1]) + f" and {parts[-1]}, all catalog prices."
+        return text[0].upper() + text[1:]
     said: list[str] = []
     for item in items:
         price = _best_price(item)
@@ -456,7 +464,6 @@ def template_comparison(items: list[CatalogItem | WebItem], labels: dict[str, st
         label = labels.get(item.ref)
         who = f"{label}, {short_name(item, 6)}," if label else short_name(item, 6)
         said.append(f"{who} is ${price:.2f}{where}" if price is not None else f"{who} has no listed price")
-    catalog_only = all(isinstance(i, CatalogItem) and not (i.live is not None and i.live.price is not None) for i in items)
     text = "; ".join(said) + ((", both catalog prices." if len(items) == 2 else ", all catalog prices.") if catalog_only else ".")
     return text[0].upper() + text[1:]
 
@@ -503,12 +510,71 @@ def describe_request(constraints: Constraints) -> str:
     return " ".join(parts)
 
 
+_EVIDENCE_VERB = re.compile(r"\b([Tt])he evidence (does not|doesn't|has|shows|states|gives|includes|lists|contains|says|mentions|confirms|indicates|provides|is)\b")
+_PLURAL = {"does not": "do not", "doesn't": "don't", "has": "have", "shows": "show", "states": "state", "gives": "give", "includes": "include",
+           "lists": "list", "contains": "contain", "says": "say", "mentions": "mention", "confirms": "confirm", "indicates": "indicate",
+           "provides": "provide", "is": "are"}
+
+
+def shopper_words(text: str | None) -> str | None:
+    """Model-written text in a shopper's vocabulary: "my sources", not "the evidence".
+
+    The Answerer is given its material under the heading EVIDENCE and repeats the word: in the third ProofAgent run five
+    spoken replies began "The evidence does not state ...". The prompt now asks for "the listing" or "my sources"; this
+    is the backstop, and it changes no fact.
+    """
+    if not text or "evidence" not in text.lower():
+        return text
+    text = _EVIDENCE_VERB.sub(lambda m: f"{'My' if m.group(1) == 'T' else 'my'} sources {_PLURAL[m.group(2)]}", text)
+    return re.sub(r"\b([Tt])he evidence\b", lambda m: f"{'My' if m.group(1) == 'T' else 'my'} sources", text)
+
+
+_NAME_MARK = re.compile(r"\b([\w'&-]+)[!?]+(?=\s+\S)")
+_HANDLE = re.compile(r"\b[CW]\d{1,2}\b")
+
+
+def without_name_marks(text: str | None, titles: Iterable[str]) -> str | None:
+    """``text`` without the "!" or "?" that belongs to a product's name ("Created By Me! Heart Beads").
+
+    The spoken reply is assembled and trimmed sentence by sentence. A replay after the third ProofAgent run said aloud
+    "The listing for the second one, the Created By Me!" and stopped there: the name had ended the sentence. Names built
+    by code never carried the mark (``short_name``); this does the same for names inside a model's sentence.
+    """
+    if not text or not ("!" in text or "?" in text):
+        return text
+    for title in titles:
+        for m in _NAME_MARK.finditer(title or ""):
+            text = re.sub(re.escape(m.group(0)) + r"(?=\s)", m.group(1), text)
+    return text
+
+
+def without_handles(text: str | None, evidence: Evidence) -> str | None:
+    """``text`` with evidence handles replaced by product names: "a younger fit than C1" means nothing to a shopper."""
+    if not text:
+        return text
+    return _HANDLE.sub(lambda m: short_name(item) if (item := evidence.get(m.group(0))) is not None else m.group(0), text)
+
+
+def where_searched(searched: Iterable[str] | None) -> str:
+    """Where a search came up empty, in words, from the tools that actually ran: "in the catalog", "on the web", or both.
+
+    (Third ProofAgent run: a product looked up on the web only got "I couldn't find it in the catalog or on the web".
+    The first run had the mirror image, "I have no live listings to check it", after a catalog search alone.)
+    """
+    if searched is None:
+        return " in the catalog or on the web"
+    ran = set(searched)
+    catalog, web = "rag.search" in ran, "web.search" in ran
+    return " in the catalog or on the web" if catalog and web else " in the catalog" if catalog else " on the web" if web else ""
+
+
 def answer(evidence: Evidence, constraints: Constraints, weak_score: float | None = None, focus: list[str] | None = None,
-           labels: dict[str, str] | None = None) -> AnswerDraft:
+           labels: dict[str, str] | None = None, searched: Iterable[str] | None = None) -> AnswerDraft:
     """The grounded template answer: every value is copied from the evidence.
 
     ``focus`` lists the handles of on-screen products a follow-up is about; the answer is then about those, and
-    ``labels`` gives each its place on screen in words ("the second one").
+    ``labels`` gives each its place on screen in words ("the second one"). ``searched`` names the tools that ran
+    (None when the caller does not know): an empty result is reported for those sources only.
     """
     focused = [item for ref in (focus or []) if (item := evidence.get(ref)) is not None]
     withdrawn = None if focused else withdrawn_match(evidence, constraints)
@@ -525,8 +591,9 @@ def answer(evidence: Evidence, constraints: Constraints, weak_score: float | Non
         hint = "a higher budget" if constraints.budget_max else "different words or another kind of product"
         return AnswerDraft(
             recommendations=[], abstain=True, abstain_reason="nothing in the evidence fits the request",
-            spoken=f"I couldn't find {wanted} in the catalog or on the web. You could try {hint}.",
-            follow_up_question="Would you like me to search with a higher budget or a different product?",
+            spoken=f"I couldn't find {wanted}{where_searched(searched)}. You could try {hint}.",
+            follow_up_question=("Would you like me to search with a higher budget or a different product?" if constraints.budget_max
+                                else "Would you like me to look for a different product?"),
         )
     recs = [Recommendation(ref=item.ref, why=_why(item, constraints), caveat=_caveat(item, constraints)) for item in chosen]
     top = chosen[0]

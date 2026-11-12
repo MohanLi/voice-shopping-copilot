@@ -241,6 +241,9 @@ async def test_fault_provider_answers_only_the_queries_its_file_names() -> None:
     other = await service.search("wooden train set", kind="shopping")
     assert other.provider == "real" and other.results[0].title == "A real listing"
     assert not any("fallback" in note for note in other.notes)                # passing a query on is not a failure to report
+    # A search engine finds "Aqua Beads" for "Aquabeads": the third ProofAgent run's price query was respelt by the Planner and found nothing.
+    respelt = await service.search("Aquabeads Mega Set", kind="shopping")
+    assert respelt.provider == "fault-injection" and [r.price for r in respelt.results] == [None, 18.99]
 
 
 async def test_planted_results_go_through_the_same_sanitising_as_real_ones() -> None:

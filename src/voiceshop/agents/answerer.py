@@ -104,8 +104,8 @@ def _request_block(state: TurnState, constraints: Constraints, plan: Plan | None
             # No example sentences here: a live check found one of them ("... gives no rating and does not say where it is made")
             # repeated word for word in the answer to a question about a price.
             lines.append('Write "spoken" as the direct answer to the question above and to nothing else, not as an introduction of the product. '
-                         'State the fact that answers it, taken from the evidence, and do not open with "yes" or "no". If the evidence does not '
-                         'state what was asked, say which fact is missing and add one fact the evidence does state about the same thing.')
+                         'State the fact that answers it, taken from the evidence, and do not open with "yes" or "no". If no source states '
+                         'what was asked, say that the listing or your sources do not state it, and add one fact they do state about the same thing.')
     if route and route.safety == "caution":
         lines.append(f"Safety caution: {route.safety_reason or 'see policy'}")
     return "\n".join(lines)
@@ -124,6 +124,30 @@ def focus_refs(state: TurnState) -> list[str]:
     if route is None or route.intent not in ("follow_up", "compare"):
         return []
     return [str(shown[p - 1].get("ref")) for p in route.refers_to if 0 < p <= len(shown)]
+
+
+def searched_tools(state: TurnState) -> set[str]:
+    """The tools that ran in this turn and returned (with or without results): what "I couldn't find it" may speak about."""
+    return {record.tool for record in state.get("tool_log") or [] if record.ok}
+
+
+def in_shopper_words(draft: AnswerDraft, evidence: Evidence | None = None) -> AnswerDraft:
+    """The draft with its model-written sentences as a shopper should read and hear them. No fact is changed.
+
+    "My sources" for "the evidence" (``rules.shopper_words``); product names without the "!" that would end a spoken
+    sentence (``rules.without_name_marks``); and, on screen, a product's name where the model wrote its handle.
+    """
+    titles = [item.title for item in (*evidence.catalog, *evidence.web)] if evidence is not None else []
+
+    def spoken(text: str | None) -> str | None:
+        return rules.without_name_marks(rules.shopper_words(text), titles)
+
+    def shown(text: str | None) -> str | None:
+        return rules.without_handles(spoken(text), evidence) if evidence is not None else spoken(text)
+
+    recommendations = [r.model_copy(update={"why": shown(r.why) or "", "caveat": shown(r.caveat)}) for r in draft.recommendations]
+    return draft.model_copy(update={"spoken": spoken(draft.spoken) or "", "recommendations": recommendations,
+                                    "follow_up_question": shown(draft.follow_up_question), "conflict_note": shown(draft.conflict_note)})
 
 
 def focus_labels(state: TurnState) -> dict[str, str]:
@@ -166,7 +190,7 @@ def make_answerer_node(deps: Deps):  # type: ignore[no-untyped-def]
         budget = lead_budget(deps, state)
 
         if evidence.empty:
-            draft = rules.answer(evidence, constraints, weak, focus_refs(state), focus_labels(state))
+            draft = rules.answer(evidence, constraints, weak, focus_refs(state), focus_labels(state), searched_tools(state))
             return {"draft": draft, "draft_source": "template",
                     "trace": [step("answerer", "Nothing was retrieved: abstaining with the template answer", status="warn",
                                    started=started, grounded_by="template")]}
@@ -182,10 +206,12 @@ def make_answerer_node(deps: Deps):  # type: ignore[no-untyped-def]
                 "answerer", "answerer", AnswerDraft, user=user, turn_id=state.get("turn_id", ""),
                 variables={"max_words": budget, "safety_policy": load_prompt("safety_policy").text},
             )
+            draft = in_shopper_words(draft, evidence)
         except BudgetExceededError:
             raise
         except LLMCallError as exc:
-            draft, meta, fallback, used_template = rules.answer(evidence, constraints, weak, focus_refs(state), focus_labels(state)), {"model": "rules"}, fallback_note(exc), True
+            draft, meta, fallback, used_template = (rules.answer(evidence, constraints, weak, focus_refs(state), focus_labels(state), searched_tools(state)),
+                                                    {"model": "rules"}, fallback_note(exc), True)
         picks = ", ".join(r.ref for r in draft.recommendations) or ("abstained" if draft.abstain else "none")
         return {
             "draft": draft,
@@ -318,7 +344,7 @@ def make_critic_node(deps: Deps):  # type: ignore[no-untyped-def]
         update: dict[str, Any] = {"critique": critique, "draft": draft}
         grounded_by = None
         if verdict == "fallback":
-            update["draft"] = rules.answer(evidence, constraints, settings.weak_match_score, focus_refs(state), focus_labels(state))
+            update["draft"] = rules.answer(evidence, constraints, settings.weak_match_score, focus_refs(state), focus_labels(state), searched_tools(state))
             update["draft_source"] = grounded_by = "template"
         n = len(blocking)
         summary = {"pass": "Passed after a repair by code" if rebuilt else "Passed",

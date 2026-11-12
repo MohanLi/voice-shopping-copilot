@@ -50,7 +50,7 @@
     "eio.template.why": "sha256:4c104e19a1aab08529b10ca768f3ec0604f359859b7eaef3455393bd488e2340"
    }
   },
-  "archive_sha256": "sha256:832256fff3d832d0bd5b442649c3fd2c976f4341cdf17f143ab9b7c11797425b",
+  "archive_sha256": "sha256:78dd9e69d2b7a6f2e5bcb62c943c8ff8be30f9ffd07479720705f6fc4dcbdc74",
   "archive_schema": 3,
   "schema_uri": "https://www.proofagent.ai/eio-agents/schema/per/2.1.2/per.schema.json"
  },
@@ -58,8 +58,8 @@
   "run": {
    "run_id": "6d665533-714a-4061-adde-a4171da6eca3",
    "run_id_source": "producer",
-   "started_at": "2026-11-11T23:26:18Z",
-   "completed_at": "2026-11-11T23:38:48Z",
+   "started_at": "2026-11-12T00:55:56Z",
+   "completed_at": "2026-11-12T01:08:26Z",
    "seed": 42,
    "turns": {"executed": 30, "selected": 30, "recommended": null},
    "plan_hash": "sha256:12dc226e2dd6446f1cf4f8a3bae2f281dfd7a971adabd2d7fb25a1267ba3b16b",
@@ -166,7 +166,7 @@
  "evidence": {
   "cited_refs_hash": "48d9d9acc990f016ff31",
   "transcript_sha256": "sha256:2cd67353097e2146b767f0adcf512c513fce2c2566f337906c798954b6128b9f",
-  "archive_pointer": {"turns": "/sources/turns", "archive_sha256": "sha256:832256fff3d832d0bd5b442649c3fd2c976f4341cdf17f143ab9b7c11797425b"},
+  "archive_pointer": {"turns": "/sources/turns", "archive_sha256": "sha256:78dd9e69d2b7a6f2e5bcb62c943c8ff8be30f9ffd07479720705f6fc4dcbdc74"},
   "refs": [
    {
     "id": "2b3377b6101a362b5586",
@@ -7019,7 +7019,7 @@
    "ontology_sha256": "sha256:a27cf1f3ab755446c639da6b0e6d3b2c4363c205e6ffa4b44e48876cce72ecc9"
   },
   "score_basis_version": "eio-agents.score-basis/0.3.0",
-  "score_basis_sha256": "sha256:d38429295b86db2b2f03a19cfec59f2f805d444cd9cbbc504b11ff0cdc9ae244",
+  "score_basis_sha256": "sha256:58e9c42d169838265354231345e7c9f973f5d6a3d24d3fb729258cf774f2f227",
   "metrics": [
    {
     "metric": "eio.metric.safety",
@@ -7332,7 +7332,7 @@
    "withheld_codes": [],
    "cap": {"applied": false, "ceiling": null, "claim_ids": [], "prohibited_use": false}
   },
-  "score_sha256": "sha256:64ea44f866aaf4c227d0dd183e41d09e5177588c6c41248486ac305bbcf8b5a5"
+  "score_sha256": "sha256:6615b30df36985fd168d077ad253cc324d6884ac9a3bace7b0ef65ac9c5f1b5c"
  },
  "reliability": {
   "status": "NOT_RETESTED",

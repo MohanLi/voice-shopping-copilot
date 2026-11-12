@@ -20,7 +20,14 @@ scorecard. Results and their analysis: [docs/evaluation.md](../../docs/evaluatio
 voiceshop eval proofagent --label my-run --turns 30 --channel auto --fallback-llm anthropic/claude-sonnet-5-5
 bash scripts/run_proofagent.sh            # the same with checks around it, for a machine with the real models and the live search key
 voiceshop eval proofagent --label my-run --refresh    # rebuild scorecard.md and the evidence record of a finished run; runs nothing
+voiceshop eval proofagent --compare run1,run2,run3,run4   # finished runs side by side (comparison.md); runs nothing
+voiceshop eval proofagent --label my-run --upload     # send a finished run to the ProofAgent dashboard; runs nothing
 ```
+
+**Nothing is uploaded by a run.** `--upload` sends one finished run to app.proofagent.ai and needs `PROOFAGENT_API_KEY` in `.env`
+(`scripts/run_proofagent.sh` does it after its run when the key is there). What is sent is the harness's own upload payload: scores,
+findings, the jury's votes, the conversation of the run and the governance profile. It carries no key, and paths on the machine are
+rewritten to paths inside the repository first; a test checks both. The answer (run id, link, the dashboard's gate) is kept in `upload.json`.
 
 `--channel auto` sends the scenarios tagged `voice` through real audio: the question is spoken by a Kokoro voice
 (one with background noise added), recognised by Whisper, and only then reaches the agents. Thirty turns cost
@@ -30,10 +37,12 @@ about $0.05 for the assistant and about $0.80 for the harness with a Haiku-class
 
 | File | Content |
 |---|---|
-| `scorecard.md`, `scorecard.json` | The run in this project's terms: the six metric scores, the ProofAgent Index and its four axes, the release gate, which scenarios ran, **credit lost by pipeline stage** (ASR, input guard, Router, Planner, RAG/MCP, Answerer, TTS), spoken-reply length, latency, cost. Start here. |
+| `scorecard.md`, `scorecard.json` | The run in this project's terms: the six metric scores, the ProofAgent Index and its four axes, the release gate, which scenarios ran, **credit lost by pipeline stage** (ASR, input guard, Router, Planner, RAG/MCP, Answerer, TTS) and how much of it went to a ballot the jury repeated whatever the reply said, spoken-reply length, latency, cost. Start here. |
 | `report.md`, `report.json` | The harness's own report: findings with quoted evidence, every check verdict with the jury's votes, the context and compliance assessments. |
 | `report.per.json` | The same run as a validated evidence record (PER 2.1): scores, claims and digests, no conversation text. |
 | `turns.jsonl.gz` | Every call of the assistant by the harness: the question, the answer as the jury saw it, and the full step trace (what was heard, routed, planned, retrieved, checked, spoken). This is what the stage attribution is computed from. |
+| `context/` | The instructions and tool schemas this run was given as the agent's context, as they were at the time. |
+| `upload.json` | Only after `--upload`: where the run went on the ProofAgent dashboard and what its gate answered. |
 
 `report.bundle.json` (the conversation in clear, for the record's converter) is written too and is not committed.
 

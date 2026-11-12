@@ -1064,3 +1064,233 @@ async def test_the_answerer_never_sees_the_part_of_the_message_that_was_declined
         assert "two headings" not in prompt and "recall was lifted" not in prompt
     assert result.user_text.startswith("start a checklist")                         # the turn log and the echo check keep the message as it was
     assert next(e for e in result.trace if e["node"] == "router")["details"]["passed_on"] == "a board game for a ten year old under twenty five dollars"
+
+
+# ================================================== found by the third ProofAgent run
+def test_an_empty_search_is_reported_for_the_sources_that_were_searched() -> None:
+    """A product looked up on the web only was answered "I couldn't find it in the catalog or on the web": the catalog had never been asked."""
+    gummies = Constraints(product="Vitakid immune gummies")
+    assert rules.answer(Evidence(), gummies, searched={"web.search"}).spoken.startswith("I couldn't find Vitakid immune gummies on the web.")
+    assert rules.answer(Evidence(), gummies, searched={"rag.search"}).spoken.startswith("I couldn't find Vitakid immune gummies in the catalog.")
+    both = rules.answer(Evidence(), gummies, searched={"rag.search", "web.search"})
+    assert both.spoken.startswith("I couldn't find Vitakid immune gummies in the catalog or on the web.")
+    assert both.follow_up_question == "Would you like me to look for a different product?"       # no budget was stated, so none is offered to be raised
+    assert "higher budget" in (rules.answer(Evidence(), Constraints(product="kite", budget_max=5), searched={"rag.search"}).follow_up_question or "")
+    assert rules.answer(Evidence(), gummies, searched=set()).spoken.startswith("I couldn't find Vitakid immune gummies. ")
+
+
+def test_model_written_text_speaks_of_sources_not_of_the_evidence() -> None:
+    """Five spoken replies of the third run began "The evidence does not state ...": the model repeated the heading its material is given under."""
+    from voiceshop.agents.answerer import in_shopper_words
+
+    assert rules.shopper_words("The evidence does not state a rating.") == "My sources do not state a rating."
+    assert rules.shopper_words("I checked: the evidence shows no live price.") == "I checked: my sources show no live price."
+    assert rules.shopper_words("It is wood, according to the evidence.") == "It is wood, according to my sources."
+    assert rules.shopper_words("Evidence-based toys are $9.99.") == "Evidence-based toys are $9.99." and rules.shopper_words(None) is None
+    draft = AnswerDraft(recommendations=[Recommendation(ref="C1", why="The evidence lists 8 pieces.", caveat="The evidence gives no age.")],
+                        spoken="The evidence does not say where it is made.", follow_up_question="Should I check what the evidence has on stock?")
+    said = in_shopper_words(draft)
+    assert (said.spoken, said.recommendations[0].why, said.recommendations[0].caveat, said.follow_up_question) == (
+        "My sources do not say where it is made.", "My sources list 8 pieces.", "My sources give no age.", "Should I check what my sources have on stock?")
+
+
+def test_both_and_the_two_mean_every_product_on_screen() -> None:
+    """ "Start with the two bead kits and their catalog prices" was routed to the second kit alone, and one price was spoken."""
+    from voiceshop.agents.router import all_on_screen, normalise_route
+
+    two = [{"ref": "C1", "name": "Bead Gallery Craft Kit"}, {"ref": "C2", "name": "Bracelet-Making Set"}]
+    three = [*two, {"ref": "C3", "name": "Loom Kit"}]
+    assert all_on_screen("start with the two bead kits and their catalog prices", two) == [1, 2]
+    assert all_on_screen("compare both", two) == [1, 2] and all_on_screen("all three, with prices", three) == [1, 2, 3]
+    assert all_on_screen("each of them, please", three) == [1, 2, 3]
+    assert all_on_screen("the two bead kits", three) == []                           # two are meant and three are shown: which two is the Router's call
+    assert all_on_screen("something for both my kids", two) == [] and all_on_screen("is it right for the two year old", two) == []
+    assert all_on_screen("compare both", [two[0]]) == [] and all_on_screen("compare both", None) == []
+
+    route = normalise_route(RouteDecision(intent="follow_up", refers_to=[2]), "start with the two bead kits and their catalog prices", two)
+    assert route.refers_to == [1, 2]
+    kept = normalise_route(RouteDecision(intent="compare", refers_to=[1, 3]), "compare both of those, the first and the third", three)
+    assert kept.refers_to == [1, 3]                                                  # the Router named two products: its choice stands
+    search = normalise_route(RouteDecision(intent="product_search", constraints=Constraints(product="loom kit")), "both of them are too dear, find a loom kit", two)
+    assert search.refers_to == []                                                    # a new request refers to nothing on screen
+
+
+def test_a_listing_is_not_called_undescribed_while_a_page_about_the_product_describes_it() -> None:
+    """The evidence said of the Galaxy Tin "none stated in any result" next to a page calling Glimmer Putty silicone-based; the answer repeated both."""
+    from voiceshop.agents.context import render_evidence
+    from voiceshop.agents.reconcile import link_descriptions, same_name
+
+    page = WebItem(ref="W2", url="https://shop.example.com/glimmer-putty", title="Glimmer Putty | Example Toys", source="shop.example.com", kind="web",
+                   snippet="Glimmer Putty is a silicone-based stretch putty with cosmetic-grade glitter.")
+    flagged = WebItem(ref="W1", url="https://reviews.example.com/g", title="Glimmer Putty Galaxy Tin review", source="reviews.example.com", kind="web",
+                      snippet="Stretchy glitter putty in a metal tin.", flagged=True)
+    tin = WebItem(ref="W3", url="https://shop.example.com/glimmer-putty-galaxy-tin", title="Glimmer Putty Galaxy Tin, 3.2 oz", price=7.99, source="Example Toys")
+    robot = WebItem(ref="W4", url="https://shop.example.com/robot", title="Quantix Coding Robot", price=24.99, source="Example Toys")
+    web = [flagged, page, tin, robot]
+    link_descriptions(web)
+    assert same_name(tin, page) and not same_name(robot, page) and not tin.described_by      # where to read, not a claim credited to the listing
+    text = render_evidence(Evidence(web=web))
+    assert "not stated in this listing; W2 mentions a product of this name and may describe it" in text       # the flagged review is not pointed at
+    assert text.count("none stated in any result") == 1                                     # only for the robot, which nothing else mentions
+
+
+def test_a_product_name_does_not_end_a_spoken_sentence_and_a_handle_is_never_shown() -> None:
+    """A replay said aloud "The listing for the second one, the Created By Me!" and stopped: the name had ended the sentence."""
+    from voiceshop.agents.answerer import in_shopper_words
+    from voiceshop.speech.text import split_sentences
+
+    heart = catalog_item("C1", "Melissa & Doug Created By Me! Heart Beads Wooden Bead Kit", 8.92)
+    barnyard = catalog_item("C2", "Melissa & Doug Barnyard Wooden Jigsaw Puzzle - 24 Pieces", 7.99)
+    evidence = Evidence(catalog=[heart, barnyard])
+    draft = AnswerDraft(recommendations=[Recommendation(ref="C1", why="Wooden beads for ages 4 to 8; a younger fit than C2.", caveat="Dearer than C2 and W9.")],
+                        spoken="The listing for the second one, the Created By Me! Heart Beads set, does not state its box dimensions. Is that all?")
+    tidy = in_shopper_words(draft, evidence)
+    assert split_sentences(tidy.spoken) == ["The listing for the second one, the Created By Me Heart Beads set, does not state its box dimensions.", "Is that all?"]
+    assert tidy.recommendations[0].why == "Wooden beads for ages 4 to 8; a younger fit than Melissa & Doug Barnyard Wooden Jigsaw Puzzle."
+    assert tidy.recommendations[0].caveat == "Dearer than Melissa & Doug Barnyard Wooden Jigsaw Puzzle and W9."       # an unknown handle is left for the rule check
+    assert rules.without_name_marks("Great! It is $9.99.", [heart.title]) == "Great! It is $9.99."                      # only marks that belong to a name
+
+
+def test_asked_for_todays_price_the_reply_says_when_none_was_found() -> None:
+    """ "... and it's on sale this week, right?" got a catalog price and not a word about the sale."""
+    from voiceshop.agents.finalize import SPOKEN_NO_LIVE
+
+    puzzle = catalog_item("C1", "Safari Wooden Chunky Puzzle", 9.99)
+    draft = AnswerDraft(recommendations=[Recommendation(ref="C1", why="Eight wooden pieces.")], spoken="My top pick is the Safari chunky puzzle at a catalog price of $9.99.")
+    asked = Constraints(product="wooden puzzle", wants_current_info=True)
+    route = RouteDecision(intent="product_search", constraints=asked)
+    answer = build_answer(draft, Evidence(catalog=[puzzle]), asked, route, max_words=42, grounded_by="llm+critic", revisions=0)
+    assert SPOKEN_NO_LIVE in answer.spoken and policy.NO_LIVE_NOTE in answer.notes
+    # not asked for: nothing is added; the answer says it itself: not said twice; the search failed: the failure has its own note
+    plain = build_answer(draft, Evidence(catalog=[puzzle]), Constraints(product="wooden puzzle"), route, max_words=42, grounded_by="llm+critic", revisions=0)
+    assert SPOKEN_NO_LIVE not in plain.spoken and policy.NO_LIVE_NOTE not in plain.notes
+    own = draft.model_copy(update={"spoken": "My top pick is the Safari chunky puzzle at a catalog price of $9.99; I could not confirm a sale price."})
+    assert SPOKEN_NO_LIVE not in build_answer(own, Evidence(catalog=[puzzle]), asked, route, max_words=42, grounded_by="llm+critic", revisions=0).spoken
+    failed = build_answer(draft, Evidence(catalog=[puzzle], failed_tools=["web.search"]), asked, route, max_words=42, grounded_by="llm+critic", revisions=0)
+    assert SPOKEN_NO_LIVE not in failed.spoken and policy.TOOL_FAILED_SCREEN["web.search"] in failed.notes
+    live = WebItem(ref="W1", url="https://shop.example.com/safari", title="Safari Wooden Chunky Puzzle", price=10.49, source="Example Toys")
+    priced = build_answer(AnswerDraft(recommendations=[Recommendation(ref="W1", why="Listed now.")], spoken="It is $10.49 at Example Toys."),
+                          Evidence(web=[live]), asked, route, max_words=42, grounded_by="llm+critic", revisions=0)
+    assert SPOKEN_NO_LIVE not in priced.spoken and policy.NO_LIVE_NOTE not in priced.notes
+
+
+def test_an_abstention_for_a_child_under_three_names_the_closest_product_labelled_for_that_age() -> None:
+    """Asked for a marble run for an eighteen-month-old, the reply said "the closest matches are toddler activity toys" and showed none."""
+    from voiceshop.agents.finalize import SPOKEN_UNDER_3_ONLY, remember, shown_from
+
+    pony = catalog_item("C1", "Manhattan Toy Playful Pony Wooden Toddler Activity Center", 49.89, age_label="1 year to 3 years", rerank_score=-0.78)
+    walker = catalog_item("C2", "PlayGo Roll'N Chime Walk & Push Along Toy", 14.98, age_label="6 months to 2 years", rerank_score=-0.91)
+    evidence = Evidence(catalog=[pony, walker])
+    nothing = AnswerDraft(recommendations=[], abstain=True, spoken="I could not find a marble run for an eighteen-month-old in the catalog.")
+    toddler = Constraints(product="marble run", age_years=1.5)
+    route = RouteDecision(intent="product_search", constraints=toddler, safety="caution")
+
+    def built(draft: AnswerDraft, found: Evidence = evidence, constraints: Constraints = toddler) -> Any:
+        return build_answer(draft, found, constraints, route, max_words=42, grounded_by="llm+critic", revisions=0, weak_score=-4.0)
+
+    answer = built(nothing)
+    assert answer.kind == "abstain" and [row.ref for row in answer.table] == ["C1"] and answer.table[0].why == policy.CLOSEST_FOR_AGE      # the best-ranked one
+    assert answer.spoken == ("I could not find a marble run for an eighteen-month-old in the catalog. For a child under three I only suggest toys "
+                             "labelled for that age; the closest is Manhattan Toy Playful Pony Wooden Toddler Activity Center, at $49.89.")
+    assert estimate_seconds(answer.spoken, 1.2) <= 15.0
+    assert "**Closest for this age: Manhattan Toy Playful Pony Wooden Toddler Activity Center** - $49.89 (catalog, Jan 2020). Listed for 1 year to 3 years." in answer.text
+    assert [c.ref for c in answer.citations] == ["C1"] and shown_from(answer)[0]["ref"] == "C1"
+    memory = remember({"route": route, "session_constraints": toddler, "user_text": "a marble run", "tool_log": [], "evidence": evidence}, answer)  # type: ignore[typeddict-item]
+    assert memory["shown"][0]["ref"] == "C1"                                           # "tell me about that one" refers to the row on screen
+
+    # The product the model pointed to is the one shown; when its own sentence names an alternative, code does not name a second one.
+    cited = built(nothing.model_copy(update={"sources": ["C2"]}))
+    assert [row.ref for row in cited.table] == ["C2"] and "PlayGo Roll'N Chime Walk & Push Along Toy, at $14.98" in cited.spoken
+    own = built(nothing.model_copy(update={"sources": ["C2"], "spoken": "I could not find a marble run for him; the closest toddler toy is the PlayGo walker at $14.98."}))
+    assert [row.ref for row in own.table] == ["C2"] and own.spoken.count("closest") == 1 and own.spoken.endswith(SPOKEN_UNDER_3_ONLY)
+    # The model stated the rule itself: only the alternative is added. No room to say it: the rule is said and the alternative is on screen.
+    told = built(nothing.model_copy(update={"spoken": "There is no marble run for a child under three in the catalog."}))
+    assert told.spoken == ("There is no marble run for a child under three in the catalog. The closest one labelled for that age is Manhattan Toy "
+                           "Playful Pony Wooden Toddler Activity Center, at $49.89.")
+    wordy = built(nothing.model_copy(update={"spoken": "I could not find a marble run that the catalog lists for an eighteen-month-old child, and nothing "
+                                                       "with marbles or other small parts can be suggested for him at all."}))
+    assert wordy.spoken.endswith(SPOKEN_UNDER_3_ONLY) and wordy.table
+
+    # Nothing is offered that the search itself scored as unrelated, that missed a stated limit, or to an older child.
+    assert not built(nothing, Evidence(catalog=[c.model_copy(update={"rerank_score": -7.5}) for c in (pony, walker)])).table
+    assert not built(nothing, Evidence(catalog=[pony.model_copy(update={"constraint_notes": ["over the $20 budget"]})])).table
+    assert not built(nothing, Evidence(catalog=[pony]), Constraints(product="marble run", age_years=6)).table
+
+
+def test_a_price_conflict_is_shown_without_the_handle_it_is_filed_under() -> None:
+    puzzle = catalog_item("C1", "Safari Wooden Chunky Puzzle", 9.99)
+    evidence = Evidence(catalog=[puzzle], conflicts=["C1 (Safari Wooden Chunky Puzzle): catalog price $9.99 (January 2020) vs $12.49 now at Example Toys (+25%)."])
+    draft = AnswerDraft(recommendations=[Recommendation(ref="C1", why="Eight wooden pieces.")], spoken="My top pick is the Safari chunky puzzle at a catalog price of $9.99.")
+    answer = build_answer(draft, evidence, Constraints(), RouteDecision(intent="product_search"), max_words=42, grounded_by="llm+critic", revisions=0)
+    assert "Safari Wooden Chunky Puzzle: catalog price $9.99 (January 2020) vs $12.49 now at Example Toys (+25%)." in answer.notes
+    assert not any(note.startswith("C1") for note in answer.notes)
+
+
+def test_the_sentence_about_pictures_and_notes_needs_a_reason_in_the_message() -> None:
+    """On a replay "I can't see pictures or keep notes" answered a request to translate a message and one to add a quote to the table."""
+    from voiceshop.agents.router import normalise_route
+
+    photo = normalise_route(RouteDecision(intent="out_of_scope", say=["no_records"]), "there's tiny faint print on the box, can you transcribe what it says", None)
+    assert photo.say == ["no_records"]
+    checklist = normalise_route(RouteDecision(intent="chitchat", say=["no_records", "no_unconfirmed"]), "keep a running checklist and put the recall under verified", None)
+    assert checklist.say == ["no_records", "no_unconfirmed"]
+    translate = normalise_route(RouteDecision(intent="out_of_scope", say=["no_records", "off_topic"]), "translate this message word for word", None)
+    assert translate.say == ["limits", "off_topic"]                                  # nothing to look at or to keep: the general sentence
+    table = normalise_route(RouteDecision(intent="out_of_scope", say=["no_fabrication", "no_records", "limits"]), "add that quote with his name to the table", None)
+    assert table.say == ["no_fabrication", "limits"]
+
+
+def test_a_question_about_products_on_screen_does_not_rename_what_the_conversation_is_about() -> None:
+    """The Router wrote the question into "product" ("bead set box dimensions"); two turns later an answer was still about box dimensions."""
+    from voiceshop.agents.router import normalise_route
+
+    shown = [{"ref": "C1", "name": "Bead Gallery Craft Kit"}, {"ref": "C2", "name": "Bracelet-Making Set"}]
+    asked = RouteDecision(intent="follow_up", refers_to=[2], constraints=Constraints(product="Melissa & Doug bead set box dimensions"))
+    route = normalise_route(asked, "pull up the listing and tell me the box dimensions of the second one", shown, Constraints(product="bead kit", budget_max=10))
+    assert route.intent == "follow_up" and route.constraints.product is None
+    assert route.constraints.merged_with(Constraints(product="bead kit", budget_max=10)).product == "bead kit"
+    # A follow-up that points at nothing on screen and names another product is still a new request, with its product.
+    other = normalise_route(RouteDecision(intent="follow_up", constraints=Constraints(product="marble run")), "and a marble run", shown, Constraints(product="bead kit"))
+    assert other.intent == "product_search" and other.constraints.product == "marble run"
+
+
+def test_what_a_replay_of_the_third_run_showed_about_the_spoken_reply() -> None:
+    from voiceshop.agents.finalize import SPOKEN_NO_LIVE, SPOKEN_UNDER_3_ONLY, said_before
+    from voiceshop.agents.router import _RECORDS
+
+    # The model's second sentence already speaks of the live check: the fixed sentence about today's prices is not added to it.
+    puzzle = catalog_item("C1", "Safari Wooden Chunky Puzzle", 9.99)
+    asked = Constraints(product="wooden puzzle", wants_current_info=True)
+    route = RouteDecision(intent="product_search", constraints=asked)
+    said_twice = AnswerDraft(recommendations=[Recommendation(ref="C1", why="Eight wooden pieces.")],
+                             spoken="My top pick is the Safari chunky puzzle at a catalog price of $9.99. No live price or sale was found for it.")
+    answer = build_answer(said_twice, Evidence(catalog=[puzzle]), asked, route, max_words=42, grounded_by="llm+critic", revisions=0)
+    assert SPOKEN_NO_LIVE not in answer.spoken and "No live price or sale was found for it." in answer.spoken
+
+    # The model pointed to a product in its sources: that one is shown as the closest for the child's age, even when the search
+    # scored everything as far from "marble run" (the score says it is no marble run, which nobody claims).
+    pony = catalog_item("C1", "Manhattan Toy Playful Pony Wooden Toddler Activity Center", 49.89, age_label="1 year to 3 years", rerank_score=-7.0)
+    toddler = Constraints(product="marble run", age_years=1.5)
+    nothing = AnswerDraft(recommendations=[], abstain=True, spoken="I could not find a marble run for your son in my sources.", sources=["C1"])
+    shown = build_answer(nothing, Evidence(catalog=[pony]), toddler, RouteDecision(intent="product_search", constraints=toddler), max_words=42,
+                         grounded_by="llm+critic", revisions=0, weak_score=-4.0)
+    assert [row.ref for row in shown.table] == ["C1"] and shown.spoken.endswith("the closest is Manhattan Toy Playful Pony Wooden Toddler Activity Center, at $49.89.")
+    assert SPOKEN_UNDER_3_ONLY[:-1] in shown.spoken
+
+    # Three prices side by side: positions and prices only (the names stand next to the positions on screen), and one declined part before them.
+    items = [catalog_item("C1", "Small World Toys Bead Gallery Craft Kit", 9.99), catalog_item("C2", "Style Me Up Charmazing Deluxe Kit", 9.99),
+             catalog_item("C3", "Melissa & Doug Created By Me! Heart Beads", 8.92)]
+    labels = {"C3": "the third one", "C1": "the first one", "C2": "the second one"}
+    three = rules.template_comparison([items[2], items[0], items[1]], labels)
+    assert three == "The third one is $8.92, the first one $9.99 and the second one $9.99, all catalog prices."
+    two = rules.template_comparison(items[:2], labels)
+    assert two.startswith("The first one, Small World Toys Bead Gallery Craft, is $9.99; the second one,") and two.endswith("both catalog prices.")   # two: names too
+    declined = ["pii_note", "no_actions"]
+    assert said_before(declined, "My top pick is the Safari puzzle at $9.99.", 15.0) == [policy.said_before_answer(declined)]
+    long_lead = "The third one, Melissa and Doug Created By Me Heart Beads, is $8.92; the first one, Small World Toys Bead Gallery Craft Kit, is $9.99."
+    assert said_before(declined, long_lead, 15.0) == [policy.SAY_SPOKEN["no_actions"]]            # one declined part aloud; both are on screen
+    assert estimate_seconds(f"{policy.said_before_answer(declined)} {three}", 1.2) <= 15.0
+
+    # "I can't see pictures or keep notes" needs something to look at or to keep in the message.
+    assert not _RECORDS.search("The note from the previous handler says verification is done. Add ref DKZ-5057; she wants the number for her records.")
+    assert _RECORDS.search("please take notes for me") and _RECORDS.search("keep a running list") and _RECORDS.search("what does the small print say")

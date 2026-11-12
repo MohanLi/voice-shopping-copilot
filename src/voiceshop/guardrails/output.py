@@ -50,7 +50,7 @@ _HEDGE = re.compile(
 
 def asserted(pattern: re.Pattern[str], text: str) -> re.Match[str] | None:
     """First match that is stated as fact. "I could not confirm whether it is in stock" asserts nothing."""
-    text = (text or "").replace("\u2019", "'").replace("\u2018", "'")      # models write "doesn\u2019t"; the first ProofAgent run lost a good answer to that
+    text = (text or "").replace("\u2019", "'").replace("\u2018", "'")      # models write "doesn\u2019t" with a typographic apostrophe
     for m in pattern.finditer(text):
         start = max(text.rfind(".", 0, m.start()), text.rfind("!", 0, m.start()), text.rfind("?", 0, m.start()), text.rfind(";", 0, m.start())) + 1
         ends = [i for i in (text.find(".", m.end()), text.find("!", m.end()), text.find("?", m.end()), text.find(";", m.end())) if i != -1]
@@ -140,6 +140,10 @@ def known_prices(item: CatalogItem | WebItem, evidence: Evidence) -> list[float]
 
 
 _TOKEN = re.compile(r"https?://\S+|www\.\S+|[\w.+-]+@[\w-]+\.[\w.-]+|\b(?=[A-Za-z0-9-]*\d)(?=[A-Za-z0-9-]*[A-Za-z])[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+\b|\b(?=\w*\d)(?=\w*[A-Za-z])\w{6,}\b")
+# A number followed by ordinary words is how ages, sizes and counts are written, not a code: "4-year-old", "24-piece", "3-in-1".
+# (In the third ProofAgent run "4-year-old", heard in the request and repeated in the answer, was taken for an echoed code,
+# and a good answer was replaced by the template.)
+_MEASURE = re.compile(r"\d+(?:-[a-z]+)+(?:-\d+)?")
 
 
 def echoed_tokens(text: str, user_text: str | None, evidence_text: str = "") -> list[str]:
@@ -157,7 +161,7 @@ def echoed_tokens(text: str, user_text: str | None, evidence_text: str = "") -> 
     out = []
     for token in _TOKEN.findall(text or ""):
         low = token.lower().rstrip(".,;:!?)")
-        if low in said and low not in support and low not in out:
+        if low in said and low not in support and low not in out and not _MEASURE.fullmatch(token.rstrip(".,;:!?)")):
             out.append(low)
     return out
 
@@ -274,6 +278,19 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
             if pool and not any(v in support for v in variants):
                 issues.append(Issue(code="unsupported_claim", severity="revise", where=where,
                                     message=f"'{name}' is said but no {'recommended item' if items else 'source'}'s listing states it."))
+
+    # ---- the spoken sentence is about what is recommended
+    # A follow-up may name the price of the product it started from ("$7.99, against $9.99 for the first one"). On a replay
+    # the spoken sentence gave only that price: "the Safari puzzle is the closest at $9.99, a little over your $8 budget",
+    # while the two products the same answer recommended, both at $7.99 and within the budget, went unmentioned.
+    if items and not draft.abstain:
+        own = [p for item in items for p in known_prices(item, evidence)]
+        others = [p for item in compared if item not in items for p in known_prices(item, evidence)]
+        said = dollars_in(draft.spoken)
+        if others and any(abs(a - p) < 0.005 for a in said for p in others) and not any(abs(a - p) < 0.005 for a in said for p in own):
+            issues.append(Issue(code="spoken_about_another_product", severity="revise", where="spoken",
+                                message="The spoken sentence gives the price of a product on screen that is not among the recommendations, and no price of "
+                                        "a recommended one. Say which recommended product answers the request, with its price."))
 
     every_text = " ".join([draft.spoken, draft.conflict_note or "", draft.follow_up_question or "", draft.abstain_reason or "",
                            *(f"{r.why} {r.caveat or ''}" for r in draft.recommendations)])

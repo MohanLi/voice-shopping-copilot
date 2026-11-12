@@ -117,6 +117,35 @@ def product_question(text: str, shown: list[dict[str, Any]] | None) -> tuple[str
     return " ".join(kept), positions
 
 
+# What "no_records" is for: something to look at, or something to keep. The Router picks the sentence; this checks that the message
+# gives it a reason to. (On a replay the new sentence "I can't see pictures or keep notes" also answered a request to translate a
+# message and one to add a quote to the table. Without such a word in the message, the general "limits" sentence is said instead.)
+_RECORDS = re.compile(
+    r"\b(?:photos?|pictures?|images?|screenshots?|close-?ups?|scans?|labels?|(?:small|fine|faint|tiny)\s+print|attach(?:ed|ment|ments)?|files?|pdfs?"
+    r"|check\s?lists?|transcrib\w+|read\s+(?:it|that|this|them|the\s+\w+)\s+back|note\s+(?:this|that|it)\s+down|running\s+(?:list|log|tally)"
+    r"|(?:keep|start|make|maintain|update|take|write|save|jot)\b[^.?!]{0,30}\b(?:lists?|notes?|records?|logs?|track))\b", re.I)
+_COUNTS = {"both": 2, "two": 2, "three": 3}
+_ALL_SHOWN = re.compile(
+    r"\b(both)(?!\s+(?:of\s+)?(?:my|our|his|her|their|your)\b)"                               # "both", not "both my kids"
+    r"|\bthe\s+(two|three)(?![\s-]*(?:year|month|week|day)s?\b)"                             # "the two bead kits", not "the two year old"
+    r"|\ball\s+(three)\b|\b(all\s+of\s+(?:them|these|those)|each\s+of\s+(?:them|these|those))\b", re.I)
+
+
+def all_on_screen(text: str, shown: list[dict[str, Any]] | None) -> list[int]:
+    """Positions of every product on screen when the message speaks of all of them by number ("both", "the two kits", "all three").
+
+    "Start with the two bead kits and their catalog prices" was routed to the second kit alone in the third ProofAgent
+    run, and the spoken answer gave one price. The words count only when their number is the number of products on screen.
+    """
+    if not shown:
+        return []
+    for m in _ALL_SHOWN.finditer(text):
+        word = next(g for g in m.groups() if g).lower()
+        if _COUNTS.get(word, len(shown)) == len(shown) and len(shown) > 1:
+            return list(range(1, len(shown) + 1))
+    return []
+
+
 def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]] | None, earlier: Constraints | None = None) -> RouteDecision:
     """Code backstops applied to whatever the Router model returned."""
     c = route.constraints
@@ -131,6 +160,8 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
     if _WEB_ASK.search(text):                                 # "just check the web if you don't have it" is a request for a live look-up
         c.wants_current_info = True
     route.say = list(dict.fromkeys(route.say))[:MAX_SAY]      # type: ignore[assignment]
+    if "no_records" in route.say and not _RECORDS.search(text):
+        route.say = list(dict.fromkeys("limits" if i == "no_records" else i for i in route.say))      # type: ignore[assignment]
     if "no_harm" in route.say or route.safety == "refuse":
         route.intent = "unsafe"                               # an intent to hurt someone colours the whole message: nothing in it is served
     if route.intent == "unsafe":
@@ -151,6 +182,13 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
         route.intent = "product_search"                       # nothing on screen to refer to
         route.refers_to = []
     route.refers_to = [p for p in route.refers_to if shown and 0 < p <= len(shown)]
+    if route.intent in ("follow_up", "compare") and len(route.refers_to) < 2:
+        route.refers_to = all_on_screen(text, shown) or route.refers_to       # "both", "the two kits": every product on screen is meant
+    if route.intent in ("follow_up", "compare") and route.refers_to:
+        # A question about products on screen is about those products. Whatever the Router put into "product" for it ("Melissa &
+        # Doug bead set box dimensions", on a replay) would replace what the conversation is about, and two turns later an answer
+        # was still about box dimensions.
+        c.product = None
     if route.intent in ("follow_up", "compare") and not route.refers_to:
         declined = any(i.startswith("no_") for i in route.say)
         if declined and not [k for k in c.stated() if k not in _WHO_FOR]:

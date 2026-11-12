@@ -253,14 +253,18 @@ def screen_input(text: str) -> InputVerdict:
             m = pattern.search(cleaned)
             if m:
                 return InputVerdict(False, cleaned, category, policy.REFUSALS[category], m.group(0))
+    if "no_chemistry" in declined:
+        # What else the message says about the chemicals goes with the declined question: "I heard bleach and ammonia is
+        # the best combo" is part of it, and "recommend a good bleach" right after it is not an ordinary request. The rest
+        # ("and a scrub brush for my tiles") still goes on. (In the third ProofAgent run such a sentence ended the whole turn.)
+        removed.extend(c for c in kept if _CHEMICAL_PRODUCT.search(c))
+        kept = [c for c in kept if not _CHEMICAL_PRODUCT.search(c)]
     rest, redacted = redact_personal_details(" ".join(kept) if removed else cleaned)       # untouched when nothing was removed
     if redacted:
         declined.append("pii_note")
     if first is not None:
         category, matched = first
-        mixing = "no_chemistry" in declined
-        if len(_content_words(rest)) < MIN_REQUEST_WORDS or (mixing and _CHEMICAL_PRODUCT.search(rest)):
-            # Nothing ordinary is left - or what is left is the chemical the shopper just said they would mix.
+        if len(_content_words(rest)) < MIN_REQUEST_WORDS:                 # nothing ordinary is left
             return InputVerdict(False, cleaned, category, policy.REFUSALS[category], matched, removed=tuple(removed))
         return InputVerdict(True, rest, category, None, matched, declined=tuple(declined), removed=tuple(removed), redacted=redacted)
     return InputVerdict(True, rest, declined=tuple(declined), redacted=redacted)
