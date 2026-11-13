@@ -912,7 +912,7 @@
   },
   "tokens_harness": 4395149,
   "seconds": 814.7,
-  "per_export": "ConversionError: BUILD_INPUT: provenance.telemetry.evaluator_usage.errors.types[0]: must be a short lower-case label [a-z][a-z0-9_]{0,31}",
+  "per_export": "report.per.json",
   "gate_if_personal_data": {
     "decision": "review",
     "failed_rules": [],

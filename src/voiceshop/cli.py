@@ -35,6 +35,10 @@ def _logging(verbose: bool = False) -> None:
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S")
     for noisy in ("httpx", "httpcore", "anthropic", "openai", "urllib3"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    # Warnings that say nothing a reader can act on, once per spoken sentence or per jury call: the phonemizer counts words
+    # differently when a sentence has a price in it, and LiteLLM notes that the harness opened a new event loop.
+    for chatty in ("phonemizer", "LiteLLM"):
+        logging.getLogger(chatty).setLevel(logging.ERROR)
 
 
 @app.command()

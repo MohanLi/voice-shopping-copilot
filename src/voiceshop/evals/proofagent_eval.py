@@ -682,6 +682,35 @@ def stricter_gate(profile_path: Path, report: Any) -> dict[str, Any] | None:
         return {"error": f"{type(exc).__name__}: {exc}"}
 
 
+_RECORD_LABEL = re.compile(r"[a-z][a-z0-9_]{0,31}")
+
+
+def record_label(reason: str) -> str:
+    """A reason as the evidence record wants its labels: lower case, digits and underscores, a letter first, 32 at most."""
+    words = re.sub(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", "_", str(reason))        # LLMError -> LLM_Error
+    label = re.sub(r"[^a-z0-9]+", "_", words.lower()).strip("_")
+    return (label if label[:1].isalpha() else f"reason_{label}".rstrip("_"))[:32]
+
+
+def report_for_record(report: dict[str, Any]) -> dict[str, Any]:
+    """The report with the reasons its jury calls fell back for spelled as the record's schema requires.
+
+    The harness counts those reasons under its own names and then validates them against a pattern one of the names
+    does not meet: a jury call that the model API refused is counted as "LLMError", and the export stops with
+    "errors.types[0]: must be a short lower-case label" (the fourth live run, which is why its folder had no record at
+    first). A reply that could not be parsed is "json_parse_error", which passes, so runs with only that kind exported.
+    Nothing else in the report is touched; the file on disk stays as the harness wrote it.
+    """
+    reasons = report.get("llm_fallback_reasons")
+    if not isinstance(reasons, dict) or all(_RECORD_LABEL.fullmatch(str(key)) for key in reasons):
+        return report
+    counted: dict[str, int] = {}
+    for key, count in reasons.items():
+        label = record_label(key)
+        counted[label] = counted.get(label, 0) + int(count or 0)
+    return {**report, "llm_fallback_reasons": counted}
+
+
 def export_record(out: Path, intake: dict[str, Any] | None = None) -> str | None:
     """Write the run as a validated evidence record (PER) next to its report. Returns None, or why it could not be written.
 
@@ -695,7 +724,8 @@ def export_record(out: Path, intake: dict[str, Any] | None = None) -> str | None
         from voiceshop import __version__ as agent_version
 
         evaluated = out / "context" / "system_prompt.md"       # the instructions as this run was given them, not as they are today
-        export_per(str(out / "report.json"), str(out / "report.per.json"), agent_name="voiceshop", agent_version=agent_version,
+        report = report_for_record(json.loads((out / "report.json").read_text(encoding="utf-8")))
+        export_per(report, str(out / "report.per.json"), agent_name="voiceshop", agent_version=agent_version,
                    system_prompt=evaluated.read_text(encoding="utf-8") if evaluated.exists() else None, intake=intake,
                    bundle_out=str(out / "report.bundle.json"))
         return None

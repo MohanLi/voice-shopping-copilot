@@ -236,6 +236,25 @@ def _a_finished_run(tmp_path: Path) -> Path:
     return out
 
 
+def test_a_reason_the_harness_names_in_capitals_does_not_stop_the_evidence_record() -> None:
+    """The fourth live run. Two jury calls were refused by the model API; the harness counted them as "LLMError" beside five
+    "json_parse_error", and its own export then rejected the first name: "errors.types[0]: must be a short lower-case label".
+    The run's folder had no evidence record. The reasons are respelled for the export and nothing else is changed."""
+    report = {"final_score": 9.5, "llm_fallback_reasons": {"json_parse_error": 5, "LLMError": 2}, "fallback_call_count": 5}
+    ready = pa.report_for_record(report)
+    assert ready["llm_fallback_reasons"] == {"json_parse_error": 5, "llm_error": 2}
+    assert report["llm_fallback_reasons"] == {"json_parse_error": 5, "LLMError": 2}            # the report itself is left as written
+    assert {k: v for k, v in ready.items() if k != "llm_fallback_reasons"} == {"final_score": 9.5, "fallback_call_count": 5}
+    untouched = {"llm_fallback_reasons": {"json_parse_error": 4}}
+    assert pa.report_for_record(untouched) is untouched and pa.report_for_record({"final_score": 9.4}) == {"final_score": 9.4}
+    for reason, label in {"LLMError": "llm_error", "ServiceUnavailableError": "service_unavailable_error", "json_parse_error": "json_parse_error",
+                          "HTTP 529": "http_529", "429": "reason_429", "Timeout (read)": "timeout_read",
+                          "AVeryLongReasonNameThatGoesOnAndOnPastTheLimit": "a_very_long_reason_name_that_goe"}.items():
+        assert pa.record_label(reason) == label and pa._RECORD_LABEL.fullmatch(label), reason
+    merged = pa.report_for_record({"llm_fallback_reasons": {"LLMError": 2, "llm_error": 1}})
+    assert merged["llm_fallback_reasons"] == {"llm_error": 3}
+
+
 def test_an_upload_carries_no_key_no_local_path_and_nothing_about_the_person_who_ran_it(tmp_path: Path) -> None:
     from voiceshop.paths import project_root
 
