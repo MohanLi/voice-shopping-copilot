@@ -1,0 +1,11 @@
+{
+  "label": "live5",
+  "uploaded_at": "2026-11-13T15:59:06",
+  "to": "https://app.proofagent.ai",
+  "run_id": "2e7f22e1-225b-4409-9725-b13655ba5ef5",
+  "gate_status": "pass",
+  "grade_label": "gold",
+  "final_score": 9.71,
+  "dashboard_url": "https://app.proofagent.ai/runs/2e7f22e1-225b-4409-9725-b13655ba5ef5",
+  "failed_rules": []
+}
