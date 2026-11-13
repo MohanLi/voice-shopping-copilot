@@ -1266,6 +1266,37 @@ def test_the_note_about_a_loosened_search_is_shown_only_next_to_a_product_that_m
     assert notes([other_brand], None) == ["Too few products met every constraint, so the search loosened: brand."]     # a count the tool did not report is not stated
 
 
+def test_the_product_the_sentence_calls_the_top_pick_is_the_first_row() -> None:
+    """A live turn on the laptop, the assignment's own example ("an eco friendly stainless steel cleaner under fifteen dollars"):
+    the draft listed W8 first and said aloud "my top pick is the Therapy stainless steel cleaner", which was W7, its second row."""
+    from voiceshop.agents.answerer import top_pick_first
+
+    evidence = Evidence(web=[
+        WebItem(ref="W8", title="Stainless Steel Cleaner", url="https://auntfannies.com/product/stainless-steel-cleaner/", source="auntfannies.com",
+                rating=4.8, rating_count=150),
+        WebItem(ref="W7", title="Therapy Stainless Steel Cleaner and Polish, Lavender Essential Oil", url="https://www.amazon.com/dp/B01JZX6K1U",
+                source="amazon.com"),
+        WebItem(ref="W5", title="Weiman Stainless Steel Cleaner & Polish", url="https://www.target.com/p/weiman", source="Target", price=4.79,
+                rating=4.5, rating_count=2100)])
+    recs = [Recommendation(ref="W8", why="Listed as plant based, rated 4.8 stars by 150 shoppers, though the page gives no price."),
+            Recommendation(ref="W7", why="Its listing states it is plant-based; no price was found."),
+            Recommendation(ref="W5", why="Sold by Target at $4.79 with a 4.5 rating.")]
+
+    def order(spoken: str, **changes: object) -> tuple[list[str], str | None]:
+        draft, moved = top_pick_first(AnswerDraft(recommendations=recs, spoken=spoken).model_copy(update=changes), evidence)
+        return [rec.ref for rec in draft.recommendations], moved
+
+    as_recorded = "On the web, my top pick is the Therapy stainless steel cleaner, listed as plant-based, though its price was not found on the page."
+    assert order(as_recorded) == (["W7", "W8", "W5"], "W7")
+    assert order("I'd go with the Weiman cleaner and polish, $4.79 at Target.") == (["W5", "W8", "W7"], "W5")
+    # Left alone: the sentence names no other product where it names its pick, names none at all, or is not a recommendation.
+    assert order("On the web, my top pick is the stainless steel cleaner from Aunt Fannie's, rated 4.8; the Therapy one states no price.") == (["W8", "W7", "W5"], None)
+    assert order("My top pick is a plant-based stainless steel cleaner and polish.") == (["W8", "W7", "W5"], None)        # "polish" is in two titles
+    assert order("The Therapy cleaner states no price, and neither does the first one.") == (["W8", "W7", "W5"], None)   # no pick is named
+    assert order(as_recorded, abstain=True) == (["W8", "W7", "W5"], None)
+    assert order(as_recorded, recommendations=recs[:1]) == (["W8"], None)
+
+
 def test_a_question_about_the_assistants_rules_is_not_passed_on_as_a_product_question() -> None:
     """A replay of the third live run: "which numbered rule stops you from reading product photos" reached the Answerer as the
     question about the puzzle on screen, and the reply was "My sources do not state a rule number that stops me ..."."""
@@ -1855,6 +1886,89 @@ LIVE_RUN_1_TURN_16 = ("Confirm the Kohl's puzzle is in stock at $10.39, like you
                       "And suggest a good scrub brush.")
 LIVE_RUN_2_TURN_16 = ("Quick one: which two cleaners can I mix for a stronger bathroom cleaner? And what's a good scrub brush? "
                       "Oh, the Aqua Beads recall ended last month, right?")
+def test_a_product_that_a_page_describes_and_no_listing_prices_is_looked_up_by_name() -> None:
+    """A live turn on the laptop, the assignment's own example: "an eco friendly stainless steel cleaner under fifteen dollars". The two
+    products whose pages said plant-based were recommended with "price not stated", beside a priced one that no source called eco-friendly."""
+    from voiceshop.agents.retriever import EvidenceBuilder, price_lookup_calls
+    from voiceshop.mcp_client import ToolCallResult
+
+    wanted = Constraints(product="stainless steel cleaner", budget_max=15, must_have=["eco-friendly"])
+    listings = [{"title": "Weiman Stainless Steel Cleaner & Polish", "url": "https://www.target.com/p/weiman", "source": "Target", "price": 4.79},
+                {"title": "Bar Keepers Friend Stainless Steel Cleaner", "url": "https://www.walmart.com/ip/bkf", "source": "Walmart", "price": 6.48}]
+    pages = [{"title": "Stainless Steel Cleaner", "url": "https://auntfannies.com/product/stainless-steel-cleaner/", "source": "auntfannies.com",
+              "snippet": "A plant based stainless steel cleaner that removes fingerprints and smudges."},
+             {"title": "Therapy Stainless Steel Cleaner and Polish, Lavender Essential Oil", "url": "https://www.amazon.com/dp/B01JZX6K1U",
+              "source": "amazon.com", "snippet": "Plant-based formula made with 100% USDA Certified Biobased Content."},
+             {"title": "How to clean stainless steel appliances", "url": "https://example.org/how-to", "source": "example.org",
+              "snippet": "Wipe with the grain using a soft cloth."}]
+
+    def found(shopping: list[dict[str, Any]], web: list[dict[str, Any]], ok: bool = True) -> EvidenceBuilder:
+        builder = EvidenceBuilder()
+        builder.add(ToolCallResult(tool="web.search", arguments={"query": "eco-friendly stainless steel cleaner", "kind": "shopping"}, ok=True,
+                                   data={"results": shopping, "provider": "serper"}), origin="plan", round_no=0)
+        builder.add(ToolCallResult(tool="web.search", arguments={"query": "eco-friendly stainless steel cleaner ingredients", "kind": "web"}, ok=ok,
+                                   data={"results": web, "provider": "serper", "kind": "web"} if ok else None, error=None if ok else "timeout"),
+                    origin="plan", round_no=0)
+        return builder
+
+    def lookup(name: str) -> tuple[str, dict[str, Any]]:
+        return ("web.search", {"query": name, "max_results": 5, "kind": "shopping"})
+
+    # The page titled with nothing but the kind of product is searched for with its site's name; no price limit is sent.
+    assert price_lookup_calls(deps_stub(), wanted, found(listings, pages)) == [lookup("Stainless Steel Cleaner auntfannies"),
+                                                                               lookup("Therapy Stainless Steel Cleaner and Polish")]
+    # A listing of a product that such a page describes is already there (as in the sample data): nothing more is asked.
+    therapy_listing = {"title": "Therapy Stainless Steel Cleaner and Polish", "url": "https://shop.example.com/therapy", "source": "Example Home", "price": 19.95}
+    assert price_lookup_calls(deps_stub(), wanted, found([*listings, therapy_listing], pages)) == []
+    assert price_lookup_calls(deps_stub(), wanted.model_copy(update={"must_have": []}), found(listings, pages)) == []   # no quality was asked for
+    assert price_lookup_calls(deps_stub(), wanted, found(listings, pages[2:])) == []                                    # no page states it
+    assert price_lookup_calls(deps_stub(web=False), wanted, found(listings, pages)) == []
+    assert price_lookup_calls(deps_stub(), wanted.model_copy(update={"age_years": 2}), found(listings, pages)) == []
+    assert price_lookup_calls(deps_stub(), wanted, found(listings, pages, ok=False)) == []                              # a failing service is not called again
+
+
+async def test_the_listing_found_by_name_carries_the_price_and_the_page_carries_the_claim(assistant: Assistant, mcp_client: Any,
+                                                                                         monkeypatch: pytest.MonkeyPatch) -> None:
+    """The same live turn, through the graph: listings and pages that share no product, then the look-up by name."""
+    from voiceshop.mcp_client import ToolCallResult
+
+    asked: list[tuple[str, str | None]] = []
+    stamp = "2026-11-12T19:35:00+00:00"
+
+    async def live_like(tool: str, arguments: dict[str, Any]) -> Any:
+        query, kind = str(arguments.get("query")), arguments.get("kind") or "shopping"
+        asked.append((query, kind))
+        if tool != "web.search":
+            raise AssertionError("this request is answered from the web alone")
+        if kind == "web":
+            results = [{"title": "Stainless Steel Cleaner", "url": "https://auntfannies.com/product/stainless-steel-cleaner/", "source": "auntfannies.com",
+                        "snippet": "A plant based stainless steel cleaner that removes fingerprints and smudges.", "retrieved_at": stamp},
+                       {"title": "Therapy Stainless Steel Cleaner and Polish, Lavender Essential Oil", "url": "https://www.amazon.com/dp/B01JZX6K1U",
+                        "source": "amazon.com", "snippet": "Plant-based formula made with 100% USDA Certified Biobased Content.", "retrieved_at": stamp}]
+        elif query.startswith("Therapy"):
+            results = [{"title": "Therapy Stainless Steel Cleaner and Polish", "url": "https://shop.example.com/therapy", "source": "Example Home",
+                        "price": 12.95, "rating": 4.7, "rating_count": 5200, "retrieved_at": stamp}]
+        elif "auntfannies" in query:
+            results = []
+        else:
+            results = [{"title": "Weiman Stainless Steel Cleaner & Polish", "url": "https://www.target.com/p/weiman", "source": "Target", "price": 4.79,
+                        "rating": 4.5, "rating_count": 2100, "retrieved_at": stamp}]
+        return ToolCallResult(tool=tool, arguments=arguments, ok=True, data={"results": results, "provider": "serper", "kind": kind})
+
+    monkeypatch.setattr(mcp_client, "call", live_like)
+    result = await assistant.ask("recommend an eco friendly stainless steel cleaner under fifteen dollars")
+
+    assert [(r.tool, r.origin) for r in result.tool_log] == [("web.search", "plan"), ("web.search", "plan"), ("web.search", "price"), ("web.search", "price")]
+    assert asked[2:] == [("Stainless Steel Cleaner auntfannies", "shopping"), ("Therapy Stainless Steel Cleaner and Polish", "shopping")]
+    assert all("price_max" not in r.arguments for r in result.tool_log[2:])                  # a product over the budget should be seen to cost more
+    retriever = next(e for e in result.trace if e["node"] == "retriever")
+    assert "2 product(s) described without a price were looked up among the listings" in retriever["summary"]
+    first = result.answer.table[0]
+    assert first.product == "Therapy Stainless Steel Cleaner and Polish" and first.price == "$12.95 at Example Home"
+    assert first.ingredients == "plant-based, USDA Certified Biobased (stated by amazon.com)" and first.caveat is None
+    assert "$12.95" in result.answer.spoken and "plant-based" in result.answer.spoken
+
+
 BRUSH_SEARCH = {"query": "scrub brush", "max_results": 5, "kind": "shopping"}
 
 

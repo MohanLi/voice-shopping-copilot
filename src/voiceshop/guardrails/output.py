@@ -160,14 +160,19 @@ def named_in(text: str, evidence: Evidence, besides: list[CatalogItem | WebItem]
     correct answer was replaced by the template: a replay of the third live run.)
     """
     items = [*evidence.catalog, *evidence.web]
-    words = [{w.rstrip("s") for w in _NAME_WORD.findall(i.title.lower()) if len(w) > 3} for i in items]
-    said = {w.rstrip("s") for w in _NAME_WORD.findall((text or "").lower())}
-    named = []
-    for n, item in enumerate(items):
-        elsewhere = set().union(*(w for m, w in enumerate(words) if m != n)) if len(items) > 1 else set()
-        if item not in besides and (words[n] - elsewhere) & said:
-            named.append(item)
-    return named
+    said = name_words(text)
+    return [item for item, own in zip(items, words_of_its_own(items), strict=True) if item not in besides and own & said]
+
+
+def name_words(text: str | None) -> set[str]:
+    """The words of a text that can name a product: longer than three letters, lower case, without a plural s."""
+    return {w.rstrip("s") for w in _NAME_WORD.findall((text or "").lower()) if len(w) > 3}
+
+
+def words_of_its_own(items: list[CatalogItem | WebItem]) -> list[set[str]]:
+    """For each item, the words of its title that no other item's title has."""
+    words = [name_words(i.title) for i in items]
+    return [own - set().union(*(w for m, w in enumerate(words) if m != n)) for n, own in enumerate(words)]
 
 
 def known_prices(item: CatalogItem | WebItem, evidence: Evidence) -> list[float]:

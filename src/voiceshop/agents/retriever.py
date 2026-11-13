@@ -354,6 +354,53 @@ def web_fallback_calls(deps: Deps, constraints: Constraints, records: list[ToolR
     return [call for call in ((s.tool, step_arguments(s)) for s in steps) if call_key(*call) not in made]
 
 
+PRICE_LOOKUPS = 2
+
+
+def price_lookup_calls(deps: Deps, constraints: Constraints, builder: EvidenceBuilder) -> list[tuple[str, dict[str, Any]]]:
+    """Shopping searches, by name, for products that a page describes as what the shopper asked for and that no listing prices.
+
+    A shopping listing carries a price and no description; the page that calls a product plant-based states no price. The
+    plan asks for one search of each kind, and on live data the two seldom return the same product. (A live turn on the
+    laptop, the assignment's own example, "an eco friendly stainless steel cleaner under fifteen dollars": the two
+    products whose pages said plant-based were recommended with "price not stated", beside a priced one that no source
+    called eco-friendly. The sample data had hidden this: its listings and its pages were written about the same products.)
+
+    So each such product, at most :data:`PRICE_LOOKUPS`, is looked for among the listings by the name its page gives it.
+    The reconcile step then joins a listing to the page that describes it, as it does for the planned searches. No price
+    limit is sent: a product that costs more than the budget should be seen to, not found to have no price.
+
+    Nothing is returned unless the shopper asked for a quality, a page states it, and no priced listing in the evidence
+    is of a product such a page describes; nor when live search is off, a web search of this turn failed, the product
+    is for a child under three, or the query is one the safety policy does not allow.
+    """
+    from voiceshop.agents.reconcile import distinguishing_words as words
+    from voiceshop.agents.reconcile import text_about
+
+    if not (deps.web_available and constraints.must_have) or any(r.tool == "web.search" and not r.ok for r in builder.records):
+        return []
+    if constraints.age_years is not None and constraints.age_years < 3:
+        return []
+    found = [w for w in builder.web.values() if not w.flagged]
+    pages = [w for w in found if w.price is None and rules.wish_support(w, constraints)]
+    offers = [w for w in found if w.price is not None]
+    if not pages or any(text_about(offer, page) for offer in offers for page in pages):
+        return []
+    asked = words(constraints.product or "")
+    calls: list[tuple[str, dict[str, Any]]] = []
+    for page in pages:
+        name = rules.short_name(page)
+        if words(name) <= asked:                              # the title is the kind of product and nothing more: the site says whose it is
+            name = f"{name} {(page.source or '').split('.')[0]}".strip()
+        call = ("web.search", {"query": name[:160], "max_results": 5, "kind": "shopping"})
+        if unsafe_query(name) or call_key(*call) in builder.seen_calls or call in calls:
+            continue
+        calls.append(call)
+        if len(calls) == PRICE_LOOKUPS:
+            break
+    return calls
+
+
 def fallback_after_abstention(state: TurnState, deps: Deps) -> list[tuple[str, dict[str, Any]]]:
     """The live search to make when the Answerer's first draft found nothing suitable in what the catalog returned; empty when none is due.
 
@@ -513,6 +560,10 @@ def make_retriever_node(deps: Deps):  # type: ignore[no-untyped-def]
         if wider:
             builder.web_fallback = str(wider[0][1].get("query") or "")
             planned += await _run_calls(deps, builder, wider, origin="fallback", round_no=0)
+        # A page says a product is what was asked for and no listing prices it: the listings are asked for it by name.
+        priced = [] if seeded else price_lookup_calls(deps, constraints, builder)
+        if priced:
+            planned += await _run_calls(deps, builder, priced, origin="price", round_no=0)
         model_calls, notes, error = 0, [], None
         if go and rules_mode("retriever"):
             notes = await _rule_round(deps, plan, constraints, builder)
@@ -528,7 +579,8 @@ def make_retriever_node(deps: Deps):  # type: ignore[no-untyped-def]
         failed = [r for r in builder.records if not r.ok]
         summary = (f"{len(builder.records)} tool call(s): {len(evidence.catalog)} catalog product(s), {len(evidence.web)} web result(s)"
                    + (f" | {len(failed)} failed" if failed else "") + (f" | constraints loosened: {', '.join(evidence.relaxed)}" if evidence.relaxed else "")
-                   + (" | nothing close in the catalog, so the live web was searched as well" if wider else ""))
+                   + (" | nothing close in the catalog, so the live web was searched as well" if wider else "")
+                   + (f" | {len(priced)} product(s) described without a price were looked up among the listings" if priced else ""))
         return {
             "evidence": evidence,
             "tool_log": builder.records,
@@ -537,6 +589,7 @@ def make_retriever_node(deps: Deps):  # type: ignore[no-untyped-def]
                            agent_rounds=model_calls, agent_decision=why, agent_notes=notes or None,
                            seeded_from_screen=[c.ref for c in builder.catalog.values()] if seeded else None, kept_from_screen=kept or None,
                            web_fallback={"reason": lacking, "query": builder.web_fallback} if wider else None,
+                           price_lookups=[str(call[1].get("query")) for call in priced] or None,
                            best_match_score=builder.best_match_score, strict_matches=evidence.strict_matches, error=error)],
         }
 

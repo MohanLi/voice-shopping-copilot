@@ -114,7 +114,7 @@ or that the live search found nothing either; an empty section of the evidence n
 searched at all. A table that holds only such results carries the note "Nothing suitable was found in the
 catalog, so these are current listings from a live web search", and the spoken sentence begins "On the web".
 In the step log the call is listed with the step that made it, and the tool log records who decided on each
-call: the plan, the Retriever model, or this rule (`origin`).
+call: the plan, the Retriever model, this rule, or the look-up by name described below (`origin`).
 
 The idea is that of corrective retrieval-augmented generation (Yan et al., 2024, arXiv:2401.15884): a judgment
 of what was retrieved decides whether the web is searched. Here the judgment needs no model call of its own. The
@@ -122,6 +122,24 @@ re-ranker's score is already there, and so is the Answerer's reading of the resu
 fallback pays nothing for having one. A turn that needs it pays one search and, on the second path, one more
 draft: about three seconds. Why it was built and what it was tested on: failure 21 in
 [evaluation.md](evaluation.md).
+
+### When a page describes a product and no listing prices it: the look-up by name
+
+A shopping listing carries a price, a store and sometimes a rating, and no description. The page that says a
+product is plant-based states no price. So a request for a quality is planned as one search of each kind, and
+`reconcile` joins a listing to the pages that describe the same product. On the sample data the join always
+finds something, because its listings and its pages were written about the same products. On live data the two
+searches seldom return the same product: the assignment's own example, run on the laptop against the live
+search API, recommended two cleaners whose pages said plant-based with "price not stated", beside a priced one
+that no source called eco-friendly.
+
+`retriever.price_lookup_calls` closes that gap by rule, in the same step. When the shopper asked for a quality,
+a page states it, and no priced listing in the evidence is of a product such a page describes, each of those
+products (at most two) is searched for among the listings by the name its page gives it. The join then has
+both halves: the listing's price and store, the page's claim, each cited to its own source. No price limit is
+sent with the look-up, so a product that costs more than the budget is seen to cost more, not found to have no
+price. A turn that needs it pays one more round of searches, about a second; the calls are marked `price` in the
+tool log.
 
 ### Replies that are chosen, not written
 

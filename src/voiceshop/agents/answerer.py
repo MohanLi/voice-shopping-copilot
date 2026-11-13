@@ -33,7 +33,7 @@ from voiceshop.agents.state import (
     step,
 )
 from voiceshop.guardrails import policy
-from voiceshop.guardrails.output import check_draft, repair
+from voiceshop.guardrails.output import check_draft, name_words, repair, words_of_its_own
 from voiceshop.llm.ledger import BudgetExceededError
 from voiceshop.prompts import load_prompt
 from voiceshop.speech.text import WORDS_PER_SECOND, estimate_seconds
@@ -151,6 +151,36 @@ def in_shopper_words(draft: AnswerDraft, evidence: Evidence | None = None) -> An
                                     "follow_up_question": shown(draft.follow_up_question), "conflict_note": shown(draft.conflict_note)})
 
 
+_TOP_PICK = re.compile(r"\b(?:top|first|best)\s+(?:pick|choice|match|recommendation)\s+(?:is|would\s+be)\b|\bmy\s+pick\s+is\b|"
+                       r"\bI(?:'d|\s+would)?\s+(?:recommend|suggest|pick|go\s+with)\b", re.I)
+
+
+def top_pick_first(draft: AnswerDraft, evidence: Evidence) -> tuple[AnswerDraft, str | None]:
+    """The recommendations in the order the spoken sentence implies: the product it calls the top pick is the first row.
+
+    The table marks its first row "Top pick" and the sentence is about one product; they have to be the same one. (A live
+    turn on the laptop, the assignment's own example: the draft listed a cleaner sold as "Stainless Steel Cleaner" first
+    and said aloud "my top pick is the Therapy stainless steel cleaner", which was its second row. The rule checks and
+    the model critic both passed it, and the page showed one top pick while the voice named another.)
+
+    Applies only when the clause that names the top pick uses a word that no other recommended product has in its title,
+    that product is not the first, and the first is not named in the same clause. Only the order changes; the second
+    value returned is the handle that was moved, or None.
+    """
+    recs = draft.recommendations
+    items = [evidence.get(rec.ref) for rec in recs]
+    said = _TOP_PICK.search(draft.spoken or "")
+    if draft.abstain or len(recs) < 2 or said is None or any(item is None for item in items):
+        return draft, None
+    clause = re.split(r"[,;.!?]", (draft.spoken or "")[said.end():], maxsplit=1)[0]
+    words = name_words(clause)
+    named = [n for n, own in enumerate(words_of_its_own([i for i in items if i is not None])) if own & words]
+    if not named or 0 in named:
+        return draft, None
+    moved = recs[named[0]]
+    return draft.model_copy(update={"recommendations": [moved, *(rec for rec in recs if rec is not moved)]}), moved.ref
+
+
 def focus_labels(state: TurnState) -> dict[str, str]:
     """How each on-screen product a follow-up refers to is called by its place in the list: {"C3": "the first one"}."""
     route: RouteDecision | None = state.get("route")
@@ -201,19 +231,21 @@ def make_answerer_node(deps: Deps):  # type: ignore[no-untyped-def]
             findings = "\n".join(f"- [{i.where or 'draft'}] {i.message}" for i in critique.blocking)
             user += ("\n\nYOUR PREVIOUS DRAFT WAS REJECTED BY THE CRITIC. Fix every finding and return the full corrected answer.\n"
                      f"{_draft_block(previous) if previous else ''}\nFindings:\n{findings}")
-        fallback, used_template = None, False
+        fallback, used_template, moved_first = None, False, None
         try:
             draft, meta = await call_structured(
                 "answerer", "answerer", AnswerDraft, user=user, turn_id=state.get("turn_id", ""),
                 variables={"max_words": budget, "safety_policy": load_prompt("safety_policy").text},
             )
-            draft = in_shopper_words(draft, evidence)
+            draft, moved_first = top_pick_first(in_shopper_words(draft, evidence), evidence)
         except BudgetExceededError:
             raise
         except LLMCallError as exc:
             draft, meta, fallback, used_template = (rules.answer(evidence, constraints, weak, focus_refs(state), focus_labels(state), searched_tools(state)),
                                                     {"model": "rules"}, fallback_note(exc), True)
         picks = ", ".join(r.ref for r in draft.recommendations) or ("abstained" if draft.abstain else "none")
+        if moved_first:
+            picks += f" ({moved_first} moved first: the sentence calls it the top pick)"
         return {
             "draft": draft,
             "draft_source": "template" if used_template else "llm",

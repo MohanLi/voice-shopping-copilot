@@ -221,7 +221,8 @@ class ToolRecord(BaseModel):
     tool: str
     arguments: dict[str, Any]
     ok: bool
-    origin: Literal["plan", "agent", "fallback"] = "plan"     # who decided on the call: the Planner, the Retriever model, or the web-fallback rule
+    # who decided on the call: the Planner, the Retriever model, the web-fallback rule, or the price look-up rule
+    origin: Literal["plan", "agent", "fallback", "price"] = "plan"
     round: int = 0
     n_results: int = 0
     duration_ms: float = 0.0
