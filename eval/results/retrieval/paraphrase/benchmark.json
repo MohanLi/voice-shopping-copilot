@@ -1,0 +1,909 @@
+{
+ "created": "2026-11-12T13:34:32",
+ "queries": 165,
+ "machine": "Darwin arm64, 12 CPUs, Python 3.12.14",
+ "query_types": [
+  "paraphrase"
+ ],
+ "queries_with_budget": 105,
+ "queries_with_age": 66,
+ "index": {
+  "created": "2026-11-12T13:22:56",
+  "n_docs": 9740,
+  "embedding_backend": "fastembed",
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "embedding_dim": 384,
+  "embedding_max_tokens": 256,
+  "query_instruction": "Represent this sentence for searching relevant passages: ",
+  "vector_store": "qdrant (embedded)",
+  "lexical": "bm25s (lucene variant, English stemming)",
+  "products_sha256": "a40f3d658244f2b801fc83e80652a2f20c0d50e61c42a0c1a9e0e13d81aaf1e1",
+  "categories": 1147,
+  "brands": 2204,
+  "build_seconds": 6.4
+ },
+ "query_instruction": "Represent this sentence for searching relevant passages: ",
+ "reranker": "Xenova/ms-marco-MiniLM-L-6-v2",
+ "variants": {
+  "bm25": {
+   "n_queries": 165,
+   "hit@1": 22.4,
+   "hit@3": 32.7,
+   "hit@5": 40.0,
+   "hit@10": 47.9,
+   "mrr@10": 0.296,
+   "in_budget@3": 67.3,
+   "age_ok@3": 64.1,
+   "latency_ms_p50": 0.3,
+   "latency_ms_p95": 0.4,
+   "by_type": {
+    "paraphrase": {
+     "hit@3": 32.7,
+     "mrr@10": 0.296
+    }
+   },
+   "example_misses": [
+    {
+     "qid": "q002-paraphrase",
+     "query": "Find a hand-painted, French-made sparkly horse with a horn for my 3 year old daughter's imaginative play.",
+     "target": "Papo Ice Unicorn Figure, Multicolor",
+     "top1": "Melissa & Doug Created by Me! Pet Figurines Craft Kit (Resin Dog, Cat, Horse, 12 Paints, 2"
+    },
+    {
+     "qid": "q005-paraphrase",
+     "query": "I'm looking for a little posable toy figure of a girl with her palomino pony from that Netflix cartoon, something for my three year old to play pretend with.",
+     "target": "Spirit Riding Free Small Doll & Horse Set - Abigail & Boomerang",
+     "top1": "My Little Pony Mane Pony Rainbow Dash Classic Figure"
+    },
+    {
+     "qid": "q006-paraphrase",
+     "query": "I need a play station for my toddler where they can scoop around in grainy stuff or splashy liquid, and the lid flips over to become a surface for doodling, all for under 400 dollars.",
+     "target": "Constructive Playthings Sand and Water Table with Dry-Erase Top, Indoor and Outdoor Friend",
+     "top1": "Beados Season 7 Shopkins Ice Cream Truck"
+    },
+    {
+     "qid": "q008-paraphrase",
+     "query": "I'm looking for a glowing night light for my little girl's bedroom with spooky-cute characters on it, something under twenty five bucks for a four year old.",
+     "target": "Monster High Skullette EVA Lamp",
+     "top1": "My Little Pony Shining Friends Pinkie Pie Figure"
+    },
+    {
+     "qid": "q010-paraphrase",
+     "query": "I need a sparkly craft for my six year old, something under twenty dollars where she sticks colorful shiny dots to make decorations for her school bag and notebooks, plus little animal sun-catchers for the window.",
+     "target": "Creativity for Kids Big Gem Diamond Painting Kit - Create Your Own Woodland Forest Friends",
+     "top1": "My Little Pony Design-A-Pony Princess Luna Figure"
+    },
+    {
+     "qid": "q013-paraphrase",
+     "query": "Got any little folding booklet with clear pockets to store my coins, something my six year old can use? It needs to be under five dollars.",
+     "target": "Rhode Island Novelty Red 3.5\u201d x 6\u201d Museum Penny Holder Book One Per Order",
+     "top1": "Little Live Babies Little Live Bizzy Bubs Clap Baby Harper Childrens Toy"
+    },
+    {
+     "qid": "q014-paraphrase",
+     "query": "I'm looking for a number-calling card matching activity with chips for my four year old, something under twenty dollars that's easy to play.",
+     "target": "Pokeno 2",
+     "top1": "Melissa & Doug On the Go Color by Numbers Kids' Design Board - Unicorns, Ballet, Kittens, "
+    },
+    {
+     "qid": "q020-paraphrase",
+     "query": "I need some shimmery sparkly lashes to wear with my Halloween outfit, something cheap, under 10 dollars please.",
+     "target": "Amscan Tinsel Eyelashes, Party Accessory, Silver",
+     "top1": "Adorable Teddy Bear Halloween Costume"
+    },
+    {
+     "qid": "q022-paraphrase",
+     "query": "I'm looking for a classic two-player board game with dice and wooden pieces for my eight year old, something under 40 dollars.",
+     "target": "Galison David Hicks Backgammon Set",
+     "top1": "Lowdown Roll & Write Family Dice Game with Dry Erase Boards and Markers for 7 Year Olds an"
+    },
+    {
+     "qid": "q026-paraphrase",
+     "query": "Can you find me a small collectible racer from the animated movie with the blue-eyed tow truck fans love, under 10 dollars, for my nephew's collection?",
+     "target": "Disney Pixar Cars Die-cast Carla Veloso Vehicle",
+     "top1": "Kindi Kids Snack Time Friends, Pre-School 10 inch Doll"
+    },
+    {
+     "qid": "q027-paraphrase",
+     "query": "I want a set of fluffy sparkly craft balls to decorate my daughter's room, something under 10 dollars that's suitable for a 3 year old.",
+     "target": "Pom Pom Wow! - Sparkle Pack",
+     "top1": "Amscan 225555.12 Garland, Multi Size, Blue"
+    },
+    {
+     "qid": "q030-paraphrase",
+     "query": "My brother is obsessed with a Mexican crime drama series, so I need a small collectible character doll of the lead gangster for him, under 15 dollars.",
+     "target": "Funko Pop! Television: Club De Cuervos - Chava Iglesias Jr",
+     "top1": "MerryMakers Dog Man Plush Toy, 9.5-Inch"
+    },
+    {
+     "qid": "q033-paraphrase",
+     "query": "I'm looking for a tiny retro pocket console with a little screen, the kind inspired by an old arcade burger-chef classic.",
+     "target": "Burgertime Micro Player",
+     "top1": "Tiny Arcade Pole Position"
+    },
+    {
+     "qid": "q035-paraphrase",
+     "query": "I need some fine white flakes to dust over my miniature railway hills so they look like winter, for my HO layout.",
+     "target": "Noch 8750 Powder snow G,0,H0,TT,N,Z Scale",
+     "top1": "DRESS MY CRAFT/CRAFTER'S 3PL DMCMA9309A Miniature, Santa Claus Figure"
+    },
+    {
+     "qid": "q036-paraphrase",
+     "query": "Looking for a set of chunky see-through plastic bricks under 125 dollars that my 4 year old can use to construct big creative structures.",
+     "target": "EverBlock Modular Building Blocks - Full Block Bulk Pack, 18 Blocks - Translucent",
+     "top1": "LEGO DUPLO Disney Juniors My First Mickey Build 10898 Building Bricks, 2019 (9 Pieces)"
+    }
+   ]
+  },
+  "dense": {
+   "n_queries": 165,
+   "hit@1": 24.2,
+   "hit@3": 35.8,
+   "hit@5": 38.8,
+   "hit@10": 51.5,
+   "mrr@10": 0.316,
+   "in_budget@3": 67.9,
+   "age_ok@3": 67.2,
+   "latency_ms_p50": 13.1,
+   "latency_ms_p95": 14.7,
+   "by_type": {
+    "paraphrase": {
+     "hit@3": 35.8,
+     "mrr@10": 0.316
+    }
+   },
+   "example_misses": [
+    {
+     "qid": "q000-paraphrase",
+     "query": "I'm looking for a hands-on set where my grandson can screw chunky plastic bolts with a pretend power tool and sort colorful pieces, all under 40 dollars.",
+     "target": "Educational Insights Design & Drill See-Through Creative Workshop - Drill Toy, STEM & Cons",
+     "top1": "Black + Decker Jr. Carpenter Dress-up & Play Set (Amazon Exclusive)"
+    },
+    {
+     "qid": "q001-paraphrase",
+     "query": "My four year old is obsessed with morphing heroes, so I need a poseable six inch villain character with a key, something for under 15 dollars.",
+     "target": "Power Rangers Beast Morphers Cybervillain Blaze 6\" Action Figure Toy Inspired by The TV Sh",
+     "top1": "Forum Novelties Child Super Hero Gauntlet Gloves, Red"
+    },
+    {
+     "qid": "q002-paraphrase",
+     "query": "Find a hand-painted, French-made sparkly horse with a horn for my 3 year old daughter's imaginative play.",
+     "target": "Papo Ice Unicorn Figure, Multicolor",
+     "top1": "AMAV Toys Kids DIY Unicorn Painting Multicolor Kit, for Kids Ages 3+. Fun Arts & Crafts Ac"
+    },
+    {
+     "qid": "q003-paraphrase",
+     "query": "I'm looking for a creative all-in-one craft station for my 9 year old, with paints, pastels, and crayons included, and I'd like to keep it under 50 dollars.",
+     "target": "Faber-Castell Tabletop Art Studio - Wooden Easel with Art Supplies for Kids",
+     "top1": "ALEX Toys Artist Studio First Art Desk"
+    },
+    {
+     "qid": "q005-paraphrase",
+     "query": "I'm looking for a little posable toy figure of a girl with her palomino pony from that Netflix cartoon, something for my three year old to play pretend with.",
+     "target": "Spirit Riding Free Small Doll & Horse Set - Abigail & Boomerang",
+     "top1": "My Little Pony Friendship is Magic Starlight Glimmer Small Plush"
+    },
+    {
+     "qid": "q011-paraphrase",
+     "query": "I need a small, sturdy applicator for chalky decorative finish on my farmhouse furniture, something under ten dollars with a round tip.",
+     "target": "FolkArt Milk Paint Brush, 38999 2-Inch",
+     "top1": "Squadron Products Precision Glue Applicator"
+    },
+    {
+     "qid": "q012-paraphrase",
+     "query": "I need a splashy backyard water toy for my kids with a little slide and ball toss, and it should cost under sixty bucks.",
+     "target": "Bestway Lil Champ Play Center Inflatable Play Center",
+     "top1": "Goliath Hydro Zoom Ball (2 Player)"
+    },
+    {
+     "qid": "q013-paraphrase",
+     "query": "Got any little folding booklet with clear pockets to store my coins, something my six year old can use? It needs to be under five dollars.",
+     "target": "Rhode Island Novelty Red 3.5\u201d x 6\u201d Museum Penny Holder Book One Per Order",
+     "top1": "hand2mind Play Money Plastic Coins with Plastic Storage Bin (Pack of 768)"
+    },
+    {
+     "qid": "q014-paraphrase",
+     "query": "I'm looking for a number-calling card matching activity with chips for my four year old, something under twenty dollars that's easy to play.",
+     "target": "Pokeno 2",
+     "top1": "Daniel Tiger's Neighborhood Bingo & Memory Match Tin"
+    },
+    {
+     "qid": "q015-paraphrase",
+     "query": "I'm looking for a quirky little charm gift under 15 dollars for my 15 year old, something with a protective message and a keychain for their backpack.",
+     "target": "Watchover Voodoo Aka-Oni Voodoo Novelty",
+     "top1": "American Jewel Yummy Gummy Light-up Silicone Backpack, Frosted Cupcake"
+    },
+    {
+     "qid": "q016-paraphrase",
+     "query": "Can you find a 260-count picture mosaic to fit together for my six year old, featuring seaside scenes and sailboats, with a little stand to help while building it?",
+     "target": "Anatolian Call of The Sea Jigsaw Puzzle (260 Piece)",
+     "top1": "LEGO Disney Ariel\u2019s Seaside Castle 41160 4+ Building Kit, 2019 (115 Pieces)"
+    },
+    {
+     "qid": "q022-paraphrase",
+     "query": "I'm looking for a classic two-player board game with dice and wooden pieces for my eight year old, something under 40 dollars.",
+     "target": "Galison David Hicks Backgammon Set",
+     "top1": "Hey! Play! 7-in-1 Classic Wooden Board Game Set \u2013 Old Fashioned Family Game Night Cards, D"
+    },
+    {
+     "qid": "q023-paraphrase",
+     "query": "My 6 year old is obsessed with those collectible creature battle sets, so I'd like a big bundle of booster packs, sleeves, and dice for under the usual price, something with Silvally on it.",
+     "target": "Pokemon TCG: Sun and Moon Crimson Invasion Elite Trainer Box",
+     "top1": "WizKids Pathfinder Battles Legends of Golarion Booster Brick"
+    },
+    {
+     "qid": "q026-paraphrase",
+     "query": "Can you find me a small collectible racer from the animated movie with the blue-eyed tow truck fans love, under 10 dollars, for my nephew's collection?",
+     "target": "Disney Pixar Cars Die-cast Carla Veloso Vehicle",
+     "top1": "Disney Pixar Cars Wheel Action Drivers Race & Win Playset"
+    },
+    {
+     "qid": "q027-paraphrase",
+     "query": "I want a set of fluffy sparkly craft balls to decorate my daughter's room, something under 10 dollars that's suitable for a 3 year old.",
+     "target": "Pom Pom Wow! - Sparkle Pack",
+     "top1": "Creativity for Kids My First Fun Felt Shapes - Travel Friendly Felt Board for Toddlers (Im"
+    }
+   ]
+  },
+  "hybrid (rrf)": {
+   "n_queries": 165,
+   "hit@1": 21.8,
+   "hit@3": 41.8,
+   "hit@5": 52.1,
+   "hit@10": 64.8,
+   "mrr@10": 0.345,
+   "in_budget@3": 69.5,
+   "age_ok@3": 67.2,
+   "latency_ms_p50": 13.5,
+   "latency_ms_p95": 14.8,
+   "by_type": {
+    "paraphrase": {
+     "hit@3": 41.8,
+     "mrr@10": 0.345
+    }
+   },
+   "example_misses": [
+    {
+     "qid": "q002-paraphrase",
+     "query": "Find a hand-painted, French-made sparkly horse with a horn for my 3 year old daughter's imaginative play.",
+     "target": "Papo Ice Unicorn Figure, Multicolor",
+     "top1": "Breyer Classics Customizing - Thoroughbred Horse Craft Activity Set"
+    },
+    {
+     "qid": "q005-paraphrase",
+     "query": "I'm looking for a little posable toy figure of a girl with her palomino pony from that Netflix cartoon, something for my three year old to play pretend with.",
+     "target": "Spirit Riding Free Small Doll & Horse Set - Abigail & Boomerang",
+     "top1": "My Little Pony Mane Pony Rainbow Dash Classic Figure"
+    },
+    {
+     "qid": "q006-paraphrase",
+     "query": "I need a play station for my toddler where they can scoop around in grainy stuff or splashy liquid, and the lid flips over to become a surface for doodling, all for under 400 dollars.",
+     "target": "Constructive Playthings Sand and Water Table with Dry-Erase Top, Indoor and Outdoor Friend",
+     "top1": "Sassy Fishy Fascination Station 2-in-1 Suction Cup High Chair Toy | Developmental Tray Toy"
+    },
+    {
+     "qid": "q010-paraphrase",
+     "query": "I need a sparkly craft for my six year old, something under twenty dollars where she sticks colorful shiny dots to make decorations for her school bag and notebooks, plus little animal sun-catchers for the window.",
+     "target": "Creativity for Kids Big Gem Diamond Painting Kit - Create Your Own Woodland Forest Friends",
+     "top1": "Klutz Jr. My Twinkly Tiaras Craft Kit"
+    },
+    {
+     "qid": "q012-paraphrase",
+     "query": "I need a splashy backyard water toy for my kids with a little slide and ball toss, and it should cost under sixty bucks.",
+     "target": "Bestway Lil Champ Play Center Inflatable Play Center",
+     "top1": "BANZAI Splish Splash Water Park"
+    },
+    {
+     "qid": "q014-paraphrase",
+     "query": "I'm looking for a number-calling card matching activity with chips for my four year old, something under twenty dollars that's easy to play.",
+     "target": "Pokeno 2",
+     "top1": "edx Education School Friendly Playing Cards - Jumbo Size - Set of 56 - Multicolored Patter"
+    },
+    {
+     "qid": "q022-paraphrase",
+     "query": "I'm looking for a classic two-player board game with dice and wooden pieces for my eight year old, something under 40 dollars.",
+     "target": "Galison David Hicks Backgammon Set",
+     "top1": "Lowdown Roll & Write Family Dice Game with Dry Erase Boards and Markers for 7 Year Olds an"
+    },
+    {
+     "qid": "q026-paraphrase",
+     "query": "Can you find me a small collectible racer from the animated movie with the blue-eyed tow truck fans love, under 10 dollars, for my nephew's collection?",
+     "target": "Disney Pixar Cars Die-cast Carla Veloso Vehicle",
+     "top1": "My Little Pony the Movie Applejack Sea-Pony Small Plush"
+    },
+    {
+     "qid": "q027-paraphrase",
+     "query": "I want a set of fluffy sparkly craft balls to decorate my daughter's room, something under 10 dollars that's suitable for a 3 year old.",
+     "target": "Pom Pom Wow! - Sparkle Pack",
+     "top1": "Melissa & Doug Created by Me! Pink Wooden Flower Jewelry Box Craft Kit - The Original (Gre"
+    },
+    {
+     "qid": "q030-paraphrase",
+     "query": "My brother is obsessed with a Mexican crime drama series, so I need a small collectible character doll of the lead gangster for him, under 15 dollars.",
+     "target": "Funko Pop! Television: Club De Cuervos - Chava Iglesias Jr",
+     "top1": "PJ Masks Deluxe Talking Cat Boy Figure"
+    },
+    {
+     "qid": "q036-paraphrase",
+     "query": "Looking for a set of chunky see-through plastic bricks under 125 dollars that my 4 year old can use to construct big creative structures.",
+     "target": "EverBlock Modular Building Blocks - Full Block Bulk Pack, 18 Blocks - Translucent",
+     "top1": "Creative LEGO Brick Set by LEGO Education"
+    },
+    {
+     "qid": "q040-paraphrase",
+     "query": "I'm looking for a fun rural scene picture to assemble on my table, something with a countryside farm view and about a thousand tiny interlocking bits.",
+     "target": "Buffalo Games - Country Life - Country Delivery - 1000 Piece Jigsaw Puzzle",
+     "top1": "MasterPieces Family Hour Apple of My Eye Farm with Barn Scene Jigsaw Puzzle, 400-Piece"
+    },
+    {
+     "qid": "q046-paraphrase",
+     "query": "I'm looking for a cuddly stuffed steer with horns where my daughter can stash her spare change, and I'd like to spend under 30 dollars.",
+     "target": "Carstens Plush Longhorn Kids Coin Bank",
+     "top1": "GUND Pusheen Pusheenicorn Unicorn Cat Sound Plush Stuffed Animal, Purple, 7.5\""
+    },
+    {
+     "qid": "q047-paraphrase",
+     "query": "Can you find me a little glass cube holding a real insect preserved inside, under twenty five dollars? It's a gift for my five year old.",
+     "target": "REALBUG Dragonfly Paperweight(3x3x1)",
+     "top1": "Constructive Playthings Geoworld Bugs World Collection, 12 Real Insects, Scientific Educat"
+    },
+    {
+     "qid": "q048-paraphrase",
+     "query": "My 7 year old wants a costume face covering that makes him sound like a robot from the newest yellow car movie, and I need it under 10 dollars.",
+     "target": "Transformers: Bumblebee Autobot Sqweeks Voice Changer Mask",
+     "top1": "Batman Dark Knight Rises Child's Deluxe Bane Costume and Mask - Large"
+    }
+   ]
+  },
+  "bm25 + filters": {
+   "n_queries": 165,
+   "hit@1": 27.9,
+   "hit@3": 41.2,
+   "hit@5": 46.7,
+   "hit@10": 52.1,
+   "mrr@10": 0.355,
+   "in_budget@3": 100.0,
+   "age_ok@3": 100.0,
+   "latency_ms_p50": 0.4,
+   "latency_ms_p95": 0.4,
+   "by_type": {
+    "paraphrase": {
+     "hit@3": 41.2,
+     "mrr@10": 0.355
+    }
+   },
+   "example_misses": [
+    {
+     "qid": "q002-paraphrase",
+     "query": "Find a hand-painted, French-made sparkly horse with a horn for my 3 year old daughter's imaginative play.",
+     "target": "Papo Ice Unicorn Figure, Multicolor",
+     "top1": "Breyer Classics Customizing - Thoroughbred Horse Craft Activity Set"
+    },
+    {
+     "qid": "q005-paraphrase",
+     "query": "I'm looking for a little posable toy figure of a girl with her palomino pony from that Netflix cartoon, something for my three year old to play pretend with.",
+     "target": "Spirit Riding Free Small Doll & Horse Set - Abigail & Boomerang",
+     "top1": "My Little Pony Mane Pony Rainbow Dash Classic Figure"
+    },
+    {
+     "qid": "q006-paraphrase",
+     "query": "I need a play station for my toddler where they can scoop around in grainy stuff or splashy liquid, and the lid flips over to become a surface for doodling, all for under 400 dollars.",
+     "target": "Constructive Playthings Sand and Water Table with Dry-Erase Top, Indoor and Outdoor Friend",
+     "top1": "Beados Season 7 Shopkins Ice Cream Truck"
+    },
+    {
+     "qid": "q008-paraphrase",
+     "query": "I'm looking for a glowing night light for my little girl's bedroom with spooky-cute characters on it, something under twenty five bucks for a four year old.",
+     "target": "Monster High Skullette EVA Lamp",
+     "top1": "My Little Pony Shining Friends Pinkie Pie Figure"
+    },
+    {
+     "qid": "q010-paraphrase",
+     "query": "I need a sparkly craft for my six year old, something under twenty dollars where she sticks colorful shiny dots to make decorations for her school bag and notebooks, plus little animal sun-catchers for the window.",
+     "target": "Creativity for Kids Big Gem Diamond Painting Kit - Create Your Own Woodland Forest Friends",
+     "top1": "My Little Pony Design-A-Pony Princess Luna Figure"
+    },
+    {
+     "qid": "q014-paraphrase",
+     "query": "I'm looking for a number-calling card matching activity with chips for my four year old, something under twenty dollars that's easy to play.",
+     "target": "Pokeno 2",
+     "top1": "Melissa & Doug Natural Play Book & Game: Mamas & Babies (10-Page Board Book, 20 Memory Mat"
+    },
+    {
+     "qid": "q020-paraphrase",
+     "query": "I need some shimmery sparkly lashes to wear with my Halloween outfit, something cheap, under 10 dollars please.",
+     "target": "Amscan Tinsel Eyelashes, Party Accessory, Silver",
+     "top1": "Adorable Teddy Bear Halloween Costume"
+    },
+    {
+     "qid": "q022-paraphrase",
+     "query": "I'm looking for a classic two-player board game with dice and wooden pieces for my eight year old, something under 40 dollars.",
+     "target": "Galison David Hicks Backgammon Set",
+     "top1": "Lowdown Roll & Write Family Dice Game with Dry Erase Boards and Markers for 7 Year Olds an"
+    },
+    {
+     "qid": "q026-paraphrase",
+     "query": "Can you find me a small collectible racer from the animated movie with the blue-eyed tow truck fans love, under 10 dollars, for my nephew's collection?",
+     "target": "Disney Pixar Cars Die-cast Carla Veloso Vehicle",
+     "top1": "Funko Pop! Animation: Speed Racer - Speed in Helmet (Styles May Vary)"
+    },
+    {
+     "qid": "q027-paraphrase",
+     "query": "I want a set of fluffy sparkly craft balls to decorate my daughter's room, something under 10 dollars that's suitable for a 3 year old.",
+     "target": "Pom Pom Wow! - Sparkle Pack",
+     "top1": "Melissa & Doug Shake It! Deluxe Pets Beginner Craft Kit (Confetti-Covered Cat, Dog, and Bu"
+    },
+    {
+     "qid": "q030-paraphrase",
+     "query": "My brother is obsessed with a Mexican crime drama series, so I need a small collectible character doll of the lead gangster for him, under 15 dollars.",
+     "target": "Funko Pop! Television: Club De Cuervos - Chava Iglesias Jr",
+     "top1": "My Little Pony Friendship is Magic Starlight Glimmer Small Plush"
+    },
+    {
+     "qid": "q033-paraphrase",
+     "query": "I'm looking for a tiny retro pocket console with a little screen, the kind inspired by an old arcade burger-chef classic.",
+     "target": "Burgertime Micro Player",
+     "top1": "Tiny Arcade Pole Position"
+    },
+    {
+     "qid": "q035-paraphrase",
+     "query": "I need some fine white flakes to dust over my miniature railway hills so they look like winter, for my HO layout.",
+     "target": "Noch 8750 Powder snow G,0,H0,TT,N,Z Scale",
+     "top1": "DRESS MY CRAFT/CRAFTER'S 3PL DMCMA9309A Miniature, Santa Claus Figure"
+    },
+    {
+     "qid": "q036-paraphrase",
+     "query": "Looking for a set of chunky see-through plastic bricks under 125 dollars that my 4 year old can use to construct big creative structures.",
+     "target": "EverBlock Modular Building Blocks - Full Block Bulk Pack, 18 Blocks - Translucent",
+     "top1": "Chunkies Die Cast Military Armored Army Tank Truck Green Toy Vehicle Ages 3 & Up CH034"
+    },
+    {
+     "qid": "q037-paraphrase",
+     "query": "I'm after a cool glass ball with a real green bug trapped inside on a little base, under 25 dollars, for my 7 year old's shelf.",
+     "target": "REALBUG 3 3/8 \" Chafer Beetle Marble",
+     "top1": "Constructive Playthings Geoworld Bugs World Collection, 12 Real Insects, Scientific Educat"
+    }
+   ]
+  },
+  "dense + filters": {
+   "n_queries": 165,
+   "hit@1": 28.5,
+   "hit@3": 40.6,
+   "hit@5": 46.1,
+   "hit@10": 61.8,
+   "mrr@10": 0.372,
+   "in_budget@3": 100.0,
+   "age_ok@3": 100.0,
+   "latency_ms_p50": 58.8,
+   "latency_ms_p95": 134.1,
+   "by_type": {
+    "paraphrase": {
+     "hit@3": 40.6,
+     "mrr@10": 0.372
+    }
+   },
+   "example_misses": [
+    {
+     "qid": "q000-paraphrase",
+     "query": "I'm looking for a hands-on set where my grandson can screw chunky plastic bolts with a pretend power tool and sort colorful pieces, all under 40 dollars.",
+     "target": "Educational Insights Design & Drill See-Through Creative Workshop - Drill Toy, STEM & Cons",
+     "top1": "Black + Decker Jr. Carpenter Dress-up & Play Set (Amazon Exclusive)"
+    },
+    {
+     "qid": "q002-paraphrase",
+     "query": "Find a hand-painted, French-made sparkly horse with a horn for my 3 year old daughter's imaginative play.",
+     "target": "Papo Ice Unicorn Figure, Multicolor",
+     "top1": "AMAV Toys Kids DIY Unicorn Painting Multicolor Kit, for Kids Ages 3+. Fun Arts & Crafts Ac"
+    },
+    {
+     "qid": "q005-paraphrase",
+     "query": "I'm looking for a little posable toy figure of a girl with her palomino pony from that Netflix cartoon, something for my three year old to play pretend with.",
+     "target": "Spirit Riding Free Small Doll & Horse Set - Abigail & Boomerang",
+     "top1": "My Little Pony Friendship is Magic Starlight Glimmer Small Plush"
+    },
+    {
+     "qid": "q011-paraphrase",
+     "query": "I need a small, sturdy applicator for chalky decorative finish on my farmhouse furniture, something under ten dollars with a round tip.",
+     "target": "FolkArt Milk Paint Brush, 38999 2-Inch",
+     "top1": "Squadron Products Precision Glue Applicator"
+    },
+    {
+     "qid": "q012-paraphrase",
+     "query": "I need a splashy backyard water toy for my kids with a little slide and ball toss, and it should cost under sixty bucks.",
+     "target": "Bestway Lil Champ Play Center Inflatable Play Center",
+     "top1": "Goliath Hydro Zoom Ball (2 Player)"
+    },
+    {
+     "qid": "q014-paraphrase",
+     "query": "I'm looking for a number-calling card matching activity with chips for my four year old, something under twenty dollars that's easy to play.",
+     "target": "Pokeno 2",
+     "top1": "Daniel Tiger's Neighborhood Bingo & Memory Match Tin"
+    },
+    {
+     "qid": "q015-paraphrase",
+     "query": "I'm looking for a quirky little charm gift under 15 dollars for my 15 year old, something with a protective message and a keychain for their backpack.",
+     "target": "Watchover Voodoo Aka-Oni Voodoo Novelty",
+     "top1": "GUND Pusheen Fancy and Unicorn Magical Kitties Plush Deluxe Keychain Clip, Multicolor, 8.5"
+    },
+    {
+     "qid": "q016-paraphrase",
+     "query": "Can you find a 260-count picture mosaic to fit together for my six year old, featuring seaside scenes and sailboats, with a little stand to help while building it?",
+     "target": "Anatolian Call of The Sea Jigsaw Puzzle (260 Piece)",
+     "top1": "LEGO Disney Ariel\u2019s Seaside Castle 41160 4+ Building Kit, 2019 (115 Pieces)"
+    },
+    {
+     "qid": "q022-paraphrase",
+     "query": "I'm looking for a classic two-player board game with dice and wooden pieces for my eight year old, something under 40 dollars.",
+     "target": "Galison David Hicks Backgammon Set",
+     "top1": "Hey! Play! 7-in-1 Classic Wooden Board Game Set \u2013 Old Fashioned Family Game Night Cards, D"
+    },
+    {
+     "qid": "q023-paraphrase",
+     "query": "My 6 year old is obsessed with those collectible creature battle sets, so I'd like a big bundle of booster packs, sleeves, and dice for under the usual price, something with Silvally on it.",
+     "target": "Pokemon TCG: Sun and Moon Crimson Invasion Elite Trainer Box",
+     "top1": "Pokemon TCG: Bewear Gx Box - 4 Booster Pack with A Foil Promo Card"
+    },
+    {
+     "qid": "q026-paraphrase",
+     "query": "Can you find me a small collectible racer from the animated movie with the blue-eyed tow truck fans love, under 10 dollars, for my nephew's collection?",
+     "target": "Disney Pixar Cars Die-cast Carla Veloso Vehicle",
+     "top1": "Far Out Toys Crash Racers Vehicle - Deke's Demolition"
+    },
+    {
+     "qid": "q028-paraphrase",
+     "query": "I want a sleek black leather seat for my kitchen counter with a modern metal frame, and my budget is under 150 dollars.",
+     "target": "Mercana Riddick II Bar Stool",
+     "top1": "urb SPACE 6 Pack, Black"
+    },
+    {
+     "qid": "q030-paraphrase",
+     "query": "My brother is obsessed with a Mexican crime drama series, so I need a small collectible character doll of the lead gangster for him, under 15 dollars.",
+     "target": "Funko Pop! Television: Club De Cuervos - Chava Iglesias Jr",
+     "top1": "Watchover Voodoo The Shopaholic Novelty"
+    },
+    {
+     "qid": "q039-paraphrase",
+     "query": "I want a hobby project for building a historic gray warship from World War Two, nearly nine inches long, under 25 dollars.",
+     "target": "Revell Germany USS Missouri BB-63 Battleship Model Kit",
+     "top1": "Us Flight Deck WW2 Section. 1/48th"
+    },
+    {
+     "qid": "q040-paraphrase",
+     "query": "I'm looking for a fun rural scene picture to assemble on my table, something with a countryside farm view and about a thousand tiny interlocking bits.",
+     "target": "Buffalo Games - Country Life - Country Delivery - 1000 Piece Jigsaw Puzzle",
+     "top1": "Creative Converting Farmhouse Fun Printed Hanging Cutouts (3 Count)"
+    }
+   ]
+  },
+  "hybrid + filters": {
+   "n_queries": 165,
+   "hit@1": 28.5,
+   "hit@3": 49.1,
+   "hit@5": 60.6,
+   "hit@10": 68.5,
+   "mrr@10": 0.414,
+   "in_budget@3": 100.0,
+   "age_ok@3": 100.0,
+   "latency_ms_p50": 59.4,
+   "latency_ms_p95": 136.3,
+   "by_type": {
+    "paraphrase": {
+     "hit@3": 49.1,
+     "mrr@10": 0.414
+    }
+   },
+   "example_misses": [
+    {
+     "qid": "q002-paraphrase",
+     "query": "Find a hand-painted, French-made sparkly horse with a horn for my 3 year old daughter's imaginative play.",
+     "target": "Papo Ice Unicorn Figure, Multicolor",
+     "top1": "Breyer Classics Customizing - Thoroughbred Horse Craft Activity Set"
+    },
+    {
+     "qid": "q005-paraphrase",
+     "query": "I'm looking for a little posable toy figure of a girl with her palomino pony from that Netflix cartoon, something for my three year old to play pretend with.",
+     "target": "Spirit Riding Free Small Doll & Horse Set - Abigail & Boomerang",
+     "top1": "My Little Pony Mane Pony Rainbow Dash Classic Figure"
+    },
+    {
+     "qid": "q006-paraphrase",
+     "query": "I need a play station for my toddler where they can scoop around in grainy stuff or splashy liquid, and the lid flips over to become a surface for doodling, all for under 400 dollars.",
+     "target": "Constructive Playthings Sand and Water Table with Dry-Erase Top, Indoor and Outdoor Friend",
+     "top1": "Sassy Fishy Fascination Station 2-in-1 Suction Cup High Chair Toy | Developmental Tray Toy"
+    },
+    {
+     "qid": "q012-paraphrase",
+     "query": "I need a splashy backyard water toy for my kids with a little slide and ball toss, and it should cost under sixty bucks.",
+     "target": "Bestway Lil Champ Play Center Inflatable Play Center",
+     "top1": "BANZAI Splish Splash Water Park"
+    },
+    {
+     "qid": "q022-paraphrase",
+     "query": "I'm looking for a classic two-player board game with dice and wooden pieces for my eight year old, something under 40 dollars.",
+     "target": "Galison David Hicks Backgammon Set",
+     "top1": "Lowdown Roll & Write Family Dice Game with Dry Erase Boards and Markers for 7 Year Olds an"
+    },
+    {
+     "qid": "q027-paraphrase",
+     "query": "I want a set of fluffy sparkly craft balls to decorate my daughter's room, something under 10 dollars that's suitable for a 3 year old.",
+     "target": "Pom Pom Wow! - Sparkle Pack",
+     "top1": "Glitter Girls by Battat \u2013 Flutter and Sparkle Shoes and Leggings Accessory Set \u2013 14-inch D"
+    },
+    {
+     "qid": "q030-paraphrase",
+     "query": "My brother is obsessed with a Mexican crime drama series, so I need a small collectible character doll of the lead gangster for him, under 15 dollars.",
+     "target": "Funko Pop! Television: Club De Cuervos - Chava Iglesias Jr",
+     "top1": "JC Toys Berenguer Boutique 15\" African American Soft Body Baby Doll - Pink 10Piece Gift Se"
+    },
+    {
+     "qid": "q036-paraphrase",
+     "query": "Looking for a set of chunky see-through plastic bricks under 125 dollars that my 4 year old can use to construct big creative structures.",
+     "target": "EverBlock Modular Building Blocks - Full Block Bulk Pack, 18 Blocks - Translucent",
+     "top1": "Creative LEGO Brick Set by LEGO Education"
+    },
+    {
+     "qid": "q040-paraphrase",
+     "query": "I'm looking for a fun rural scene picture to assemble on my table, something with a countryside farm view and about a thousand tiny interlocking bits.",
+     "target": "Buffalo Games - Country Life - Country Delivery - 1000 Piece Jigsaw Puzzle",
+     "top1": "MasterPieces Family Hour Apple of My Eye Farm with Barn Scene Jigsaw Puzzle, 400-Piece"
+    },
+    {
+     "qid": "q046-paraphrase",
+     "query": "I'm looking for a cuddly stuffed steer with horns where my daughter can stash her spare change, and I'd like to spend under 30 dollars.",
+     "target": "Carstens Plush Longhorn Kids Coin Bank",
+     "top1": "GUND Pusheen Pusheenicorn Unicorn Cat Sound Plush Stuffed Animal, Purple, 7.5\""
+    },
+    {
+     "qid": "q047-paraphrase",
+     "query": "Can you find me a little glass cube holding a real insect preserved inside, under twenty five dollars? It's a gift for my five year old.",
+     "target": "REALBUG Dragonfly Paperweight(3x3x1)",
+     "top1": "Melissa & Doug Sunny Patch Giddy Buggy Bug House Toy with Carrying Handle and Easy-Access "
+    },
+    {
+     "qid": "q049-paraphrase",
+     "query": "I need a stylish camouflage sticker to dress up my drone's spare power pack, something that guards it from scratches and dust and peels off cleanly later.",
+     "target": "MightySkins Skin Compatible with DJI Mavic Pro Battery - Black Camo | Protective, Durable,",
+     "top1": "MightySkins Skin Compatible with Blade Chroma Quadcopter Drone wrap Cover Sticker Skins Cr"
+    },
+    {
+     "qid": "q052-paraphrase",
+     "query": "I'm looking for a sparkly pink electric car my six year old daughter can drive around the yard, something under 275 dollars.",
+     "target": "Power Wheels Disney Princess Jeep Wrangler",
+     "top1": "Glitter Girls by Battat - Convertible Car for 14\" Dolls - Toys, Clothes & Accessories for "
+    },
+    {
+     "qid": "q055-paraphrase",
+     "query": "Looking for a collectible anime fighter statue of the fusion warrior with the goggles, under 30 bucks, something for my 13 year old who loves Akira Toriyama characters.",
+     "target": "Banpresto 39564 Dragon Ball Legends Collab Super Saiyan Gogeta Figure",
+     "top1": "Funko Pop Deluxe: Kylo Ren in Tie Fighter Collectible Vinyl Figure"
+    },
+    {
+     "qid": "q058-paraphrase",
+     "query": "I need a sturdy case of polyhedral gaming bones with seven shapes, including a twenty sided one, for my tabletop adventures.",
+     "target": "Oakie Doakie Dice RPG-Set Solid Green",
+     "top1": "Qworkshop Runic Glow-in-The-Dark Polyhedral RPG Dice Set"
+    }
+   ]
+  },
+  "hybrid + filters + re-rank all 40 (replace)": {
+   "n_queries": 165,
+   "hit@1": 27.9,
+   "hit@3": 38.8,
+   "hit@5": 42.4,
+   "hit@10": 53.3,
+   "mrr@10": 0.348,
+   "in_budget@3": 100.0,
+   "age_ok@3": 100.0,
+   "latency_ms_p50": 576.0,
+   "latency_ms_p95": 682.6,
+   "by_type": {
+    "paraphrase": {
+     "hit@3": 38.8,
+     "mrr@10": 0.348
+    }
+   },
+   "example_misses": [
+    {
+     "qid": "q002-paraphrase",
+     "query": "Find a hand-painted, French-made sparkly horse with a horn for my 3 year old daughter's imaginative play.",
+     "target": "Papo Ice Unicorn Figure, Multicolor",
+     "top1": "Spirit Riding Free Small Doll & Horse Set - Abigail & Boomerang"
+    },
+    {
+     "qid": "q003-paraphrase",
+     "query": "I'm looking for a creative all-in-one craft station for my 9 year old, with paints, pastels, and crayons included, and I'd like to keep it under 50 dollars.",
+     "target": "Faber-Castell Tabletop Art Studio - Wooden Easel with Art Supplies for Kids",
+     "top1": "Melissa & Doug Created by Me! Pet Figurines Craft Kit (Resin Dog, Cat, Horse, 12 Paints, 2"
+    },
+    {
+     "qid": "q005-paraphrase",
+     "query": "I'm looking for a little posable toy figure of a girl with her palomino pony from that Netflix cartoon, something for my three year old to play pretend with.",
+     "target": "Spirit Riding Free Small Doll & Horse Set - Abigail & Boomerang",
+     "top1": "My Little Pony: The Movie Pinkie Pie Swimming Seapony"
+    },
+    {
+     "qid": "q006-paraphrase",
+     "query": "I need a play station for my toddler where they can scoop around in grainy stuff or splashy liquid, and the lid flips over to become a surface for doodling, all for under 400 dollars.",
+     "target": "Constructive Playthings Sand and Water Table with Dry-Erase Top, Indoor and Outdoor Friend",
+     "top1": "Step2 2-in-1 Toy Box & Art Lid | Plastic Toy & Art Storage Container, Grey"
+    },
+    {
+     "qid": "q008-paraphrase",
+     "query": "I'm looking for a glowing night light for my little girl's bedroom with spooky-cute characters on it, something under twenty five bucks for a four year old.",
+     "target": "Monster High Skullette EVA Lamp",
+     "top1": "Pillow Pets Nickelodeon Paw Patrol Sleeptime Lites \u2013 Chase Plush Night Light"
+    },
+    {
+     "qid": "q009-paraphrase",
+     "query": "My 9 year old wants a summer backyard water ride, a long sheet you run down and get soaked on, something under 25 dollars.",
+     "target": "Wham-o Slip N Slide Wave Rider 16'",
+     "top1": "Goliath Hydro Zoom Ball (2 Player)"
+    },
+    {
+     "qid": "q011-paraphrase",
+     "query": "I need a small, sturdy applicator for chalky decorative finish on my farmhouse furniture, something under ten dollars with a round tip.",
+     "target": "FolkArt Milk Paint Brush, 38999 2-Inch",
+     "top1": "Squadron Products Precision Glue Applicator"
+    },
+    {
+     "qid": "q022-paraphrase",
+     "query": "I'm looking for a classic two-player board game with dice and wooden pieces for my eight year old, something under 40 dollars.",
+     "target": "Galison David Hicks Backgammon Set",
+     "top1": "Hey! Play! 7-in-1 Classic Wooden Board Game Set \u2013 Old Fashioned Family Game Night Cards, D"
+    },
+    {
+     "qid": "q026-paraphrase",
+     "query": "Can you find me a small collectible racer from the animated movie with the blue-eyed tow truck fans love, under 10 dollars, for my nephew's collection?",
+     "target": "Disney Pixar Cars Die-cast Carla Veloso Vehicle",
+     "top1": "Funko Pop! Animation: Speed Racer - Speed in Helmet (Styles May Vary)"
+    },
+    {
+     "qid": "q027-paraphrase",
+     "query": "I want a set of fluffy sparkly craft balls to decorate my daughter's room, something under 10 dollars that's suitable for a 3 year old.",
+     "target": "Pom Pom Wow! - Sparkle Pack",
+     "top1": "Glitter Girls by Battat \u2013 Flutter and Sparkle Shoes and Leggings Accessory Set \u2013 14-inch D"
+    },
+    {
+     "qid": "q030-paraphrase",
+     "query": "My brother is obsessed with a Mexican crime drama series, so I need a small collectible character doll of the lead gangster for him, under 15 dollars.",
+     "target": "Funko Pop! Television: Club De Cuervos - Chava Iglesias Jr",
+     "top1": "Watchover Voodoo 108010013 The Beautician Doll, Small, Multicolor"
+    },
+    {
+     "qid": "q036-paraphrase",
+     "query": "Looking for a set of chunky see-through plastic bricks under 125 dollars that my 4 year old can use to construct big creative structures.",
+     "target": "EverBlock Modular Building Blocks - Full Block Bulk Pack, 18 Blocks - Translucent",
+     "top1": "Melissa & Doug Wooden Chunky Puzzles Set - Vehicles and Construction"
+    },
+    {
+     "qid": "q040-paraphrase",
+     "query": "I'm looking for a fun rural scene picture to assemble on my table, something with a countryside farm view and about a thousand tiny interlocking bits.",
+     "target": "Buffalo Games - Country Life - Country Delivery - 1000 Piece Jigsaw Puzzle",
+     "top1": "MasterPieces Cottage Linen Jigsaw Puzzle, Stoney Brook, Featuring Art by P.D & Moreno, 100"
+    },
+    {
+     "qid": "q047-paraphrase",
+     "query": "Can you find me a little glass cube holding a real insect preserved inside, under twenty five dollars? It's a gift for my five year old.",
+     "target": "REALBUG Dragonfly Paperweight(3x3x1)",
+     "top1": "REALBUG 3 3/8 \" Chafer Beetle Marble"
+    },
+    {
+     "qid": "q049-paraphrase",
+     "query": "I need a stylish camouflage sticker to dress up my drone's spare power pack, something that guards it from scratches and dust and peels off cleanly later.",
+     "target": "MightySkins Skin Compatible with DJI Mavic Pro Battery - Black Camo | Protective, Durable,",
+     "top1": "MightySkins Skin Compatible with DJI Phantom 4 Quadcopter Drone wrap Cover Sticker Skins B"
+    }
+   ]
+  },
+  "hybrid + filters + re-rank top 10 (fused) = default": {
+   "n_queries": 165,
+   "hit@1": 27.3,
+   "hit@3": 49.7,
+   "hit@5": 59.4,
+   "hit@10": 68.5,
+   "mrr@10": 0.41,
+   "in_budget@3": 100.0,
+   "age_ok@3": 100.0,
+   "latency_ms_p50": 168.7,
+   "latency_ms_p95": 251.5,
+   "by_type": {
+    "paraphrase": {
+     "hit@3": 49.7,
+     "mrr@10": 0.41
+    }
+   },
+   "example_misses": [
+    {
+     "qid": "q002-paraphrase",
+     "query": "Find a hand-painted, French-made sparkly horse with a horn for my 3 year old daughter's imaginative play.",
+     "target": "Papo Ice Unicorn Figure, Multicolor",
+     "top1": "Step2 Unicorn Rocking Horse | Toddler Ride On Toy"
+    },
+    {
+     "qid": "q005-paraphrase",
+     "query": "I'm looking for a little posable toy figure of a girl with her palomino pony from that Netflix cartoon, something for my three year old to play pretend with.",
+     "target": "Spirit Riding Free Small Doll & Horse Set - Abigail & Boomerang",
+     "top1": "My Little Pony the Movie Applejack Sea-Pony Small Plush"
+    },
+    {
+     "qid": "q006-paraphrase",
+     "query": "I need a play station for my toddler where they can scoop around in grainy stuff or splashy liquid, and the lid flips over to become a surface for doodling, all for under 400 dollars.",
+     "target": "Constructive Playthings Sand and Water Table with Dry-Erase Top, Indoor and Outdoor Friend",
+     "top1": "Sassy Fishy Fascination Station 2-in-1 Suction Cup High Chair Toy | Developmental Tray Toy"
+    },
+    {
+     "qid": "q012-paraphrase",
+     "query": "I need a splashy backyard water toy for my kids with a little slide and ball toss, and it should cost under sixty bucks.",
+     "target": "Bestway Lil Champ Play Center Inflatable Play Center",
+     "top1": "BANZAI Splish Splash Water Park"
+    },
+    {
+     "qid": "q022-paraphrase",
+     "query": "I'm looking for a classic two-player board game with dice and wooden pieces for my eight year old, something under 40 dollars.",
+     "target": "Galison David Hicks Backgammon Set",
+     "top1": "Hey! Play! 7-in-1 Classic Wooden Board Game Set \u2013 Old Fashioned Family Game Night Cards, D"
+    },
+    {
+     "qid": "q027-paraphrase",
+     "query": "I want a set of fluffy sparkly craft balls to decorate my daughter's room, something under 10 dollars that's suitable for a 3 year old.",
+     "target": "Pom Pom Wow! - Sparkle Pack",
+     "top1": "Glitter Girls by Battat \u2013 Flutter and Sparkle Shoes and Leggings Accessory Set \u2013 14-inch D"
+    },
+    {
+     "qid": "q030-paraphrase",
+     "query": "My brother is obsessed with a Mexican crime drama series, so I need a small collectible character doll of the lead gangster for him, under 15 dollars.",
+     "target": "Funko Pop! Television: Club De Cuervos - Chava Iglesias Jr",
+     "top1": "Watchover Voodoo 108010013 The Beautician Doll, Small, Multicolor"
+    },
+    {
+     "qid": "q036-paraphrase",
+     "query": "Looking for a set of chunky see-through plastic bricks under 125 dollars that my 4 year old can use to construct big creative structures.",
+     "target": "EverBlock Modular Building Blocks - Full Block Bulk Pack, 18 Blocks - Translucent",
+     "top1": "Creative LEGO Brick Set by LEGO Education"
+    },
+    {
+     "qid": "q040-paraphrase",
+     "query": "I'm looking for a fun rural scene picture to assemble on my table, something with a countryside farm view and about a thousand tiny interlocking bits.",
+     "target": "Buffalo Games - Country Life - Country Delivery - 1000 Piece Jigsaw Puzzle",
+     "top1": "MasterPieces Family Hour Apple of My Eye Farm with Barn Scene Jigsaw Puzzle, 400-Piece"
+    },
+    {
+     "qid": "q046-paraphrase",
+     "query": "I'm looking for a cuddly stuffed steer with horns where my daughter can stash her spare change, and I'd like to spend under 30 dollars.",
+     "target": "Carstens Plush Longhorn Kids Coin Bank",
+     "top1": "GUND Pusheen Pusheenicorn Unicorn Cat Sound Plush Stuffed Animal, Purple, 7.5\""
+    },
+    {
+     "qid": "q047-paraphrase",
+     "query": "Can you find me a little glass cube holding a real insect preserved inside, under twenty five dollars? It's a gift for my five year old.",
+     "target": "REALBUG Dragonfly Paperweight(3x3x1)",
+     "top1": "Melissa & Doug Sunny Patch Giddy Buggy Bug House Toy with Carrying Handle and Easy-Access "
+    },
+    {
+     "qid": "q049-paraphrase",
+     "query": "I need a stylish camouflage sticker to dress up my drone's spare power pack, something that guards it from scratches and dust and peels off cleanly later.",
+     "target": "MightySkins Skin Compatible with DJI Mavic Pro Battery - Black Camo | Protective, Durable,",
+     "top1": "MightySkins Skin Compatible with DJI Phantom 3 Professional Quadcopter Drone wrap Cover St"
+    },
+    {
+     "qid": "q052-paraphrase",
+     "query": "I'm looking for a sparkly pink electric car my six year old daughter can drive around the yard, something under 275 dollars.",
+     "target": "Power Wheels Disney Princess Jeep Wrangler",
+     "top1": "Glitter Girls by Battat - Convertible Car for 14\" Dolls - Toys, Clothes & Accessories for "
+    },
+    {
+     "qid": "q055-paraphrase",
+     "query": "Looking for a collectible anime fighter statue of the fusion warrior with the goggles, under 30 bucks, something for my 13 year old who loves Akira Toriyama characters.",
+     "target": "Banpresto 39564 Dragon Ball Legends Collab Super Saiyan Gogeta Figure",
+     "top1": "Funko Pop Deluxe: Kylo Ren in Tie Fighter Collectible Vinyl Figure"
+    },
+    {
+     "qid": "q058-paraphrase",
+     "query": "I need a sturdy case of polyhedral gaming bones with seven shapes, including a twenty sided one, for my tabletop adventures.",
+     "target": "Oakie Doakie Dice RPG-Set Solid Green",
+     "top1": "Qworkshop Runic Glow-in-The-Dark Polyhedral RPG Dice Set"
+    }
+   ]
+  }
+ }
+}

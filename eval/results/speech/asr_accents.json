@@ -1,5 +1,5 @@
 {
- "created": "2026-11-11T14:41:26",
+ "created": "2026-11-12T13:42:49",
  "asr_model": "small.en",
  "utterances": 10,
  "clips": 295,
@@ -163,8 +163,8 @@
    "confidence": 0.783
   }
  },
- "real_time_factor": 0.427,
- "seconds": 491.3,
+ "real_time_factor": 0.417,
+ "seconds": 411.8,
  "worst": [
   {
    "group": "Mandarin-accented",

@@ -1,12 +1,12 @@
 {
- "created": "2026-11-11T14:33:14",
+ "created": "2026-11-12T13:35:56",
  "voice": "af_heart",
  "limit_s": 15.0,
  "replies": 8,
  "within_limit_pct": 100.0,
  "longest_s": 15.0,
  "mean_abs_estimate_error_pct": 8.9,
- "real_time_factor": 0.117,
+ "real_time_factor": 0.116,
  "rows": [
   {
    "reply": "Sorry, I didn't catch that. Could you say it again?",
@@ -18,8 +18,8 @@
    "cut": false,
    "within_limit": true,
    "estimate_error_pct": 23.3,
-   "first_sentence_ready_s": 0.736,
-   "synthesis_s": 0.912
+   "first_sentence_ready_s": 0.707,
+   "synthesis_s": 0.88
   },
   {
    "reply": "My top pick is the Safari chunky puzzle at a catalog price o...",
@@ -31,8 +31,8 @@
    "cut": false,
    "within_limit": true,
    "estimate_error_pct": 3.9,
-   "first_sentence_ready_s": 0.641,
-   "synthesis_s": 0.946
+   "first_sentence_ready_s": 0.637,
+   "synthesis_s": 0.938
   },
   {
    "reply": "My top pick is the Melissa and Doug Safari chunky puzzle, ei...",
@@ -44,8 +44,8 @@
    "cut": false,
    "within_limit": true,
    "estimate_error_pct": 0.2,
-   "first_sentence_ready_s": 0.893,
-   "synthesis_s": 1.397
+   "first_sentence_ready_s": 0.895,
+   "synthesis_s": 1.421
   },
   {
    "reply": "My top pick is the EcoShine stainless steel cleaner, $9.49 f...",
@@ -57,8 +57,8 @@
    "cut": false,
    "within_limit": true,
    "estimate_error_pct": -0.2,
-   "first_sentence_ready_s": 0.791,
-   "synthesis_s": 1.405
+   "first_sentence_ready_s": 0.792,
+   "synthesis_s": 1.401
   },
   {
    "reply": "This could be an emergency. Call Poison Control at 1-800-222...",
@@ -70,8 +70,8 @@
    "cut": false,
    "within_limit": true,
    "estimate_error_pct": 4.9,
-   "first_sentence_ready_s": 0.206,
-   "synthesis_s": 1.141
+   "first_sentence_ready_s": 0.202,
+   "synthesis_s": 1.144
   },
   {
    "reply": "The LEGO Classic Medium Creative Brick Box is $27.99 in the ...",
@@ -83,8 +83,8 @@
    "cut": false,
    "within_limit": true,
    "estimate_error_pct": -3.9,
-   "first_sentence_ready_s": 1.125,
-   "synthesis_s": 1.686
+   "first_sentence_ready_s": 1.099,
+   "synthesis_s": 1.661
   },
   {
    "reply": "I could not find a stainless steel cleaner under $15.00 in t...",
@@ -96,8 +96,8 @@
    "cut": false,
    "within_limit": true,
    "estimate_error_pct": 26.2,
-   "first_sentence_ready_s": 0.507,
-   "synthesis_s": 1.094
+   "first_sentence_ready_s": 0.532,
+   "synthesis_s": 1.117
   },
   {
    "reply": "word word word word word word word word word word word word ...",
@@ -109,8 +109,8 @@
    "cut": true,
    "within_limit": true,
    "estimate_error_pct": 33.7,
-   "first_sentence_ready_s": 1.826,
-   "synthesis_s": 1.827
+   "first_sentence_ready_s": 1.824,
+   "synthesis_s": 1.824
   }
  ]
 }

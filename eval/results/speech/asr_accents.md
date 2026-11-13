@@ -1,4 +1,4 @@
-Speech recognition on synthetic accents: 10 shopping requests read by 17 voices (295 clips), recognised by Whisper small.en (real-time factor 0.427). The voices were trained on speakers of other languages and read English here; they are a stand-in for accents, not a sample of people. "Kept" means the value extracted from the transcript equals the value extracted from the text that was read.
+Speech recognition on synthetic accents: 10 shopping requests read by 17 voices (295 clips), recognised by Whisper small.en (real-time factor 0.417). The voices were trained on speakers of other languages and read English here; they are a stand-in for accents, not a sample of people. "Kept" means the value extracted from the transcript equals the value extracted from the text that was read.
 
 | Voice group | clips | WER % | budget kept % | age kept % | brand kept % | usable % | confidence |
 |---|---:|---:|---:|---:|---:|---:|---:|
