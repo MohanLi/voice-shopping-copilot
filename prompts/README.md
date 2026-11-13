@@ -6,6 +6,21 @@ are filled, and the prompt's **name, version and content hash** are written to t
 `logs/llm_calls.jsonl` with every call (the full rendered text too, while `LOG_PROMPTS=true`). So for any answer
 the system ever gave you can see exactly which wording produced it.
 
+## The assignment's list, and where each item is
+
+| The assignment asks for | Where it is |
+|---|---|
+| System prompts | Each agent's file is the system message of its model call: [`router.md`](router.md), [`planner.md`](planner.md), [`retriever.md`](retriever.md), [`answerer.md`](answerer.md), [`critic.md`](critic.md). There is no prompt for the assistant as a whole. |
+| Router prompts | [`router.md`](router.md) |
+| Planner prompts | [`planner.md`](planner.md) |
+| Tool-call instructions | [`retriever.md`](retriever.md), and the descriptions of the two tools that the MCP server publishes and the models read (see "Tool descriptions are prompts too" below) |
+| Answerer/Critic prompts | [`answerer.md`](answerer.md), [`critic.md`](critic.md) |
+| Guardrail instructions | [`safety_policy.md`](safety_policy.md), included word for word in the Router's, the Answerer's and the Critic's prompt. The guardrails that are code and not instructions are listed under "What is deliberately *not* left to a prompt". |
+| Few-shot examples | Inside the files that use them: seventeen routing examples in `router.md`, seven finding / no-finding examples in `critic.md`. The other prompts have no examples section; a rule that needs an illustration carries it in its own sentence (`"Funko Pop! Star Wars …" → "Funko"` in `catalog_enrichment.md`). |
+
+The three remaining files are prompts of offline steps (data enrichment and the two sets of benchmark
+requests); they are disclosed for the same reason and no agent uses them at run time.
+
 ## Which prompt drives which node
 
 | File | LangGraph node / component | What the model is asked to produce | Output schema (pydantic) |
@@ -30,10 +45,11 @@ generated from those lists, the safety policy and the fixed sentences (`voicesho
 Current versions: router 6, planner 4, retriever 3, answerer 12, critic 7, safety policy 4. What changed in each
 and why is in [docs/evaluation.md](../docs/evaluation.md) and [docs/decisions.md](../docs/decisions.md).
 
-Tool descriptions are prompts too. The models read the descriptions of `rag.search` and `web.search` that the
+**Tool descriptions are prompts too.** The models read the descriptions of `rag.search` and `web.search` that the
 MCP server publishes; they are defined in [`src/voiceshop/mcp_server/server.py`](../src/voiceshop/mcp_server/server.py)
 (`RAG_DESCRIPTION`, `WEB_DESCRIPTION`, `INSTRUCTIONS`) and printed by `voiceshop mcp tools`. The Planner receives
-them through the `$tools` placeholder, exactly as discovered.
+them through the `$tools` placeholder, exactly as discovered. The copy the evaluation harness is given, with the
+input schemas, is [`eval/proofagent/context/tools.json`](../eval/proofagent/context/tools.json).
 
 ## What each node adds around its prompt
 

@@ -1,6 +1,6 @@
 # PROGRESS — Voice Shopping Copilot build log
 
-**Last updated:** 2026-11-13 00:10 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
+**Last updated:** 2026-11-13 00:05 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
 (`~/Desktop/2026 Autumn/Applied Generative AI/Final Project/voice-shopping-copilot`).
 **The folder on the Mac is the source of truth.**
 
@@ -103,8 +103,11 @@ query instruction for the embedding model, category names matched by their words
 ## Next action
 
 1. If Kevin runs `live4`: pull the folder, read every turn, add it to the comparison and to
-   `docs/evaluation.md`. It is the first jury measurement of everything since `live3`: failures 22 and 23, unit
-   prices by code, the top pick as the first row, and the price look-up for a product a page describes.
+   `docs/evaluation.md`. It is the first jury measurement of everything since `live3`: failures 22 to 25 (unit
+   prices by code, the top pick as the first row, the price look-up for a product a page describes), and the
+   first run with seventeen scenarios: the seventeenth is the assignment's own example on the live web
+   (`eval/proofagent/traps/shopping_scenarios/17_web_only_discovery.md`), so the run has thirteen turns from
+   the harness library where the earlier ones had fourteen. Say so wherever the runs are compared.
 2. The laptop's live check turns after tonight's two repairs: `scripts/mac_refresh.sh` step 7 (or one
    `voiceshop ask`, see "Waiting on Kevin"). The assignment's own example should now name a priced product
    whose page states the quality.
@@ -115,6 +118,8 @@ query instruction for the embedding model, category names matched by their words
    faster). Open: a Dockerfile, one run with a local model through Ollama (objective L6).
 4. The voice sample page (record real speakers for the speech evaluation).
 5. The presentation: a timed script for the live demo and the slides (Kevin said: technical side first).
+6. Prompt disclosure (5 points of the rubric): `prompts/README.md` opens with the assignment's own list and
+   where each item is; the root README links to it. Check it again whenever a prompt file is added.
 
 Open design items, described in `docs/evaluation.md` sections 5 and 6, each needing a jury run of its own: a
 record of earlier turns as evidence, so that a false statement about them can be corrected; a second look

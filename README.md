@@ -16,9 +16,10 @@ against 8.4 s). Made by [`frontend/e2e/demo.cjs`](frontend/e2e/demo.cjs).*
 > **Status (12 November 2026): the system runs end to end and has been evaluated seven times with ProofAgent,
 > the last three times on a laptop against live web search.**
 > Built and tested: data pipeline, hybrid retrieval, the MCP server, the agents, speech in and out, the API, the
-> web UI, and the evaluation with its scorecards and twenty-three failure analyses
-> ([docs/evaluation.md](docs/evaluation.md)). The last run lost five turns to one line of my own code; that is
-> fixed and tested, and has not been before a jury yet.
+> web UI, and the evaluation with its scorecards and twenty-five failure analyses
+> ([docs/evaluation.md](docs/evaluation.md)). The last run lost five turns to one line of my own code. A live
+> turn with the assignment's own example then showed two more faults. All of it is fixed and tested, and none
+> of it has been before a jury yet.
 > Not done yet: the presentation, a run with a second model provider, and a container image.
 > [PROGRESS.md](PROGRESS.md) is the build log; [docs/objectives.md](docs/objectives.md) lists every requirement
 > of the assignment with where it is met.
@@ -112,10 +113,11 @@ provider LangChain supports swaps the model without code changes.
 assistant (two turns through real audio), and a jury of model calls votes on 46 checks per turn. Sixteen scenarios
 written for this project come first (discovery, constraints, comparison, live prices, conflicting sources,
 unsupported claims, a child under three, a recalled product, an instruction planted in a tool result, an unsafe
-request), then fourteen attacks the harness chooses itself. Seven runs, each followed by fixes for what it found:
+request), then fourteen attacks the harness chooses itself. A seventeenth scenario, the assignment's own
+example, was added after these runs. Seven runs, each followed by fixes for what it found:
 four in the build workspace against recorded search results, so that they can be compared, and three on the
 laptop against live web search with the real speech models
-([scorecards, stage-by-stage attribution and twenty-three failure analyses](docs/evaluation.md)):
+([scorecards, stage-by-stage attribution and twenty-five failure analyses](docs/evaluation.md)):
 
 | | Run 1 | Run 2 | Run 3 | Run 4 | Live 1 | Live 2 | Live 3 |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -147,8 +149,12 @@ the grade drops to NEEDS_ENHANCEMENT at an unchanged 94% because one metric fell
 level. The same run has the best Safety (100%) and grounding (96%) of the seven, and the fallback to the live web
 (when the catalog has nothing suitable) fired on two turns without losing credit. The line is fixed and the five
 recorded Router outputs are its test; replays of the run's questions then showed that a unit-price comparison
-needs its arithmetic done by code, which it now is. None of that has been before a jury. The failures still
-open are named in the evaluation document, not hidden in the average. Run 4 and the three live runs are on the
+needs its arithmetic done by code, which it now is. After that run, one turn against live search with the
+assignment's own example ("an eco-friendly stainless-steel cleaner under fifteen dollars") showed two faults that
+the sample data had hidden, because it was written for that request: the product named aloud as the top pick was
+the second row of the table, and the two plant-based cleaners had no price beside a stated budget. Both are fixed
+(failures 24 and 25) and the request is a scenario of every run from now on. None of that has been before a
+jury. The failures still open are named in the evaluation document, not hidden in the average. Run 4 and the three live runs are on the
 ProofAgent dashboard (release gate: pass).
 
 **Retrieval** — two benchmarks on the full index of 9,740 products, one known target per request, on an M2 Max
@@ -223,7 +229,8 @@ notebooks/      01_data_ingestion.ipynb: the data work, executed, every count ch
 | the dataset, what was cleaned, what was refused | [docs/data.md](docs/data.md), [the notebook](notebooks/01_data_ingestion.ipynb) |
 | retrieval: stages, filters, two benchmarks, limits | [docs/retrieval.md](docs/retrieval.md) |
 | the MCP server and its two tool schemas | [docs/mcp.md](docs/mcp.md) |
-| the evaluation: seven runs, twenty-three failures | [docs/evaluation.md](docs/evaluation.md) |
+| the evaluation: seven runs, twenty-five failures | [docs/evaluation.md](docs/evaluation.md) |
+| every prompt, and the node, agent or tool that uses it | [prompts/README.md](prompts/README.md) |
 | safety: risks, layers, tests, what is not covered | [docs/safety.md](docs/safety.md) |
 | shopping assistants that exist, and what was taken from them | [docs/related-work.md](docs/related-work.md) |
 | the two course checkpoints | [docs/checkpoints/](docs/checkpoints/) |

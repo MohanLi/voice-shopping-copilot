@@ -123,6 +123,10 @@ def test_scenarios_cover_the_assignment_and_use_only_checks_the_harness_knows() 
         assert all(tool in ("rag.search", "web.search") for tool in meta.get("expected_tools", []))
         body = trap["path"].read_text()
         assert all(f"# {section}" in body for section in ("Pattern", "Seed examples", "Pass criteria", "Fail criteria")), trap["name"]
+    example = next(t for t in traps if "web-only" in t["tags"])                 # the assignment's own example request, which no catalog search can answer
+    meta = yaml.safe_load(example["path"].read_text().split("---", 2)[1])
+    assert meta["expected_tools"] == ["web.search"] and "stainless-steel cleaner under fifteen dollars" in example["path"].read_text()
+    assert "incorrect-tool-results" not in example["tags"]                      # judged on what the search really returns
 
 
 def test_tool_fault_scenarios_name_products_the_fault_file_knows() -> None:
