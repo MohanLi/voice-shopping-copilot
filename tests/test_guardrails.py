@@ -18,7 +18,7 @@ from voiceshop.agents.state import (
 )
 from voiceshop.guardrails import policy
 from voiceshop.guardrails.input import screen_input
-from voiceshop.guardrails.output import asserted, check_draft, repair, trim_spoken, word_count
+from voiceshop.guardrails.output import asserted, check_draft, named_in, repair, trim_spoken, word_count
 from voiceshop.speech.text import MAX_SPEED, fits, spoken_words
 
 # ------------------------------------------------------------------ input screen
@@ -556,6 +556,40 @@ def test_the_stock_status_is_not_called_unstated_while_a_matched_source_states_i
     # A source about another product does not count, nor does a result that was flagged.
     assert issues(unstated, Evidence(catalog=[barnyard], web=[listing, other])) == []
     assert issues(unstated, Evidence(catalog=[barnyard], web=[listing, walmart.model_copy(update={"flagged": True})])) == []
+
+
+def test_a_word_that_describes_the_answers_own_product_does_not_name_another_listing() -> None:
+    """A rehearsal of the demonstration, 12 November: "is the second one in stock right now, and what does it cost today?" The sample
+    web results for the Barnyard puzzle are two other puzzles. The draft said that no live listing matched it and that its stock status
+    was not stated, which was right. Its reason called the puzzle a "24-piece jigsaw"; "1000 Piece Jigsaw Puzzle - Mountain Lake" was the
+    only title in the evidence with the word "piece", so that listing counted as named in the answer, and its "in stock" was held
+    against the sentence: sent back, sent back again, replaced by the template."""
+    barnyard = CatalogItem(ref="C3", doc_id="AMZ-B00HEZ0APE", sku="B00HEZ0APE", title="Melissa & Doug Barnyard Wooden Jigsaw Puzzle (24 pcs)", price=7.99,
+                           brand="Melissa & Doug", features=["24-Piece Wooden Jigsaw Puzzle", "Sturdy wooden tray"], age_label="3 years to 5 years")
+    pack = WebItem(ref="W1", url="https://toys.example.com/wooden-jigsaw-4-pack", title="Wooden Jigsaw Puzzle Set for Kids, 4 Pack", price=14.99,
+                   rating=4.7, rating_count=3381, source="Example Toys", availability="in_stock")
+    lake = WebItem(ref="W2", url="https://market.example.com/1000-piece-mountain-lake", title="1000 Piece Jigsaw Puzzle - Mountain Lake", price=19.95,
+                   rating=4.5, rating_count=640, source="Example Market", availability="in_stock")
+    found = Evidence(catalog=[barnyard], web=[pack, lake])
+    why = "Wooden 24-piece jigsaw for ages 3 to 5, with a catalog price of $7.99, within the $20 budget."
+    unstated = "The listing for the Melissa & Doug Barnyard puzzle does not state its current stock status; its catalog price is $7.99, and no live price was found for it."
+
+    def codes(spoken: str, evidence: Evidence = found, reason: str = why) -> list[str]:
+        draft = AnswerDraft(recommendations=[Recommendation(ref="C3", why=reason)], spoken=spoken)
+        return [i.code for i in check_draft(draft, evidence, Constraints(wants_current_info=True, budget_max=20), max_words=45, focus=["C3"]) if i.severity != "info"]
+
+    assert named_in(f"{unstated} {why}", found, [barnyard]) == []          # "piece" is a word of the Barnyard listing: it describes that puzzle
+    assert codes(unstated) == []
+    # A product is still named by a word that is its own, and its price may then be stated.
+    assert named_in("The Mountain Lake puzzle is $19.95 at Example Market.", found, [barnyard]) == [lake]
+    assert codes("The Barnyard puzzle is $7.99 in the catalog; the Mountain Lake puzzle is $19.95 at Example Market.") == []
+    assert codes("The Barnyard puzzle is $7.99 in the catalog; the other puzzle is $19.95 at Example Market.") == ["ungrounded_price"]
+    # When the listing of the answer's product does not use the word, the other title is taken as named. That adds its prices and
+    # nothing else: its stock status is not held against the sentence, and its rating is not this product's rating.
+    bare = Evidence(catalog=[barnyard.model_copy(update={"features": []})], web=[pack, lake])
+    assert named_in(f"{unstated} {why}", bare, bare.catalog) == [lake]
+    assert codes(unstated, bare) == []
+    assert codes("The Barnyard puzzle is $7.99 in the catalog and rated 4.5 stars.", bare) == ["rating_not_in_evidence"]
 
 
 def test_a_product_is_not_called_the_cheapest_or_the_highest_rated_next_to_one_that_beats_it() -> None:

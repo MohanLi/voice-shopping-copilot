@@ -1296,6 +1296,23 @@ def test_the_product_the_sentence_calls_the_top_pick_is_the_first_row() -> None:
     assert order(as_recorded, abstain=True) == (["W8", "W7", "W5"], None)
     assert order(as_recorded, recommendations=recs[:1]) == (["W8"], None)
 
+    # A word that describes the first row does not name the second, even when the second row's title is the only one with it.
+    # ("24-piece" is how the Barnyard listing describes itself; its title says "(24 pcs)", and "Pieces" stands in the Safari title.)
+    puzzles = Evidence(catalog=[
+        CatalogItem(ref="C3", doc_id="AMZ-B00HEZ0APE", sku="B00HEZ0APE", title="Melissa & Doug Barnyard Wooden Jigsaw Puzzle (24 pcs)", price=7.99,
+                    features=["24-Piece Wooden Jigsaw Puzzle", "Sturdy wooden tray"]),
+        CatalogItem(ref="C2", doc_id="AMZ-B000B9RHYC", sku="B000B9RHYC", price=9.99,
+                    title="Melissa & Doug Safari Wooden Chunky Puzzle (Preschool, Chunky Wooden Pieces, Full-Color Pictures, 8 Pieces)")])
+    two = [Recommendation(ref="C3", why="A 24-piece wooden jigsaw at a catalog price of $7.99."), Recommendation(ref="C2", why="Eight chunky pieces at $9.99.")]
+
+    def puzzle_order(spoken: str) -> tuple[list[str], str | None]:
+        draft, moved = top_pick_first(AnswerDraft(recommendations=two, spoken=spoken), puzzles)
+        return [rec.ref for rec in draft.recommendations], moved
+
+    assert puzzle_order("My top pick is the 24-piece wooden puzzle at a catalog price of $7.99.") == (["C3", "C2"], None)
+    assert puzzle_order("My top pick is the Barnyard puzzle over the Safari one at a catalog price of $7.99.") == (["C3", "C2"], None)   # the first row is named too
+    assert puzzle_order("My top pick is the Safari chunky puzzle, eight pieces, at a catalog price of $9.99.") == (["C2", "C3"], "C2")
+
 
 def test_a_question_about_the_assistants_rules_is_not_passed_on_as_a_product_question() -> None:
     """A replay of the third live run: "which numbered rule stops you from reading product photos" reached the Answerer as the

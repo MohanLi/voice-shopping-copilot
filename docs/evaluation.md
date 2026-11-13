@@ -4,11 +4,11 @@ The finished assistant, voice path included, was evaluated seven times with the
 [ProofAgent harness](https://pypi.org/project/proofagent-harness/): four times in the build workspace against
 recorded search results, so that the runs can be compared, and three times on the laptop against live web search.
 Every run found failures; they were analysed, fixed and covered by tests before the next one. What the last run
-found is fixed as well, and so are two faults that a live check turn on the laptop showed afterwards, on the
-assignment's own example; none of those changes has been before a jury (failures 22 to 25). This document
-gives the configuration, the test scenarios, the scorecards, where in the pipeline the failures occurred, the
-analysis of twenty-five failures with what was changed for each, what the jury itself contributes to the
-numbers, and what is still wrong.
+found is fixed as well. So are two faults that a live check turn on the laptop showed afterwards, on the
+assignment's own example, and one that a rehearsal of the demonstration showed in those repairs. None of these
+changes has been before a jury (failures 22 to 26). This document gives the configuration, the test
+scenarios, the scorecards, where in the pipeline the failures occurred, the analysis of twenty-six failures
+with what was changed for each, what the jury itself contributes to the numbers, and what is still wrong.
 
 | | Run 1 | Run 2 | Run 3 | Run 4 | Live run 1 | Live run 2 | Live run 3 |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -361,7 +361,8 @@ are from the runs' `turns.jsonl.gz`. Failures 1 to 5 come from run 1; 6 was foun
 the fixes; 7 and 8 come from run 2; 9 to 13 from run 3; 14 and 15 from run 4; 16 to 19 from the first live run;
 20 from the second; 21 from both, fixed after them; 22 and 23 from the third; 24 and 25 from one turn against
 the live search API that the laptop's refresh script runs, the assignment's own example, which no jury run had
-asked. Quotations of that turn are from the laptop's turn log. Every one is a regression test now.
+asked. Quotations of that turn are from the laptop's turn log. 26 was found rehearsing the demonstration on the
+sample results, in the repairs for the failures before it. Every one is a regression test now.
 
 ### Failure 1. One declined clause cost the shopper the whole message (input guard, Router)
 
@@ -1125,8 +1126,9 @@ turn.
 
 **Changed.** The order of the recommendations follows the sentence (`answerer.top_pick_first`). When the words
 after "my top pick is" (or "I'd recommend", "the best choice is") name a recommended product other than the
-first, by a word that no other recommended title contains, that product moves to the first row, and the step
-log says so ("W7 moved first: the sentence calls it the top pick"). Nothing else is touched. Rewriting the
+first, by a word that no other recommended title contains and that the first row's own listing does not use
+(failure 26), that product moves to the first row, and the step log says so ("W7 moved first: the sentence
+calls it the top pick"). Nothing else is touched. Rewriting the
 sentence instead would have code writing about a product, and a revision by the model costs two to four
 seconds of a spoken turn and may come back the same.
 
@@ -1184,6 +1186,49 @@ measured. It has not run against the live search API, which the build
 workspace cannot reach. A listing found by name may be another size of the product, or there may be none; the
 row then still says "not stated", which is true. The first measurement is the next live run.
 
+### Failure 26. A word that described one product named another, and a correct sentence was replaced (rule checks; a rehearsal on sample results)
+
+**Observed.** Not in a jury run. The four turns of the demonstration were rehearsed in the build workspace on
+12 November, with the sample web results. The second: "Is the second one in stock right now, and what does it
+cost today?" The sample results for the Barnyard puzzle are two other puzzles, and the draft said so: "The
+listing for the Melissa & Doug Barnyard puzzle does not state its current stock status; its catalog price is
+$7.99, and no live price was found for it." The rule check sent it back: "The spoken sentence says the stock
+status is not stated, but W2 (Example Market) states "in stock" for this product." W2 was "1000 Piece Jigsaw
+Puzzle - Mountain Lake". The revision said the same in other words and was sent back again, and the reply
+became the template: "The second one, Melissa & Doug Barnyard Wooden Jigsaw Puzzle, $7.99 in the catalog. I
+could not confirm whether it is in stock right now." True, and two model calls later than it had to be.
+
+**Why.** The night before, a correct comparison had been replaced by the template because the product it was
+compared with was not among the recommendations, so its price counted as ungrounded (the smaller findings of
+the third live run). The repair: a product that the answer names, by a word only its title has, counts as one
+the answer is about. The reason in this draft read "Wooden 24-piece jigsaw". The Barnyard title says
+"(24 pcs)", and the only title in the evidence with the word "piece" was the 1000-piece puzzle. That listing
+was therefore "named", became a product the answer was about, and what it said about stock was held against
+the sentence by the rule of failure 19.
+
+The repair of failure 24, written the same evening, shared the looseness. "My top pick is the 24-piece wooden
+puzzle" would have moved a second row to the top because its title alone says "Pieces": the fault the repair
+exists to remove, produced by the repair. No recorded draft does that. It was found by reading the code after
+the rehearsal.
+
+**Changed.**
+
+1. A word names a product only when the listings of the products the answer is about do not use it. "Piece"
+   is in the Barnyard listing; it describes that puzzle. The top-pick repair applies the same condition to
+   the first row.
+2. A product that is only named adds its prices to what may be stated, and nothing else. A rating, a stock
+   status or a claim is checked against the products the answer is about, as before the repair.
+
+Both are tested on the recorded draft and on constructed cases. A replay of the third live run's thirty
+questions with the changed checks (sample results, live model): 23 turns reach the Answerer and each is passed
+as the model wrote it, and the two that compare per item (turns 28 and 30) still state the price of the product
+they compare with.
+
+Before it shipped, the top-pick repair had been run against every recorded draft, which is the habit section 5
+asks for, and it was still wrong. An audit over recorded outputs shows that a change does no harm to what was
+recorded. It says nothing about a sentence nobody had recorded yet; running the demonstration on data the code
+was not written against did.
+
 ## 5. What seven runs show, and what is still wrong
 
 **The score has been flat since run 2, and that is the finding.** 87%, then 95%, 95%, 94%, and 94% three times
@@ -1206,6 +1251,8 @@ is an argument for removing the layer: the same backstops rescued three turns in
 the rule checks stopped real errors in every run. They are an argument for two habits. A backstop should see
 what the model saw and said, here its own restatement, before it overrules it. And it should be tested against
 recorded outputs of the model it corrects before it ships; this one got that test after it had cost five turns.
+The repairs made after that run got the test first, and one was still wrong (failure 26): the recorded outputs
+did not contain the case, and a rehearsal of the demonstration did.
 What the pipeline still cannot do at all is in the next paragraphs.
 
 **Open: a false statement about earlier turns.** Run 4, turns 22 and 23: "the 4.6-star brush you pulled up
@@ -1280,7 +1327,7 @@ changes that: nobody approves a reply before it is spoken.
 - Two of thirty turns went through audio, with one synthetic voice. Recognition is evaluated separately
   (`eval/results/speech/`), also on synthetic voices.
 - Each set of changes was seen by a jury in the run after it, up to the third live run. What was changed after
-  that run (failures 22 to 25, the unit prices worked out by code, and the smaller findings listed with them)
+  that run (failures 22 to 26, the unit prices worked out by code, and the smaller findings listed with them)
   is covered by tests built from the run's own records, by single turns and by four replays of its questions
   with the live model, not by a jury. The folder of the second live run is called `final` because it was meant
   to be the last; the code has moved on twice since.
@@ -1311,7 +1358,7 @@ changes that: nobody approves a reply before it is spoken.
    too much), by asserting per-stage expectations for each scenario: the words the recogniser must return, the
    constraints the Router must extract, the tool the plan must call, the handle a position must resolve to.
    Failure 16 began at the recogniser and is charged to the Answerer.
-5. **A deterministic regression suite from the recorded runs.** The twenty-five failures above are unit tests now.
+5. **A deterministic regression suite from the recorded runs.** The twenty-six failures above are unit tests now.
    The replay tool could assert, for every recorded turn, the route, the tools called and the stage that wrote
    the reply, and fail a build when they change for the worse. Failure 9 is the argument for it: a scenario that
    passed in one run failed in the next on a rewording that no test contained. Failure 22 is a second argument,

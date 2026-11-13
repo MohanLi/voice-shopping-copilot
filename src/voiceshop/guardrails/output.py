@@ -152,15 +152,21 @@ _NAME_WORD = re.compile(r"[a-z0-9]+")
 
 
 def named_in(text: str, evidence: Evidence, besides: list[CatalogItem | WebItem]) -> list[CatalogItem | WebItem]:
-    """Evidence items that ``text`` names by a word no other item of the evidence has in its title (and that are not in ``besides``).
+    """Evidence items that ``text`` names without their being among ``besides``, the products the answer is about.
 
     A comparison names the product it compares with, and that product's price belongs in the answer whether or not it is
     recommended. ("Per item the party pack is cheaper at $3.58 each, against $7.99 for the Galaxy Tin" recommended the pack
     alone. $7.99 was then "not a price of any product this answer is about", in the reason and in the sentence, and a
     correct answer was replaced by the template: a replay of the third live run.)
+
+    A word names a product when it is in that product's title, in no other title of the evidence, and nowhere in the
+    listings of the products in ``besides``. The last condition was missing at first. "Wooden 24-piece jigsaw" was written
+    about the puzzle the answer was about; an unrelated listing, "1000 Piece Jigsaw Puzzle - Mountain Lake", was the only
+    title with the word "piece", and so it counted as named (a rehearsal of the demonstration, 12 November). A word the
+    answer's own products use describes them.
     """
     items = [*evidence.catalog, *evidence.web]
-    said = name_words(text)
+    said = name_words(text) - set().union(*(name_words(item_text(i)) for i in besides))
     return [item for item, own in zip(items, words_of_its_own(items), strict=True) if item not in besides and own & said]
 
 
@@ -265,12 +271,18 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
     # lost exactly that answer to the template because no item was "recommended".)
     # A comparison names the price of the product it is compared with. A correct "yes, $7.99 against $9.99 for the first one"
     # was once replaced by the template because only one of the two products was in the recommendations.
-    compared = [*items, *(other for ref in (focus or []) if (other := evidence.get(ref)) is not None and other not in items)]
-    if items:                                                 # and of a product the answer names without recommending it (named_in)
+    answered = [*items, *(other for ref in (focus or []) if (other := evidence.get(ref)) is not None and other not in items)]
+    about = {item.ref for item in answered}
+    # A product the answer names without recommending it (named_in) adds its prices to what may be stated, and nothing else:
+    # a rating, a stock status or a claim is still checked against the products the answer is about. While a named product
+    # counted as one of those, what an unrelated listing said about stock was held against a correct sentence.
+    compared = list(answered)
+    if items:
         written = " ".join([draft.spoken, draft.conflict_note or "", *(f"{rec.why} {rec.caveat or ''}" for rec in draft.recommendations)])
-        compared += named_in(written, evidence, compared)
-    pool: list[CatalogItem | WebItem] = compared if items else ([*evidence.catalog, *evidence.web] if draft.abstain else [])
-    all_prices = [p for item in pool for p in known_prices(item, evidence)]
+        compared += named_in(written, evidence, answered)
+    pool: list[CatalogItem | WebItem] = answered if items else ([*evidence.catalog, *evidence.web] if draft.abstain else [])
+    priced_pool = compared if items else pool
+    all_prices = [p for item in priced_pool for p in known_prices(item, evidence)]
     of_what = "any product this answer is about" if items else "anything in the evidence"
     spoken_fields = [("spoken", draft.spoken), ("conflict_note", draft.conflict_note or "")]
 
@@ -334,13 +346,13 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
                                             "Remove the claim or give it to the right product."))
 
     # ---- a comparison per ounce needs two prices per ounce
-    with_ounce_price = [i.ref for i in pool if i.price_per_oz is not None]
+    with_ounce_price = [i.ref for i in priced_pool if i.price_per_oz is not None]
     if len(with_ounce_price) < 2:
         # What to say instead is handed over with the finding: per item, when one product is a pack and all have a price.
         # (Told only to "compare per item if every product has one", a revision stated the price per ounce again and
         # compared nothing, with $3.58 a tin against $7.99 two lines up in its evidence.)
-        priced = [i for i in pool if i.price is not None]
-        if len(priced) == len(pool) > 1 and any(i.price_per_count for i in pool):
+        priced = [i for i in priced_pool if i.price is not None]
+        if len(priced) == len(priced_pool) > 1 and any(i.price_per_count for i in priced_pool):
             per_item = sorted(((i.price_per_count or i.price or 0.0, i) for i in priced), key=lambda pair: pair[0])
             instead = ("Compare per item instead and say so, lowest first: "
                        + ", ".join(f"{i.ref} ${value:.2f} ({f'pack of {i.pack_count}' if i.pack_count else 'one item'})" for value, i in per_item) + ".")
@@ -424,7 +436,7 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
     # Live run, turn 25. Two live results were matched to the first product on screen: a listing with a price and no word about
     # stock, and a Walmart page with no price that said "out of stock". The reply's own text on screen named the Walmart page; its
     # spoken sentence said "neither the listing nor my sources state whether the first one is in stock".
-    about = {item.ref for item in compared}
+    # "The product" is one the answer is about. One it only names does not count: its stock is not what the sentence denies.
     for sentence in re.split(r"(?<=[.!?;])\s+", draft.spoken):
         if not (_STOCK_WORDS.search(sentence) and _NOT_STATED.search(sentence)):
             continue

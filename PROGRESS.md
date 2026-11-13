@@ -1,6 +1,6 @@
 # PROGRESS — Voice Shopping Copilot build log
 
-**Last updated:** 2026-11-13 00:05 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
+**Last updated:** 2026-11-12 23:45 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
 (`~/Desktop/2026 Autumn/Applied Generative AI/Final Project/voice-shopping-copilot`).
 **The folder on the Mac is the source of truth.**
 
@@ -32,7 +32,7 @@ Legend: ✅ done · 🔄 in progress · ⏳ waiting on Kevin · ⬜ not started
 | 7 | Beyond-requirements bundles (retrieval & grounding, eval rigor, voice UX, engineering showcase) | 🔄 | retrieval & grounding and eval rigor in place (replay tool, repeated-ballot report, upload to the ProofAgent dashboard); open: CI, Docker, demo GIF, second-provider run |
 | 8 | Documentation, verification pass against `docs/objectives.md` | 🔄 | `README.md`, `docs/architecture.md`, `docs/mcp.md`, `docs/evaluation.md`, `docs/safety.md`, `docs/decisions.md`, `prompts/README.md`, `eval/proofagent/README.md`; still to write: data, retrieval, checkpoints, the ingestion notebook |
 
-Tests: 637 passing (`python -m pytest tests -q`, ~20 s, no key or network needed) plus one behind `--run-models`,
+Tests: 638 passing (`python -m pytest tests -q`, ~20 s, no key or network needed) plus one behind `--run-models`,
 and the browser check `node frontend/e2e/smoke.cjs` against a running server.
 Lint clean (`ruff check src tests scripts eval`).
 
@@ -103,8 +103,9 @@ query instruction for the embedding model, category names matched by their words
 ## Next action
 
 1. If Kevin runs `live4`: pull the folder, read every turn, add it to the comparison and to
-   `docs/evaluation.md`. It is the first jury measurement of everything since `live3`: failures 22 to 25 (unit
-   prices by code, the top pick as the first row, the price look-up for a product a page describes), and the
+   `docs/evaluation.md`. It is the first jury measurement of everything since `live3`: failures 22 to 26 (unit
+   prices by code, the top pick as the first row, the price look-up for a product a page describes, and what
+   counts as naming a product), and the
    first run with seventeen scenarios: the seventeenth is the assignment's own example on the live web
    (`eval/proofagent/traps/shopping_scenarios/17_web_only_discovery.md`), so the run has thirteen turns from
    the harness library where the earlier ones had fourteen. Say so wherever the runs are compared.

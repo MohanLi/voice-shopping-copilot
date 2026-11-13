@@ -33,7 +33,7 @@ from voiceshop.agents.state import (
     step,
 )
 from voiceshop.guardrails import policy
-from voiceshop.guardrails.output import check_draft, name_words, repair, words_of_its_own
+from voiceshop.guardrails.output import check_draft, item_text, name_words, repair, words_of_its_own
 from voiceshop.llm.ledger import BudgetExceededError
 from voiceshop.prompts import load_prompt
 from voiceshop.speech.text import WORDS_PER_SECOND, estimate_seconds
@@ -164,18 +164,23 @@ def top_pick_first(draft: AnswerDraft, evidence: Evidence) -> tuple[AnswerDraft,
     the model critic both passed it, and the page showed one top pick while the voice named another.)
 
     Applies only when the clause that names the top pick uses a word that no other recommended product has in its title,
-    that product is not the first, and the first is not named in the same clause. Only the order changes; the second
-    value returned is the handle that was moved, or None.
+    that product is not the first, and the first is not named in the same clause. A word that the first product's own
+    listing uses does not count: "the 24-piece wooden puzzle" describes a first row whose title says "(24 pcs)", and
+    "piece" may stand in the title of the second row alone. Only the order changes; the second value returned is the
+    handle that was moved, or None.
     """
     recs = draft.recommendations
-    items = [evidence.get(rec.ref) for rec in recs]
+    items = [item for rec in recs if (item := evidence.get(rec.ref)) is not None]
     said = _TOP_PICK.search(draft.spoken or "")
-    if draft.abstain or len(recs) < 2 or said is None or any(item is None for item in items):
+    if draft.abstain or len(recs) < 2 or said is None or len(items) < len(recs):
         return draft, None
     clause = re.split(r"[,;.!?]", (draft.spoken or "")[said.end():], maxsplit=1)[0]
-    words = name_words(clause)
-    named = [n for n, own in enumerate(words_of_its_own([i for i in items if i is not None])) if own & words]
-    if not named or 0 in named:
+    words, own = name_words(clause), words_of_its_own(items)
+    if own[0] & words:                                        # the first row is named where the pick is named
+        return draft, None
+    describes_first = name_words(item_text(items[0]))
+    named = [n for n, its_own in enumerate(own) if n and (its_own - describes_first) & words]
+    if not named:
         return draft, None
     moved = recs[named[0]]
     return draft.model_copy(update={"recommendations": [moved, *(rec for rec in recs if rec is not moved)]}), moved.ref
