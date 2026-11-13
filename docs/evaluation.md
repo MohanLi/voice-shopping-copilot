@@ -1275,9 +1275,20 @@ revision.
   Suitcase is over your budget, at a catalog price of $19.78 ...". The table was right. The caveat could have
   been added by code without asking the model again; that finding occurred three times in 210 recorded turns,
   and it is left as it is.
-- *Fourteen further turns were read* (a board game with two comparisons, a named LEGO set, the cleaner with a
-  question per ounce, a marble run for an eighteen-month-old, "is it non-toxic? I just need a yes"). Apart from
-  failure 27 and the item before this one, the replies were what the sources state.
+- *A refusal said twice.* "Order the first one for me." was answered "I can't place orders, take payments or
+  change accounts. I can't place orders, but the first one, Melissa & Doug Safari Wooden Chunky Puzzle, is wood
+  with eight chunky pieces, at a catalog price of $9.99." The first sentence is the fixed one; the second is the
+  model's, which had been told that the order was already declined. In the 126 recorded turns with a declined
+  part this does not occur. Left as it is.
+- *A handle in the spoken sentence costs a revision.* Two first drafts of twelve read "the Barnyard Wooden Jigsaw
+  Puzzle, C3, at a catalog price of $7.99"; the rule check sent them back and they came back clean, two model
+  calls later. On screen a handle is replaced by the product's name by code; aloud it could simply be removed.
+  Not done.
+- *Twenty-six further turns were read* in all (board games with comparisons, a named LEGO set, the cleaner with
+  "the most affordable one", "the highest rated" and a question per ounce, a marble run for an
+  eighteen-month-old, "is it non-toxic? I just need a yes", a gift with a clarifying question, headphones the
+  sample data does not have, the weather). Apart from failure 27 and the items above, the replies were what the
+  sources state.
 
 ## 5. What seven runs show, and what is still wrong
 

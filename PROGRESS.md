@@ -193,9 +193,11 @@ upload of them and of run 4 to the dashboard.
 | 2026-11-12 | On the Mac: the second live ProofAgent run (assistant 0.10, harness 1.42) | 1.52 |
 | 2026-11-11/12 | Replays and single turns after the live runs (the capped key from here on) | 0.20 |
 | 2026-11-12 | Building the web fallback: three replays of the live runs' questions, single turns, the UI check | 0.33 |
-| | **Total so far** | **about 8.35 of 50** |
+| 2026-11-12 | On the Mac: the third live ProofAgent run (assistant 0.08, harness 0.40) and the refresh's live check turns | 0.50 |
+| 2026-11-12/13 | After the third live run, in the workspace (its ledger: 5.81 since 11 Nov, of which 4.69 is in the rows above): six replays of that run's questions, single turns, the demo recording, the rehearsals of the demonstration and the yes-or-no trials | 1.12 |
+| | **Total so far** | **about 10.0 of 50** |
 
-Serper credits used: about 60 of 2,500 (each live run made a dozen fresh live searches, about 20 credits).
+Serper credits used: about 100 of 2,500, estimated from the searches logged (each live run made a dozen fresh live searches, about 20 credits; a refresh about 15). The Serper dashboard has the exact figure.
 
 ## Mirror to the Mac
 
