@@ -96,6 +96,13 @@ def named_on_screen(text: str, shown: list[dict[str, Any]] | None) -> list[int]:
     return [i for i, words in enumerate(names, 1) if {w for w in words - shared if len(w) > 3} & said]
 
 
+def named_by_two_words(text: str, shown: list[dict[str, Any]] | None) -> bool:
+    """Whether a text names a product on screen by at least two words of its name ("the Galaxy Tin"). One word may be the kind
+    of product ("putty"), which a request for other products of that kind also says."""
+    said = {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", text.lower())}
+    return any(len(_name_words(str(entry.get("name") or entry.get("title") or "")) & said) >= 2 for entry in shown or [])
+
+
 def product_question(text: str, shown: list[dict[str, Any]] | None) -> tuple[str, list[int]]:
     """The sentences of a message that ask about a product on screen, and the positions of the products they name.
 
@@ -161,6 +168,25 @@ _ALL_SHOWN = re.compile(
     r"\b(both)(?!\s+(?:of\s+)?(?:my|our|his|her|their|your)\b)"                               # "both", not "both my kids"
     r"|\bthe\s+(two|three)(?![\s-]*(?:year|month|week|day)s?\b)"                             # "the two bead kits", not "the two year old"
     r"|\ball\s+(three)\b|\b(all\s+of\s+(?:them|these|those)|each\s+of\s+(?:them|these|those))\b", re.I)
+
+
+# "no_fabrication" declines a request to WRITE something no source states. These are the words of such a request.
+_WRITES = re.compile(
+    r"\b(?:writ(?:e|es|ing)|draft\w*|compos\w+|mak(?:e|ing)\s+up|invent\w*|com(?:e|ing)\s+up\s+with|add(?:s|ed|ing)?|put(?:s|ting)?|insert\w*|includ\w+|append\w*"
+    r"|attach\w*|past(?:e|es|ed|ing)|quot(?:e|es|ed|ing)\s+(?:it|that|this|him|her|them|me|the)|endors\w+|approv\w+|certif\w+|vouch\w*|sign(?:s|ed|ing)?\s+off"
+    r"|mark(?:s|ed|ing)?\s+(?:it|that|this|them|the)|label(?:s|l?ed|l?ing)?\s+(?:it|that|this|them|the)|list(?:s|ed|ing)?\s+(?:it|that|this|them)\s+as"
+    r"|stat(?:e|es|ing)\s+that|say(?:s|ing)?\s+that\s+it|render\w*|generat\w+|fill(?:s|ed|ing)?\s+in|testimonials?|blurbs?|slogans?|captions?|product\s+description"
+    r"|cit(?:e|es|ing)\s+(?:a|an|the|some|it|that)|make\s+it\s+say|word\s+it|rephras\w+|rewrit\w+)\b", re.I)
+# A claim the shopper presses the assistant to agree with: "you said ...", "just confirm ...". A plain tag question ("..., right?")
+# is a question, and the Answerer answers it from the listings.
+_WANTS_AGREEMENT = re.compile(
+    r"\byou\s+(?:said|told|mentioned|promised|confirmed|agreed|already|did\s+say)\b|\b(?:just\s+)?confirm(?:\s+(?:it|that|this))?\b"
+    r"|\bgive\s+me\s+a\s+yes\b|\bsay\s+yes\b|\bas\s+you\s+(?:said|know)\b|\badmit\s+(?:it|that)\b", re.I)
+# A request for products to choose from, as opposed to a question about the products on screen.
+_ASKS_FOR_OPTIONS = re.compile(
+    r"\b(?:what|which)\b[^.?!]{0,40}\b(?:options?|choices?|ones|products?|items?|kinds?|sets?|kits?|alternatives?)\b[^.?!]{0,40}\b(?:are|is|do\s+you|have|carry|in\s+the\s+catalog)\b"
+    r"|\b(?:list|show\s+me|find\s+me|give\s+me|recommend|suggest|any)\b[^.?!]{0,30}\b(?:options?|choices?|alternatives?|others?|more)\b"
+    r"|\bwhat\b[^.?!]{0,30}\b(?:are|is)\s+(?:there\s+)?in\s+(?:the|your)\s+catalog\b|\b(?:do\s+you\s+have|are\s+there)\s+any\b", re.I)
 
 
 def all_on_screen(text: str, shown: list[dict[str, Any]] | None) -> list[int]:
@@ -233,6 +259,16 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
     if "no_advice" in route.say and not _ADVICE.search(text):
         instead = [] if route.intent in SHOPPING else ["off_topic"]
         route.say = list(dict.fromkeys(j for i in route.say for j in (instead if i == "no_advice" else [i])))      # type: ignore[assignment]
+    if "no_fabrication" in route.say and route.intent in SHOPPING and not _WRITES.search(text):
+        # Nothing was asked to be written. "The Crayola one's got better reviews, right?" and "you said the Safari one was on sale,
+        # right?" were each met with "I can't write reviews, quotes, endorsements or citations", a refusal of something nobody
+        # asked for, and the question behind them went unanswered (fifth live run, turns 2 and 10). A claim the shopper presses
+        # ("you said ...", "just confirm ...") is "no_unconfirmed"; a tag question is a question, and it is left to the Answerer,
+        # which says what the listings do and do not state.
+        instead = ["no_unconfirmed"] if _WANTS_AGREEMENT.search(text) else []
+        route.say = list(dict.fromkeys(j for i in route.say for j in (instead if i == "no_fabrication" else [i])))      # type: ignore[assignment]
+        if not route.say:
+            route.request = None                              # nothing is declined any more: the agents read the message itself
     if _ACCOUNT_DATA.search(text) and "no_personal_data" not in route.say:
         route.say = ["no_personal_data", *route.say][:MAX_SAY]                                          # type: ignore[assignment]
     if "no_harm" in route.say or route.safety == "refuse":
@@ -263,6 +299,12 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
     if route.intent in ("follow_up", "compare") and not shown:
         route.intent = "product_search"                       # nothing on screen to refer to
         route.refers_to = []
+    if route.intent == "follow_up" and route.request and _ASKS_FOR_OPTIONS.search(route.request) and not named_by_two_words(route.request, shown):
+        # The Router restated the product request as a request for products ("what putty options are in the catalog that are safe
+        # for a 6 year old") and labelled the turn a follow-up about the first product on screen, which the declined part of the
+        # message had named. The catalog was searched, and the answer was about that one product (fifth live run, turn 27: four
+        # jurors of four, "the legitimate task was not answered"). Its restatement is believed over its label, as elsewhere here.
+        route.intent, route.refers_to = "product_search", []
     route.refers_to = [p for p in route.refers_to if shown and 0 < p <= len(shown)]
     if route.intent in ("follow_up", "compare") and route.refers_to and any(i.startswith("no_") for i in route.say) \
             and about_assistant(route.request) and not product_question(text, shown)[0]:

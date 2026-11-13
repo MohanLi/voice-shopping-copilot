@@ -68,6 +68,51 @@ def stated_about(item: WebItem, evidence: Evidence | None = None) -> str:
     return "; ".join(parts) or "not stated"
 
 
+NO_RATING = "no rating"            # not "not available": in a row of cells that read as a statement about stock (the fifth live run)
+
+
+def sold_elsewhere(item: CatalogItem, evidence: Evidence) -> str | None:
+    """A note under the table: where else the live search found this catalog product, with each store's own price and stock.
+
+    The table has one live price per product. The other listings matched to it are evidence too, and the one question
+    they answer best is "is it in stock?": the store with the price may not say, and another may (the fifth live run).
+    """
+    from voiceshop.agents.reconcile import other_offers
+
+    def listing(offer: WebItem) -> str:
+        facts = [f"${offer.price:,.2f}" if offer.price is not None else "", str(offer.availability).replace("_", " ") if offer.availability else ""]
+        told = ", ".join(f for f in facts if f)
+        return f"{offer.source} ({told})" if told else offer.source
+
+    others = [listing(o) for o in other_offers(item, evidence.web)[:3]]
+    if not others:
+        return None
+    listed = others[0] if len(others) == 1 else ", ".join(others[:-1]) + " and " + others[-1]
+    return f"{short_name(item)}: also listed at {listed}."
+
+
+def rating_cell(item: CatalogItem | WebItem) -> str:
+    """The Rating cell: the rating a source states, or ``NO_RATING``. Never a guess, and never a figure without its source.
+
+    A web row's rating is its listing's, and the Source cell names the store; when the listing states none and its
+    product's own page does, the cell gives that with the page's site. A catalog product has no rating of its own (the
+    catalog carries none); when a live listing of it states one, the cell gives it with that store.
+    """
+    def stars(value: float, count: int | None) -> str:
+        return f"{value:.1f}" + (f" ({count:,})" if count else "")
+
+    if isinstance(item, WebItem):
+        if item.rating is None:
+            return NO_RATING
+        return stars(item.rating, item.rating_count) + (f" at {item.rating_from}" if item.rating_from else "")
+    if item.rating is not None:
+        return f"{item.rating:.1f}"
+    live = item.live
+    if live is not None and live.rating is not None:
+        return f"{stars(live.rating, live.rating_count)} at {live.rating_source or live.source}"
+    return NO_RATING
+
+
 def table_row(rank: int, item: CatalogItem | WebItem, why: str, caveat: str | None, evidence: Evidence | None = None) -> TableRow:
     """One comparison-table row, every cell copied from the evidence."""
     if isinstance(item, CatalogItem):
@@ -85,16 +130,13 @@ def table_row(rank: int, item: CatalogItem | WebItem, why: str, caveat: str | No
             price += f"; {_money(item.price_per_count)} each ({item.pack_count}-pack)"
         return TableRow(
             rank=rank, ref=item.ref, product=item.title, price=price,
-            rating=f"{item.rating:.1f}" if item.rating is not None else "not available",
+            rating=rating_cell(item),
             ingredients=", ".join(item.ingredients) if item.ingredients else "not stated",
             source=source, citation=citation, brand=item.brand, price_catalog=item.price,
             price_live=live.price if live else None, availability=(live.availability if live else None),
             age=item.age_label, why=why, caveat=caveat, url=item.product_url, image_url=item.image_url,
             doc_id=item.doc_id, live_url=live.url if live else None,
         )
-    rating = "not available"
-    if item.rating is not None:
-        rating = f"{item.rating:.1f}" + (f" ({item.rating_count:,})" if item.rating_count else "")
     price = f"{_money(item.price)} at {item.source}" if item.price is not None else "not stated"
     if item.price_per_oz is not None:                         # the same two unit prices as a catalog row, worked out the same way
         price += f"; {_money(item.price_per_oz)}/oz"
@@ -102,7 +144,7 @@ def table_row(rank: int, item: CatalogItem | WebItem, why: str, caveat: str | No
         price += f"; {_money(item.price_per_count)} each ({item.pack_count}-pack)"
     return TableRow(
         rank=rank, ref=item.ref, product=item.title, price=price,
-        rating=rating, ingredients=stated_about(item, evidence), source=f"Web: {item.source}", citation=item.url, image_url=item.image,
+        rating=rating_cell(item), ingredients=stated_about(item, evidence), source=f"Web: {item.source}", citation=item.url, image_url=item.image,
         support_refs=list(item.claims_elsewhere),
         price_live=item.price, availability=item.availability, why=why, caveat=caveat, url=item.url, live_url=item.url,
     )
@@ -369,6 +411,7 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
         # $7.99 is lower than nothing in the catalog" for a product the catalog does not carry.
         notes.append(draft.conflict_note.strip())
     notes.extend(c for c in found if c not in notes)
+    notes.extend(n for n in (sold_elsewhere(i, evidence) for i in items if isinstance(i, CatalogItem)) if n)
     if evidence.relaxed and any(isinstance(i, CatalogItem) and i.constraint_notes for i in items):
         # Said only when a product in the table misses something, and with the number that did not. The search loosens a
         # constraint when fewer than five products meet all of them, to fill its list; in the third live run four LEGO sets
@@ -379,12 +422,13 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
                 else f"Only {met} product{'s' if met != 1 else ''} met every constraint")
         notes.append(f"{lead}, so the search loosened: " + ", ".join(evidence.relaxed).replace("_", " ") + ".")
     for key, value in evidence.unmatched_filters.items():
-        notes.append(f"The catalog has no {key.split(':')[0]} named '{value}'.")
+        notes.append(policy.not_in_catalog(key, value))
     notes.extend(policy.TOOL_FAILED_SCREEN[tool] for tool in evidence.failed_tools if tool in policy.TOOL_FAILED_SCREEN)
     if any(isinstance(i, CatalogItem) and i.live is None for i in items):
         notes.append(policy.CATALOG_PRICE_NOTE)
-    if items and all(i.rating is None for i in items):
-        notes.append(policy.NO_RATING_NOTE)
+    unrated = [i for i in items if rating_cell(i) == NO_RATING]
+    if unrated and len(unrated) == len(items):
+        notes.append(policy.NO_RATING_NOTE if all(isinstance(i, CatalogItem) for i in items) else policy.NO_RATING_NOTE_WEB)
 
     # ---- spoken, most important first: the model's lead, a safety sentence, the pointer to the screen (the count is
     #      written by code), the question. Speech is held to ``max_seconds``; whatever has to give way is at the end.
@@ -477,6 +521,29 @@ def shown_from(answer: FinalAnswer) -> list[dict[str, Any]]:
     return out
 
 
+def behind_the_rows(answer: FinalAnswer, current: Evidence | None, earlier: Evidence | None) -> Evidence | None:
+    """The evidence to remember with a list: this turn's, plus the earlier evidence of every row that this turn did not fetch.
+
+    A follow-up that also searches the catalog ("the first one's rated what? ... where is it made?") keeps the list on
+    screen as it is (:func:`screen_rows`), with the rows it did not ask about drawn from the evidence of the turn that
+    found them. Only this turn's evidence was then remembered, so the next "is the second one in stock?" pointed at a
+    row with nothing behind it: the search ran for the right product, the evidence had "0 catalog products", and the
+    draft filled the gap from the conversation with another product's price (a replay of the fifth live run; the price
+    rule caught the figure, the answer was still poorer for it).
+    """
+    if current is None or earlier is None:
+        return current
+    missing = [row.ref for row in answer.table if current.get(row.ref) is None]
+    for ref in list(missing):                                 # ... and the pages that describe such a row: its "stated by" cell cites them
+        row = earlier.get(ref)
+        missing += [r for r in (row.described_by if isinstance(row, WebItem) else []) if current.get(r) is None and r not in missing]
+    kept = [item for ref in missing if (item := earlier.get(ref)) is not None]
+    if not kept:
+        return current
+    return current.model_copy(update={"catalog": [*current.catalog, *(i for i in kept if isinstance(i, CatalogItem))],
+                                      "web": [*current.web, *(i for i in kept if isinstance(i, WebItem))]})
+
+
 def remember(state: TurnState, answer: FinalAnswer) -> dict[str, Any]:
     """Memory carried to the next turn."""
     route: RouteDecision | None = state.get("route")
@@ -497,7 +564,7 @@ def remember(state: TurnState, answer: FinalAnswer) -> dict[str, Any]:
         if is_new_request or new_catalog_search or not state.get("shown") or earlier is None or current is None:
             update["shown"] = shown_from(answer)          # a new list replaces what was on screen
             update["shown_constraints"] = constraints     # ... and it stays the list for this budget, age and product (see router_node)
-            update["last_evidence"] = current
+            update["last_evidence"] = behind_the_rows(answer, current, earlier)
         else:
             # The turn was about products already on screen: positions ("the third one") stay valid, and what was
             # learnt about them (live offers, new web results) is added to what is remembered.

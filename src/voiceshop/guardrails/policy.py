@@ -225,6 +225,18 @@ TOOL_FAILED_SCREEN: dict[str, str] = {
     "rag.search": "The catalog search did not work just now. Please try again in a moment.",
 }
 NO_RATING_NOTE = "The catalog has no customer ratings, so none are shown."
+_VOCABULARY = {"brand": "brands", "category": "categories", "material": "materials", "claim": "listing claims"}
+
+
+def not_in_catalog(key: str, value: str) -> str:
+    """A filter value the catalog's vocabulary does not have, said with what was checked: the whole list, not five search results.
+
+    "The catalog has no brand named 'Zentrix'." was true, the search resolves a brand against every brand in the index,
+    and four of six jurors still called it overstated: nothing in the reply or the step log said how it was known
+    (the fifth live run, turn 13).
+    """
+    return f"The catalog's full list of {_VOCABULARY.get(key.split(':')[0], key.split(':')[0] + 's')} has no '{value}'."
+NO_RATING_NOTE_WEB = "These sources state no customer rating, so none is shown."
 # The catalog had nothing suitable, so the live web was searched for the product (retriever.web_fallback_calls): what
 # the Answerer is told under the tool notes, and what the shopper reads above a table of web results.
 WEB_FALLBACK_WHY = {"nothing": "The catalog search found nothing suitable for this request", "failed": "The catalog search failed just now"}

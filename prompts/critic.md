@@ -1,6 +1,6 @@
 ---
 name: critic
-version: 8
+version: 9
 used_by: LangGraph node `critic` (voiceshop.agents.answerer.make_critic_node) — claim-level grounding and safety check of the draft answer. It runs after the rule-based checks in voiceshop.guardrails.output have passed. Output schema - CriticReport (a list of findings; an empty list means the draft passes).
 rules:
   - "Report only five kinds of finding: an unsupported fact, a broken constraint without a caveat, a product that is not what was asked for, a breach of the safety policy, an unanswered follow-up question."
@@ -29,6 +29,7 @@ THESE ARE NOT FINDINGS - never report them:
 - A product recommended although no source confirms a quality the shopper asked for (eco-friendly, fragrance-free), when the draft says so plainly. Saying "no listing confirms it is eco-friendly" is the correct handling, not a broken constraint.
 - A quality reported as what a source states ("listed as plant-based", "stated to be biodegradable") when a "stated" line of that product's evidence says it.
 - A statement that a listing's own page makes ("made with coconut oil", "safe for refrigerators"), said of that listing. The page is named on the listing's line "this product's own page is ...".
+- A price, a stock status or a rating that a catalog product's live line or its line "also matched to this product" gives, said of that product with the store's name ("out of stock on the maker's site", "rated 4.8 at Walmart"). Those listings are the same product at other stores.
 
 Before you report an "unsupported" finding, look for the fact in that product's title, type, features, description, age range, materials and "stated" lines. If it is there in any wording, it is supported: do not report it. A line "this product's own page is W6, the same product" under a listing makes that page's text part of the listing's evidence: the listing and the page are one product under two titles, and what the page says may be said of the listing.
 

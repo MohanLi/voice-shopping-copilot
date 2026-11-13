@@ -72,16 +72,22 @@ _HEDGE = re.compile(
     r"lacks?|missing|silent|n't)\b", re.I)
 
 
-def asserted(pattern: re.Pattern[str], text: str) -> re.Match[str] | None:
-    """First match that is stated as fact. "I could not confirm whether it is in stock" asserts nothing."""
+def all_asserted(pattern: re.Pattern[str], text: str) -> list[re.Match[str]]:
+    """The matches that are stated as fact. "I could not confirm whether it is in stock" asserts nothing."""
     text = (text or "").replace("\u2019", "'").replace("\u2018", "'")      # models write "doesn\u2019t" with a typographic apostrophe
+    found = []
     for m in pattern.finditer(text):
         start = max(text.rfind(".", 0, m.start()), text.rfind("!", 0, m.start()), text.rfind("?", 0, m.start()), text.rfind(";", 0, m.start())) + 1
         ends = [i for i in (text.find(".", m.end()), text.find("!", m.end()), text.find("?", m.end()), text.find(";", m.end())) if i != -1]
         sentence = text[start: (min(ends) if ends else len(text))]
         if not _HEDGE.search(sentence):
-            return m
-    return None
+            found.append(m)
+    return found
+
+
+def asserted(pattern: re.Pattern[str], text: str) -> re.Match[str] | None:
+    """First match that is stated as fact, or None."""
+    return next(iter(all_asserted(pattern, text)), None)
 
 
 def compares_per_ounce(text: str) -> bool:
@@ -169,13 +175,99 @@ def closer_to_the_amount(text: str | None, ref: str, draft: AnswerDraft, evidenc
             "Remove the claim or give it to the right product.")
 
 
+def rating_of(item: CatalogItem | WebItem) -> float | None:
+    """The rating the evidence holds for an item: its own, or for a catalog product the one its live listing states."""
+    if item.rating is not None:
+        return item.rating
+    return item.live.rating if isinstance(item, CatalogItem) and item.live is not None else None
+
+
 def _has_rating(item: CatalogItem | WebItem) -> bool:
-    return item.rating is not None
+    return rating_of(item) is not None
 
 
-def _has_stock_info(item: CatalogItem | WebItem) -> bool:
+# "The listing states no materials": a sentence about what a product is made of that says it is not stated.
+_MADE_OF = re.compile(r"\b(?:materials?|ingredients?|made\s+(?:of|from|with)|composition|formula)\b", re.I)
+_COMPOSITION = re.compile(r"\b(?:made\s+(?:of|from|with|using)|ingredients?\s*:|contains?\s+\w+|[a-z]+-based)\b", re.I)
+
+
+def what_it_is_made_of(text: str) -> list[str]:
+    """The words of a page's text that say what a product is made of: materials ("silicone"), "-based" words, or nothing."""
+    from voiceshop.data.attributes import materials_in
+
+    based = [m.group(0).lower() for m in re.finditer(r"\b[a-z]+-based\b", text or "", re.I)]
+    return list(dict.fromkeys([*materials_in(text or ""), *based])) or ([m.group(0).lower()] if (m := _COMPOSITION.search(text or "")) else [])
+
+
+def materials_overlooked(text: str, item: WebItem, evidence: Evidence) -> str | None:
+    """A message when ``text`` says nothing states what ``item`` is made of while a page about a product of that name does.
+
+    The listing "Glimmer Putty Galaxy Tin" stated no materials; the store's page "Glimmer Putty" called it a
+    silicone-based stretch putty with cosmetic-grade glitter. The evidence pointed the Answerer to that page, the prompt
+    said what to do with it, and the reason still read "the listing states no materials or skin information": true of the
+    listing, and three of ten jurors called it contradicted by the page (the fifth live run, turn 14; the third run lost
+    credit on the same turn before the pointer existed). A text that reports what a page says, in any words, is left alone.
+    """
+    from voiceshop.agents.reconcile import same_name
+
+    if item.price is None or item.described_by or item.claims:
+        return None                                           # a listing with credited statements is covered by the claim rules
+    denials = [s for s in re.split(r"(?<=[.!?;])\s+", text or "") if _MADE_OF.search(s) and _NOT_STATED.search(s)]
+    if not denials:
+        return None
+    low = (text or "").lower()
+    for page in evidence.web:
+        if page.ref == item.ref or page.price is not None or page.flagged or not page.snippet or not same_name(item, page):
+            continue
+        said = what_it_is_made_of(f"{page.title}. {page.snippet}")
+        if said and not any(word in low for word in said) and not re.search(r"\b(?:page|review|article|site)\b", low):
+            return (f"The text says no materials or ingredients are stated for {item.ref}, but {page.ref} ({page.source}), a page about a product of "
+                    f"this name, says: \"{page.snippet[:180]}\" Report that as what that page states (\"a page about it describes it as ...\"), "
+                    "or leave out the sentence that nothing is stated.")
+    return None
+
+
+# A rating figure: "rated 4.8", "a rating of 4.8", "4.8 stars", "4.8 out of 5", "a 4.8 rating", "five stars". Not an age rating ("rated 3+").
+_NOT_AN_AGE = r"(?!\s*(?:\+|%|percent|and\s+(?:up|older)|years?|months?|to\s+\d))"
+_RATING_VALUE = re.compile(
+    r"\b(?:rated|rates|rating(?:\s+of)?)\s+(?:at\s+|is\s+)?(\d(?:\.\d+)?)\b" + _NOT_AN_AGE
+    + r"|\b(\d(?:\.\d+)?|one|two|three|four|five)\s*(?:-|\s)?(?:stars?\b|out\s+of\s+(?:5|five)\b)"
+    + r"|\b(\d\.\d)[\s-]+(?:star[\s-]+)?rating\b", re.I)
+_RATING_COUNT = re.compile(r"\b(\d[\d,]*)\s+(?:ratings|reviews|shoppers|customers|reviewers|buyers)\b", re.I)
+_STAR_WORDS = {"one": 1.0, "two": 2.0, "three": 3.0, "four": 4.0, "five": 5.0}
+
+
+def ratings_misstated(text: str, items: list[CatalogItem | WebItem]) -> str | None:
+    """A rating figure in ``text`` that no listing of ``items`` gives, as a message for the Answerer; None when all are as given.
+
+    Prices were checked against the evidence from the start; a star rating was only checked for being there at all. Now
+    that a catalog product can carry the rating of its live listing, more answers will state one, and "rated 4.9" for a
+    listing rated 4.8 is the same kind of mistake as a wrong price. A figure rounded to one decimal counts as given.
+    """
+    text = (text or "").replace(",", "")
+    ratings = [r for i in items if (r := rating_of(i)) is not None]
+    counts = {c for i in items for c in ([i.rating_count] if isinstance(i, WebItem) else [i.live.rating_count] if i.live is not None else []) if c}
+    for m in all_asserted(_RATING_VALUE, text):
+        raw = next(g for g in m.groups() if g)
+        value = _STAR_WORDS.get(raw.lower()) if raw.lower() in _STAR_WORDS else float(raw)
+        if value is None or value > 5 or not ratings:
+            continue                                          # no rating at all is the business of rating_not_in_evidence
+        if not any(abs(value - r) <= 0.051 for r in ratings):
+            return (f"A rating of {value:g} is stated, but the listings of this answer give {', '.join(f'{r:g}' for r in dict.fromkeys(ratings))}. "
+                    "State a rating only as its listing gives it.")
+    for m in all_asserted(_RATING_COUNT, text):
+        if counts and int(m.group(1)) not in counts:
+            return (f"\"{m.group(0)}\" is stated, but the listings of this answer give {', '.join(f'{c:,}' for c in sorted(counts))} ratings. "
+                    "State a count only as its listing gives it.")
+    return None
+
+
+def _has_stock_info(item: CatalogItem | WebItem, evidence: Evidence | None = None) -> bool:
+    """Does a live result state this item's availability: its live offer, or another result matched to the same product?"""
     if isinstance(item, CatalogItem):
-        return item.live is not None and item.live.availability is not None
+        if item.live is not None and item.live.availability is not None:
+            return True
+        return evidence is not None and any(w.availability and w.matched_ref == item.ref and not w.flagged for w in evidence.web)
     return item.availability is not None
 
 
@@ -410,6 +502,20 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
     of_what = "any product this answer is about" if items else "anything in the evidence"
     spoken_fields = [("spoken", draft.spoken), ("conflict_note", draft.conflict_note or "")]
 
+    # ---- the first pick is of the brand asked for when a product recommended below it is
+    # "My nephew wants LEGO", up to eight dollars: the search kept the brand and the budget, found three LEGO sets and
+    # loosened the brand to fill its list. One draft in four put a compatible set of another brand first, with the LEGO
+    # sets below it (replays of the fifth live run's turn 10). Only the brand: a product that is over the budget may be
+    # the very one the shopper asked about, and then it comes first with the alternative after it. A follow-up about
+    # products on screen is ordered by its question.
+    lead = evidence.get(draft.recommendations[0].ref) if draft.recommendations else None
+    if not focus and isinstance(lead, CatalogItem) and any("brand" in note for note in lead.constraint_notes):
+        meets = [rec.ref for rec in draft.recommendations[1:] if isinstance(o := evidence.get(rec.ref), CatalogItem) and not o.constraint_notes]
+        if meets:
+            issues.append(Issue(code="first_pick_not_the_brand", severity="revise", where=lead.ref,
+                                message=f"{lead.ref} is not of the brand asked for ({'; '.join(lead.constraint_notes)}), and {meets[0]}, recommended below "
+                                        f"it, meets every constraint. Put {meets[0]} first and write the spoken sentence about it."))
+
     # ---- per recommendation
     for rec in draft.recommendations:
         item = evidence.get(rec.ref)
@@ -423,8 +529,10 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
         if asserted(_RATING_TALK, text) and not _has_rating(item):
             issues.append(Issue(code="rating_not_in_evidence", severity="revise", where=rec.ref,
                                 message=f"{rec.ref} has no rating in the evidence; remove the mention of ratings or reviews."))
+        elif (wrong := ratings_misstated(text, compared)) is not None:
+            issues.append(Issue(code="rating_not_as_stated", severity="revise", where=rec.ref, message=wrong))
         stock = asserted(_STOCK_TALK, text)
-        if stock and not _has_stock_info(item):
+        if stock and not _has_stock_info(item, evidence):
             issues.append(Issue(code="availability_not_in_evidence", severity="revise", where=rec.ref,
                                 message=f"'{stock.group(0)}' is stated for {rec.ref}, but no live result gives its availability."))
         if asserted(_CURRENT_TALK, text) and not _has_live_price(item):
@@ -436,6 +544,8 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
                 issues.append(Issue(code="unsupported_claim", severity="revise", where=rec.ref,
                                     message=f"'{name}' is claimed for {rec.ref} but its listing does not say so. Remove it."))
         if isinstance(item, WebItem):
+            if (overlooked := materials_overlooked(f"{text} {draft.spoken if rec is draft.recommendations[0] else ''}", item, evidence)) is not None:
+                issues.append(Issue(code="materials_overlooked", severity="revise", where=rec.ref, message=overlooked))
             withdrawn = [c for c in (*item.cautions, *(c for cs in item.cautions_elsewhere.values() for c in cs)) if c in policy.WITHDRAWN]
             if withdrawn and not re.search(r"recall|discontinu|no longer (?:made|sold)", f"{text} {draft.spoken}", re.I):
                 issues.append(Issue(code="recall_undisclosed", severity="revise", where=rec.ref,
@@ -462,11 +572,12 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
                 issues.append(Issue(code="superlative_not_true", severity="revise", where=rec.ref,
                                     message=f"{rec.ref} is called the cheapest at ${price:.2f}, but {below[0][0]} in the same answer costs ${below[0][1]:.2f}. "
                                             "Remove the claim or give it to the right product."))
-        if item.rating is not None and asserted(_TOP_RATED, rec.why):
-            above = [(other.ref, o.rating) for other, o in rivals if o.rating is not None and o.rating > item.rating]
+        rating = rating_of(item)
+        if rating is not None and asserted(_TOP_RATED, rec.why):
+            above = [(other.ref, r) for other, o in rivals if (r := rating_of(o)) is not None and r > rating]
             if above:
                 issues.append(Issue(code="superlative_not_true", severity="revise", where=rec.ref,
-                                    message=f"{rec.ref} is called the highest rated at {item.rating:g}, but {above[0][0]} in the same answer is rated {above[0][1]:g}. "
+                                    message=f"{rec.ref} is called the highest rated at {rating:g}, but {above[0][0]} in the same answer is rated {above[0][1]:g}. "
                                             "Remove the claim or give it to the right product."))
         nearer = closer_to_the_amount(rec.why, rec.ref, draft, evidence, constraints)
         if nearer:
@@ -521,8 +632,10 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
         if asserted(_RATING_TALK, text) and not any(_has_rating(i) for i in pool):
             issues.append(Issue(code="rating_not_in_evidence", severity="revise", where=where,
                                 message="No recommended item has a rating in the evidence; remove the mention of ratings or reviews."))
+        elif (wrong := ratings_misstated(text, priced_pool)) is not None:
+            issues.append(Issue(code="rating_not_as_stated", severity="revise", where=where, message=wrong))
         stock = asserted(_STOCK_TALK, text)
-        if stock and not any(_has_stock_info(i) for i in pool):
+        if stock and not any(_has_stock_info(i, evidence) for i in pool):
             issues.append(Issue(code="availability_not_in_evidence", severity="revise", where=where,
                                 message=f"'{stock.group(0)}' is stated, but no live result gives availability."))
         if asserted(_CURRENT_TALK, text) and pool and not any(_has_live_price(i) for i in pool):

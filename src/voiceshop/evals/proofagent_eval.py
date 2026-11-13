@@ -122,6 +122,8 @@ def tool_calls(result: TurnResult) -> list[dict[str, Any]]:
                 outcome[key] = value
         if rec.relaxed:
             outcome["filters_loosened"] = rec.relaxed
+        if rec.unmatched:                                     # what the tool found out about the whole catalog, not about these results
+            outcome["not_in_the_catalog_vocabulary"] = {k.split(":")[0]: v for k, v in rec.unmatched.items()}
         if rec.refs:
             outcome["evidence"] = rec.refs
         calls.append({"name": rec.tool, "args": {k: v for k, v in rec.arguments.items() if v is not None}, "result": outcome})
@@ -133,7 +135,7 @@ def _catalog_chunk(item: CatalogItem, detail: bool = False) -> str:
     usually states: the whole title, which often carries the piece count, and the first listed features."""
     bits = [item.title[:140 if detail else 80], f"catalog price ${item.price:.2f} (January 2020)"]
     if item.live is not None and item.live.price is not None:
-        bits.append(f"live ${item.live.price:.2f} at {item.live.source}")
+        bits.append(f"live ${item.live.price:.2f} at {item.live.source}" + (f" ({item.live.availability.replace('_', ' ')})" if item.live.availability else ""))
     if item.age_label:
         bits.append(f"age {item.age_label}")
     if item.ingredients:
@@ -143,6 +145,9 @@ def _catalog_chunk(item: CatalogItem, detail: bool = False) -> str:
     if item.claims:
         bits.append("listing states " + ", ".join(item.claims[:3]))
     bits.append("rating " + (f"{item.rating:g}" if item.rating is not None else "none in catalog"))
+    if item.rating is None and item.live is not None and item.live.rating is not None:
+        live = item.live
+        bits.append(f"rated {live.rating:g}" + (f" ({live.rating_count:,})" if live.rating_count else "") + f" at {live.rating_source or live.source}")
     if detail and item.features:
         bits.append("features: " + " | ".join(f[:90] for f in item.features[:3]))
     return "; ".join(bits)
@@ -155,7 +160,7 @@ def _web_chunk(item: WebItem, detail: bool = False) -> str:
     elif item.source:
         bits.append(f"{item.source}, no price stated")
     if item.rating is not None:
-        bits.append(f"rating {item.rating:g}" + (f" ({item.rating_count:,})" if item.rating_count else ""))
+        bits.append(f"rating {item.rating:g}" + (f" ({item.rating_count:,})" if item.rating_count else "") + (f" on its own page at {item.rating_from}" if item.rating_from else ""))
     if item.availability:
         bits.append(item.availability)
     stated = list(item.claims) + [c for cs in item.claims_elsewhere.values() for c in cs]

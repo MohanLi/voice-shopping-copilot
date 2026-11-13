@@ -141,12 +141,23 @@ def unit_price_note(evidence: Evidence) -> str | None:
     return "Unit prices worked out by code, lowest first. " + " ".join(parts) + " Compare only within one of these lists."
 
 
-def _catalog_block(item: CatalogItem, weak_score: float | None, any_pack: bool = False, any_ounce: bool = False) -> str:
+def _stock(value: str | None) -> str:
+    return str(value).replace("_", " ") if value else "availability not stated"
+
+
+def _catalog_block(item: CatalogItem, weak_score: float | None, any_pack: bool = False, any_ounce: bool = False,
+                   elsewhere: list[WebItem] | None = None, asked_age: float | None = None) -> str:
+    """One catalog product as the Answerer and the Critic read it. ``elsewhere``: the other live results matched to it;
+    ``asked_age``: the age the product is for, so the block can say whether the listing's range includes it."""
+    from voiceshop.agents.rules import age_within
+
+    within = age_within(item.age_label, asked_age)
+    fits = "" if within is None else f" ({'includes' if within else 'does not include'} age {asked_age:g}, worked out by code)"
     head = [
         f"[{item.ref}] {item.title}",
-        f"  doc_id: {item.doc_id} | brand: {item.brand or 'not stated'} | catalog price (Jan 2020): {money(item.price)} | rating: "
+        f"  doc_id: {item.doc_id} | brand: {item.brand or 'not stated'} | catalog price (Jan 2020): {money(item.price)} | catalog rating: "
         f"{item.rating if item.rating is not None else 'none'}",
-        f"  type: {item.product_type or 'n/a'} | category: {item.category or 'n/a'} | recommended age: {item.age_label or 'not stated'}"
+        f"  type: {item.product_type or 'n/a'} | category: {item.category or 'n/a'} | recommended age: {item.age_label or 'not stated'}{fits}"
         f" | materials: {', '.join(item.ingredients) if item.ingredients else 'not stated'}",
     ]
     extras = []
@@ -170,10 +181,18 @@ def _catalog_block(item: CatalogItem, weak_score: float | None, any_pack: bool =
     if item.live is not None:
         live = item.live
         change = f", {live.price_change_pct:+.0f}% vs catalog" if live.price_change_pct is not None else ""
+        rated = ""
+        if live.rating is not None:
+            where = "of that listing" if (live.rating_source or live.source) == live.source else f"at {live.rating_source}"
+            rated = f"; rating {where}: {live.rating:g}" + (f" ({live.rating_count:,} ratings)" if live.rating_count else "")
         head.append(
-            f"  live ({live.web_ref}): {money(live.price)} now at {live.source}{change}; availability: {live.availability or 'not stated'}"
+            f"  live ({live.web_ref}): {money(live.price)} now at {live.source}{change}; availability: {live.availability or 'not stated'}{rated}"
             + (f"; note: {live.note}" if live.note else "")
         )
+    if elsewhere:
+        # The same product at other stores. Each states its own price and stock: what one store does not say, another may.
+        head.append("  also matched to this product: " + "; ".join(
+            f"{w.ref} {w.source}: {money(w.price) if w.price is not None else 'no price stated'}, {_stock(w.availability)}" for w in elsewhere))
     return "\n".join(head)
 
 
@@ -189,7 +208,8 @@ def _web_block(item: WebItem, related: list[str] | None = None, any_pack: bool =
     facts = [f"price: {money(item.price)}" + (f" ({item.price_source})" if item.price_source else ""),
              f"availability: {item.availability or 'not stated'}"]
     if item.rating is not None:
-        facts.append(f"rating: {item.rating}" + (f" ({item.rating_count} ratings)" if item.rating_count else ""))
+        facts.append(f"rating: {item.rating}" + (f" ({item.rating_count} ratings)" if item.rating_count else "")
+                     + (f", on its own page at {item.rating_from}" if item.rating_from else ""))
     if item.delivery:
         facts.append(f"delivery: {item.delivery}")
     facts.extend(unit_facts(item, any_pack, any_ounce))
@@ -214,7 +234,8 @@ def _web_block(item: WebItem, related: list[str] | None = None, any_pack: bool =
     if item.price is not None and not item.claims and not item.described_by:
         if related:                                           # pages that mention a product of this name: the place to read, not a credited claim
             lines.append(f"  materials or ingredients: not stated in this listing; {', '.join(related)} "
-                         f"{'mentions' if len(related) == 1 else 'mention'} a product of this name and may describe it")
+                         f"{'mentions' if len(related) == 1 else 'mention'} a product of this name and may describe it: "
+                         "report what such a page says as that page's statement")
         else:
             lines.append("  claims about materials or ingredients: none stated in any result")
     if item.match_note:
@@ -243,14 +264,16 @@ def web_fallback_note(evidence: Evidence) -> str:
     return template.format(why=why, query=evidence.web_fallback, refs=", ".join(refs))
 
 
-def render_evidence(evidence: Evidence, weak_score: float | None = None) -> str:
-    """The only product knowledge the Answerer and the Critic receive."""
+def render_evidence(evidence: Evidence, weak_score: float | None = None, asked_age: float | None = None) -> str:
+    """The only product knowledge the Answerer and the Critic receive. ``asked_age``: the age stated in the request, if any."""
     parts: list[str] = []
     everything = [*evidence.catalog, *evidence.web]
     any_pack, any_ounce = any(i.price_per_count for i in everything), any(i.price_per_oz for i in everything)
     if evidence.catalog:
         parts.append("CATALOG PRODUCTS (private catalog, January 2020 snapshot)")
-        parts.extend(_catalog_block(item, weak_score, any_pack, any_ounce) for item in evidence.catalog)
+        from voiceshop.agents.reconcile import other_offers
+
+        parts.extend(_catalog_block(item, weak_score, any_pack, any_ounce, other_offers(item, evidence.web), asked_age) for item in evidence.catalog)
     else:
         parts.append("CATALOG PRODUCTS: none retrieved" + _asked(evidence, "rag.search", "the catalog was not searched this turn",
                                                                  "the catalog was searched and returned nothing"))
@@ -272,7 +295,7 @@ def render_evidence(evidence: Evidence, weak_score: float | None = None) -> str:
     if evidence.relaxed:
         notes.append("Constraints loosened by the catalog search, in order: " + ", ".join(evidence.relaxed) + ". See each product's MISSES line.")
     for key, value in evidence.unmatched_filters.items():
-        notes.append(f"The catalog has no {key.split(':')[0]} named '{value}'.")
+        notes.append(policy.not_in_catalog(key, value))
     if evidence.conflicts:
         notes.extend("Catalog vs live web: " + c for c in evidence.conflicts)
     units_note = unit_price_note(evidence)

@@ -367,6 +367,37 @@ def short_name(item: CatalogItem | WebItem, max_words: int = 8) -> str:
     return " ".join(words[:max_words]) if words else item.title[:60]
 
 
+def first_sentences(text: str | None, limit: int) -> str:
+    """The leading whole sentences of a text that fit in ``limit`` characters; the first sentence cut at a word when even it does not."""
+    out = ""
+    for sentence in re.split(r"(?<=[.!?])\s+", (text or "").strip()):
+        if not sentence or len(out) + len(sentence) + 1 > limit:
+            break
+        out = f"{out} {sentence}".strip()
+    if out or not text:
+        return out
+    return text.strip()[:limit].rsplit(" ", 1)[0].rstrip(",;:") + " ..."
+
+
+_AGE_TEXT = re.compile(r"(\d+(?:\.\d+)?)\s*(month|year)", re.I)
+
+
+def age_within(label: str | None, age_years: float | None) -> bool | None:
+    """Does a catalog age label include an age: "3 years and up" and 6 -> True, "2 years to 4 years" and 6 -> False; None when it cannot be told.
+
+    The search does this arithmetic when it filters; the models were left to redo it from the label, and the Critic model
+    got it wrong more than once ("for ages 3 and up, so it is not labelled for six-year-olds", which turned a good answer
+    into "I could not find a putty for a six-year-old": a replay of the fifth live run's turn 27). The evidence now says it.
+    """
+    parts = [float(n) * (1 if unit.lower() == "month" else 12) for n, unit in _AGE_TEXT.findall(label or "")]
+    if age_years is None or not parts or not label:
+        return None
+    months = age_years * 12
+    if "and up" in label:
+        return parts[0] <= months
+    return parts[0] <= months <= parts[1] if len(parts) == 2 else None
+
+
 def _fits(item: CatalogItem | WebItem, constraints: Constraints) -> bool:
     """Does it meet the constraints the search filtered on? (A live price over budget is a caveat, not a demotion:
     the product is still the one the shopper's words matched best.)"""
@@ -400,7 +431,8 @@ def _why(item: CatalogItem | WebItem, constraints: Constraints) -> str:
         if item.price is not None:
             facts.append(f"${item.price:.2f} at {item.source}")
         if item.rating is not None:
-            facts.append(f"rated {item.rating:g} stars" + (f" by {item.rating_count:,} shoppers" if item.rating_count else ""))
+            facts.append(f"rated {item.rating:g} stars" + (f" by {item.rating_count:,} shoppers" if item.rating_count else "")
+                         + (f" on {item.rating_from}" if item.rating_from else ""))
         if item.availability:
             facts.append(item.availability.replace("_", " "))
         backing = wish_support(item, constraints)

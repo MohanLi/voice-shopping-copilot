@@ -99,6 +99,39 @@ def _in(word: str, others: set[str]) -> bool:
     return any(len(other) >= 4 and not any(ch.isdigit() for ch in other) and fuzz.ratio(word, other) >= 85 for other in others)
 
 
+def brand_named(brand: str, text: str) -> bool:
+    """Is the brand named in the text? As whole words, or written together ("Play-Doh" as "PlayDoh", "Hotwheels" as "Hot Wheels").
+
+    Whole words, because the check used to be a substring of the text: "GE" was found in "Large Storage Box" and "Scotch"
+    in "Butterscotch", so for a short brand name the brand condition of a match was no condition at all.
+    """
+    name, words = " ".join(_singular(w) for w in _norm(brand).split()), [_singular(w) for w in _norm(text).split()]      # "Grimm's" = "Grimms"
+    if not name:
+        return False
+    if f" {name} " in f" {' '.join(words)} ":
+        return True
+    joined = name.replace(" ", "")
+    if len(joined) < 5:
+        return False
+    return joined in words or any("".join(words[i:j]) == joined for i in range(len(words)) for j in (i + 2, i + 3))
+
+
+def brand_is_site(brand: str, web: WebItem) -> bool:
+    """Is the result on the maker's own site: "Melissa & Doug" at melissaanddoug.com, "Koala Eco" at koalaeco.com?
+
+    A maker's page seldom repeats the maker's name in its title, the address carries it. In the fifth live run the
+    shopper asked whether a Melissa & Doug puzzle was in stock; the maker's own page, "Safari Chunky Puzzle - 8 Pieces",
+    said out of stock, went unmatched ("brand not found in the result"), and the reply said that its availability was
+    not stated. An address spells "&" as "and" or leaves it out, so both spellings are tried.
+    """
+    label = site_label(web)
+    low = (brand or "").lower()
+    spellings = {re.sub(r"[^a-z0-9]", "", low.replace("&", " and ")), re.sub(r"[^a-z0-9]", "", low.replace("&", " ")), _norm(brand).replace(" ", "")} - {""}
+    if not label or not spellings:
+        return False
+    return any(label in (name, "the" + name) or (len(name) >= 6 and name in label) for name in spellings)
+
+
 def match_score(item: CatalogItem, web: WebItem) -> tuple[float, str]:
     """How sure we are that the web result is this catalog product (0-1), with the reason.
 
@@ -110,9 +143,8 @@ def match_score(item: CatalogItem, web: WebItem) -> tuple[float, str]:
     """
     if item.sku and item.sku.lower() in web.url.lower():
         return 1.0, "same SKU in the URL"
-    title_w = _norm(web.title)
     brand = _norm(item.brand or "")
-    brand_ok = bool(brand) and (brand in title_w or brand in _norm(web.source) or brand.replace(" ", "") in title_w.replace(" ", ""))
+    brand_ok = brand_named(item.brand or "", web.title) or brand_named(item.brand or "", web.source) or brand_is_site(item.brand or "", web)
     models_c, models_w = model_numbers(item.title), model_numbers(web.title)
     shared_models = models_c & models_w
     if shared_models and (brand_ok or not brand):
@@ -212,6 +244,22 @@ def makers_words(offer: WebItem, page: WebItem) -> set[str]:
     return set()
 
 
+# Words that state a quality of a product and name nobody's product: the vocabulary of the claims themselves.
+_QUALITY_WORDS = frozenset("""natural organic eco ecofriendly friendly green plant based biobased biodegradable vegan nontoxic non toxic safe safer
+    free unscented fragrance scent hypoallergenic gentle pure recycled recyclable sustainable premium professional""".split())
+
+
+def named_words(words: list[str], kind: frozenset[str]) -> list[str]:
+    """The words of a listing's name that name a product: not the kind of product looked for, and not a quality.
+
+    "Natural Stainless Cleaner" (sold by Emiejames) is a kind of product and a claim about it. Every page of a search
+    for natural stainless steel cleaners has those words, so a round-up's sentence about another maker's cleaner,
+    "Therapy ... natural, non-toxic, plant-based, made in USA", was credited to that listing, and the table said so
+    "(stated by amazon.com)" (the fifth live run, turn 17; a juror called it contradicted by the evidence, rightly).
+    """
+    return [w for w in words if w not in kind and w not in _QUALITY_WORDS]
+
+
 def page_of(offer: WebItem, page: WebItem, kind: frozenset[str] = frozenset()) -> bool:
     """Whether ``page`` as a whole is the page of the one product ``offer`` lists: the two are one product, found twice.
 
@@ -220,16 +268,16 @@ def page_of(offer: WebItem, page: WebItem, kind: frozenset[str] = frozenset()) -
 
     - an article, whatever its title. "7 Best Stainless Steel Cleaners 2026 Reviewed" contains every word of a listing
       sold as "Stainless Steel Cleaner", and "our pick is plant-based" is said there of some other cleaner;
-    - any page about that kind of product, for a listing named by its kind alone (``kind``, :func:`kind_words`).
-      "Stainless Steel Cleaner", $7.50 at a marketplace store, is not the "Plant-Based Stainless Steel Cleaner" of
-      another maker's site, unless that site is the store that lists it.
+    - any page about that kind of product, for a listing named by its kind alone (``kind``, :func:`kind_words`) or by
+      its kind and a quality (:func:`named_words`). "Stainless Steel Cleaner", $7.50 at a marketplace store, is not the
+      "Plant-Based Stainless Steel Cleaner" of another maker's site, unless that site is the store that lists it.
     """
     words = _product_words(offer.title)
     if len(words) < MIN_SHARED_WORDS or page.price is not None or not one_product_page(page):
         return False
     title_words = set(_product_words(page.title))
     if all(_in(w, title_words) for w in words):
-        return any(w not in kind for w in words) or sold_by_its_site(offer, page)
+        return bool(named_words(words, kind)) or sold_by_its_site(offer, page)
     maker = makers_words(offer, page)
     named = [w for w in words if w not in maker]
     return bool(maker) and len(named) >= 2 and all(_in(w, title_words) for w in named)
@@ -241,8 +289,9 @@ def text_about(offer: WebItem, page: WebItem, kind: frozenset[str] = frozenset()
     The product's own page is about it as a whole (:func:`page_of`), and so is an article whose title holds the whole
     name of a named product (a review of that one product). A page that only mentions the product (a round-up of
     several products) contributes just the sentences that name its first word, so one product's "plant-based" is not
-    credited to the product in the next sentence. A listing named by its kind alone (``kind``) is mentioned by every
-    page about that kind of product: none of them is credited to it.
+    credited to the product in the next sentence. A listing named by its kind alone (``kind``), or by its kind and a
+    quality ("Natural Stainless Cleaner"), is mentioned by every page about that kind of product: none of them is
+    credited to it. The sentences are found by the first word that names the product (:func:`named_words`).
     """
     words = _product_words(offer.title)
     if len(words) < MIN_SHARED_WORDS:
@@ -250,7 +299,7 @@ def text_about(offer: WebItem, page: WebItem, kind: frozenset[str] = frozenset()
     title_words = set(_product_words(page.title))
     if page_of(offer, page, kind):
         return f"{page.title}. {page.snippet}"
-    named = any(w not in kind for w in words)
+    named = named_words(words, kind)
     if all(_in(w, title_words) for w in words):
         return f"{page.title}. {page.snippet}" if named else None
     if not named:
@@ -258,7 +307,7 @@ def text_about(offer: WebItem, page: WebItem, kind: frozenset[str] = frozenset()
     everything = title_words | set(_product_words(page.snippet))
     if not all(_in(w, everything) for w in words):
         return None
-    lead = words[0]
+    lead = named[0]
     sentences = [s for s in _CLAUSE.split(page.snippet) if lead in {_singular(w) for w in _norm(s).split()}]
     return " ".join(sentences) or None
 
@@ -302,6 +351,20 @@ def link_descriptions(web: list[WebItem]) -> None:
                     offer.cautions_elsewhere[page.ref] = cautions
 
 
+def rate_by_own_page(web: list[WebItem]) -> None:
+    """A listing that states no rating takes the rating of its product's own page, with that page's site as the source.
+
+    The listing and the page are one product, found twice (:func:`page_of`). The table said "not available" for a
+    cleaner whose maker's page, cited in the same row, was rated 4.7 by 42 shoppers (the fifth live run, turn 17).
+    """
+    by_ref = {w.ref: w for w in web}
+    for ref, pages in own_pages(web).items():
+        offer = by_ref[ref]
+        rated = next((page for page in pages if page.rating is not None), None)
+        if offer.rating is None and rated is not None:
+            offer.rating, offer.rating_count, offer.rating_from = rated.rating, rated.rating_count, rated.source
+
+
 def own_pages(web: list[WebItem]) -> dict[str, list[WebItem]]:
     """For each priced listing that is joined to its product's own page (:func:`page_of`): the listing's ref -> those pages.
 
@@ -321,6 +384,26 @@ def own_pages(web: list[WebItem]) -> dict[str, list[WebItem]]:
     return joined
 
 
+def plausible_price(item: CatalogItem, web: WebItem, score: float | None) -> bool:
+    """Is the result's price one the catalog product could have now? Far outside it, the result is another size, a bundle or another product."""
+    if web.price is None or not item.price or (score or 0.0) >= EXACT_MATCH:
+        return True
+    return IMPLAUSIBLE_LOW <= web.price / item.price <= IMPLAUSIBLE_HIGH
+
+
+def other_offers(item: CatalogItem, web: list[WebItem]) -> list[WebItem]:
+    """The live results matched to this catalog product besides its live offer that state a price or a stock status.
+
+    One product is sold in several places, and the place with the best listing need not be the one that answers the
+    question. Asked "is it in stock right now, and what does it cost today?", the reply gave the Walmart price and said
+    the availability was not stated; the maker's own page said out of stock and a toy store said in stock (the fifth live
+    run, turn 4; four of ten jurors called the reply contradicted by its evidence).
+    """
+    used = item.live.web_ref if item.live is not None else None
+    return [w for w in web if w.matched_ref == item.ref and w.ref != used and not w.flagged
+            and (w.price is not None or w.availability) and plausible_price(item, w, w.match_score)]
+
+
 def _rank_offer(web: WebItem, score: float) -> tuple[float, int, int, float]:
     stock = {"in_stock": 2, "limited": 2, "preorder": 1}.get(web.availability or "", 0 if web.availability == "out_of_stock" else 1)
     listed = 1 if web.price_source == "listing" else 0
@@ -332,6 +415,7 @@ def reconcile(evidence: Evidence, constraints: Constraints | None = None) -> Evi
     catalog = [c.model_copy(update={"live": None}) for c in evidence.catalog]
     web = [w.model_copy(update={"matched_ref": None, "match_score": None, "match_note": None}) for w in evidence.web]
     link_descriptions(web)
+    rate_by_own_page(web)
     conflicts: list[str] = []
     budget = constraints.budget_max if constraints else None
 
@@ -349,8 +433,7 @@ def reconcile(evidence: Evidence, constraints: Constraints | None = None) -> Evi
         offers = [(w, s) for w, s in candidates.get(item.ref, []) if w.price is not None and not w.flagged]
         usable: list[tuple[WebItem, float]] = []
         for w, s in offers:
-            ratio = (w.price or 0) / item.price if item.price else 1.0
-            if s < EXACT_MATCH and not IMPLAUSIBLE_LOW <= ratio <= IMPLAUSIBLE_HIGH:
+            if not plausible_price(item, w, s):
                 w.match_note = (f"{w.match_note}; price ${w.price:.2f} is far from the catalog price ${item.price:.2f}, "
                                 "so this may be a different size, bundle or product and is not used as the live price")
                 conflicts.append(f"{item.ref} ({short_name(item)}): a web result at {w.source} lists ${w.price:.2f}, far from the catalog price "
@@ -367,8 +450,14 @@ def reconcile(evidence: Evidence, constraints: Constraints | None = None) -> Evi
         note = None
         if w.price_source == "snippet":
             note = "price read from the result's text, not a structured listing"
+        # The rating is the live offer's own, or else the first other listing of the same product that states one, always
+        # with the store that states it. The Rating column read "not available" beside "Private catalog + Walmart (live)"
+        # while that Walmart listing was rated 4.8 by 405 shoppers (the fifth live run, turn 4).
+        rated = next((x for x in [w, *(x for x, _ in usable if x is not w)] if x.rating is not None), None)
         item.live = LiveOffer(web_ref=w.ref, url=w.url, source=w.source, price=w.price, availability=w.availability,
-                              retrieved_at=w.retrieved_at, match_score=s, price_change_pct=change, note=note)
+                              retrieved_at=w.retrieved_at, match_score=s, price_change_pct=change, note=note,
+                              rating=rated.rating if rated else None, rating_count=rated.rating_count if rated else None,
+                              rating_source=(rated.rating_from or rated.source) if rated else None)
         if change is not None and abs(change) >= PRICE_CHANGE_NOTE_PCT:
             direction = "higher" if change > 0 else "lower"
             conflicts.append(f"{item.ref} ({short_name(item)}): catalog price ${item.price:.2f} (January 2020) vs ${w.price:.2f} now at {w.source} "

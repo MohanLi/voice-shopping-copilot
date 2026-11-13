@@ -58,7 +58,7 @@ VERIFY_TOP_N = 3
 _CATALOG_FIELDS = set(CatalogItem.model_fields) - {"ref", "from_query", "live"}
 _WEB_FIELDS = set(WebItem.model_fields) - {"ref", "provider", "cached", "kind", "from_query", "matched_ref", "match_score", "match_note",
                                            "claims", "cautions", "described_by", "claims_elsewhere", "cautions_elsewhere",
-                                           "pack_count", "price_per_count", "price_per_oz"}
+                                           "pack_count", "price_per_count", "price_per_oz", "rating_from"}
 
 
 def web_unit_prices(title: str | None, price: float | None) -> dict[str, Any]:
@@ -226,6 +226,7 @@ class EvidenceBuilder:
             tool=result.tool, arguments=result.arguments, ok=result.ok, origin=origin, round=round_no,  # type: ignore[arg-type]
             n_results=len(result.results), duration_ms=round(result.duration_ms, 1), error=result.error,
             cached=data.get("cached"), provider=data.get("provider"), relaxed=list(data.get("relaxed") or []), refs=refs,
+            unmatched=dict(data.get("unmatched_filters") or {}) if result.tool == "rag.search" else {},
         )
         self.records.append(record)
         return record

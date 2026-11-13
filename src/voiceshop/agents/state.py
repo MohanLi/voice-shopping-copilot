@@ -36,8 +36,8 @@ class Constraints(BaseModel):
     budget_max: float | None = Field(default=None, description="Maximum price in USD ('under $20' -> 20)")
     budget_min: float | None = Field(default=None, description="Minimum price in USD, only if stated")
     age_years: float | None = Field(default=None, description="Age in years of the person it is for ('18 months' -> 1.5)")
-    brand: str | None = Field(default=None, description="Brand, only if named")
-    category: str | None = Field(default=None, description="Product category, only if named, e.g. 'board games'")
+    brand: str | None = Field(default=None, description="The maker's name, only if the shopper named one: 'wants LEGO' -> 'LEGO', 'a Crayola set' -> 'Crayola'")
+    category: str | None = Field(default=None, description="A department of products, only if named, e.g. 'board games'. Never a maker's name: that is the brand")
     materials: list[str] = Field(default_factory=list, description="Materials asked for, e.g. ['wood']")
     must_have: list[str] = Field(default_factory=list, description="Other requested properties, e.g. ['dinosaur theme', 'eco-friendly']")
     avoid: list[str] = Field(default_factory=list, description="Things to avoid, e.g. ['batteries', 'small parts']")
@@ -117,6 +117,9 @@ class LiveOffer(BaseModel):
     match_score: float = 0.0
     price_change_pct: float | None = Field(default=None, description="Live price vs the January 2020 catalog price")
     note: str | None = None
+    rating: float | None = Field(default=None, description="The star rating a live listing of this product states")
+    rating_count: int | None = None
+    rating_source: str | None = Field(default=None, description="The store whose listing states that rating")
 
 
 class CatalogItem(BaseModel):
@@ -166,6 +169,7 @@ class WebItem(BaseModel):
     source: str = ""
     rating: float | None = None
     rating_count: int | None = None
+    rating_from: str | None = Field(default=None, description="For a listing that states no rating: the site of its product's own page, whose rating this is")
     delivery: str | None = None
     retrieved_at: str = ""
     flagged: bool = False
@@ -231,6 +235,7 @@ class ToolRecord(BaseModel):
     provider: str | None = None
     relaxed: list[str] = Field(default_factory=list)
     refs: list[str] = Field(default_factory=list)
+    unmatched: dict[str, str] = Field(default_factory=dict, description="Filter values the catalog's vocabulary does not have (brand: Zentrix)")
 
 
 # ----------------------------------------------------------------------- answer
