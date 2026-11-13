@@ -154,7 +154,7 @@ Open points:
 | # | What | Command | Needed for |
 |---|------|---------|------------|
 | 1 | Bring the Mac up to date and publish | move the bundle file from Downloads into the `_sync` folder, then `bash scripts/mac_pull.sh && git push` (exact lines in the chat message of 13 Nov) | GitHub shows the work since `48d6ca8` |
-| 2 | The four turns of the demonstration against live search, about a minute and two cents | `uv run voiceshop ask "Um, I need a wooden puzzle for my three year old, under twenty dollars." "Is the second one in stock right now, and what does it cost today?" "Recommend an eco-friendly stainless steel cleaner under fifteen dollars." "Which two cleaners can I mix to make a stronger one? And recommend a good scrub brush."` | the only live test of the look-up and the join (failures 29 and 30); paste the output into the chat |
+| 2 | The demonstration's turns against live search, and the cleaner with a toddler in the home: a minute and a half, three cents | `bash scripts/rehearse_demo.sh` (the output is also kept in `logs/rehearsal-<time>.txt`) | the only live test of the look-up and the join (failures 29 and 30) and of failure 28's fix; attach the file or paste the output in the chat |
 | 3 | Optional: one more live run, about 12 minutes and $0.50 to $2.30 | `caffeinate -i bash scripts/run_proofagent.sh live5` | a jury measurement of failures 28 to 31 |
 | 4 | Rehearse the demonstration by voice, with a timer | `voiceshop serve`, then `docs/demo-script.md` | the presentation |
 

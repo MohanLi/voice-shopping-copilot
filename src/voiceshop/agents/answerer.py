@@ -239,7 +239,8 @@ def with_what_was_asked_for(draft: AnswerDraft, evidence: Evidence, constraints:
     The first row and the spoken sentence are not touched.
 
     Only a page about one product of the kind asked for counts, and only the shopper's own word ("plant-based", not
-    "natural" for it). Nothing is added when a recommended product already has such a source.
+    "natural" for it). Nothing is added when a recommended product already has such a source, and nothing for a child
+    under three, for whom web results are not recommended at all.
     """
     from voiceshop.agents.reconcile import distinguishing_words, own_pages
 
@@ -247,6 +248,8 @@ def with_what_was_asked_for(draft: AnswerDraft, evidence: Evidence, constraints:
     recs = list(draft.recommendations)
     if draft.abstain or not wishes or not recs:
         return draft, None
+    if constraints.age_years is not None and constraints.age_years < 3:
+        return draft, None                                    # for a child under three no web result is recommended, by code least of all
 
     def states(item: CatalogItem | WebItem | None) -> bool:
         return item is not None and any(claim.lower() in wishes for claim in rules.wish_support(item, constraints))

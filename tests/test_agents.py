@@ -2249,6 +2249,8 @@ def test_a_listing_and_its_own_page_are_one_product_for_the_critic_and_in_the_ta
     assert with_what_was_asked_for(priced_only, evidence, Constraints(product="stainless steel cleaner"))[1] is None
     other_kind = Constraints(product="dish soap", must_have=["plant-based"])
     assert with_what_was_asked_for(priced_only, evidence, other_kind)[1] is None                         # the page is about another kind of product
+    for_a_baby = wanted.model_copy(update={"age_years": 1.5})
+    assert with_what_was_asked_for(priced_only, evidence, for_a_baby) == (priced_only, None)             # under three: no web result is added by code
     # The template lists priced results; the row is added to it for a search, and never to an answer about the list on screen.
     searching = {"route": RouteDecision(intent="product_search"), "tool_log": []}
     assert [r.ref for r in template_answer(searching, evidence, wanted, None).recommendations][-1] == "W10"

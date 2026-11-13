@@ -115,16 +115,26 @@ voiceshop serve                      # leave it running; open http://127.0.0.1:8
 
 ## Rehearse
 
-The four turns as one typed conversation, about a minute and two cents:
+The four turns as one typed conversation, then the cleaner with a question about a toddler in the home (the
+case of [failure 28](evaluation.md)): about a minute and a half and three cents. The step log and the replies
+are printed, and a copy is kept in `logs/`.
 
 ```bash
-voiceshop ask "Um, I need a wooden puzzle for my three year old, under twenty dollars." \
-              "Is the second one in stock right now, and what does it cost today?" \
-              "Recommend an eco-friendly stainless steel cleaner under fifteen dollars." \
-              "Which two cleaners can I mix to make a stronger one? And recommend a good scrub brush."
+bash scripts/rehearse_demo.sh
 ```
 
-Read the four replies against the "say" column above. With live search the stores and prices will differ from
+Read the replies against the "say" column above. With live search the stores and prices will differ from
 run to run, and the second turn's product depends on which puzzle the first turn listed second; the sentences
-in the table do not name a product for that reason. Then do the whole thing once by voice in the browser with
-a timer.
+in the table do not name a product for that reason. What to look for in the third turn, the assignment's own
+example, which is the one that depends most on live data:
+
+- the first row is a product with a price and a store;
+- its Ingredients cell says where the description comes from ("... stated by" a site), or says "not stated";
+- in the step log, the look-ups by name end in a site's name ("... therapyclean") and none is for an article
+  ("7 Best ...");
+- no product appears twice, once with a price and once with a description.
+
+And in the last turn of the script: the reply is about the cleaner, it does not say "for a child under three",
+and the notes include "Keep cleaning products out of the reach of children."
+
+Then do the whole thing once by voice in the browser with a timer.
