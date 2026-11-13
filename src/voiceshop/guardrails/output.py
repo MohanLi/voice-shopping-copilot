@@ -331,12 +331,21 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
     # ---- a comparison per ounce needs two prices per ounce
     with_ounce_price = [i.ref for i in pool if i.price_per_oz is not None]
     if len(with_ounce_price) < 2:
+        # What to say instead is handed over with the finding: per item, when one product is a pack and all have a price.
+        # (Told only to "compare per item if every product has one", a revision stated the price per ounce again and
+        # compared nothing, with $3.58 a tin against $7.99 two lines up in its evidence.)
+        priced = [i for i in pool if i.price is not None]
+        if len(priced) == len(pool) > 1 and any(i.price_per_count for i in pool):
+            per_item = sorted(((i.price_per_count or i.price or 0.0, i) for i in priced), key=lambda pair: pair[0])
+            instead = ("Compare per item instead and say so, lowest first: "
+                       + ", ".join(f"{i.ref} ${value:.2f} ({f'pack of {i.pack_count}' if i.pack_count else 'one item'})" for value, i in per_item) + ".")
+        else:
+            instead = "State each figure as given and name no winner."
         for where, text in [*((rec.ref, f"{rec.why} {rec.caveat or ''}") for rec in draft.recommendations), ("spoken", draft.spoken)]:
             if compares_per_ounce(text):
                 only = f"only {with_ounce_price[0]} has" if with_ounce_price else "no product of this answer has"
                 issues.append(Issue(code="unit_comparison_unsupported", severity="revise", where=where,
-                                    message=f"Something is called cheaper per ounce, but {only} a price per ounce in the evidence. Compare the "
-                                            "prices per item if every product has one; otherwise state each figure as given and name no winner."))
+                                    message=f"Something is called cheaper per ounce, but {only} a price per ounce in the evidence. {instead}"))
 
     # ---- spoken text and notes
     for where, text in spoken_fields:

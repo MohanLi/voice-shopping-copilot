@@ -1538,6 +1538,11 @@ def test_a_live_listing_gets_its_unit_price_from_code_and_the_answer_may_state_i
         draft = AnswerDraft(recommendations=[Recommendation(ref=first.ref, why=why_tin), Recommendation(ref=second.ref, why="Six tins.")], spoken=spoken)
         return [i.where or "" for i in check_draft(draft, found, Constraints()) if i.code == "unit_comparison_unsupported"]
 
+    # The finding says what to compare instead, with the figures.
+    told = next(i.message for i in check_draft(AnswerDraft(recommendations=[Recommendation(ref=tin.ref, why="One tin."), Recommendation(ref=pack.ref, why="Six tins.")],
+                                                           spoken="The Galaxy Tin is cheaper per ounce at $2.50."), evidence, Constraints())
+                if i.code == "unit_comparison_unsupported")
+    assert told.endswith("Compare per item instead and say so, lowest first: W2 $3.58 (pack of 6), W1 $7.99 (one item).")
     # One price per ounce is not a comparison per ounce, in the sentence or in a reason, hedged afterwards or not.
     assert compared_per_ounce("The Galaxy Tin is cheaper per ounce at $2.50, while the party pack lists $3.58 per item.") == ["spoken"]
     assert compared_per_ounce("The Galaxy Tin is cheaper per ounce at $2.50, though the pack's listing does not state its ounces.") == ["spoken"]
