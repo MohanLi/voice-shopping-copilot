@@ -1,6 +1,6 @@
 # PROGRESS — Voice Shopping Copilot build log
 
-**Last updated:** 2026-11-12 06:00 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
+**Last updated:** 2026-11-13 00:10 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
 (`~/Desktop/2026 Autumn/Applied Generative AI/Final Project/voice-shopping-copilot`).
 **The folder on the Mac is the source of truth.**
 
@@ -32,7 +32,7 @@ Legend: ✅ done · 🔄 in progress · ⏳ waiting on Kevin · ⬜ not started
 | 7 | Beyond-requirements bundles (retrieval & grounding, eval rigor, voice UX, engineering showcase) | 🔄 | retrieval & grounding and eval rigor in place (replay tool, repeated-ballot report, upload to the ProofAgent dashboard); open: CI, Docker, demo GIF, second-provider run |
 | 8 | Documentation, verification pass against `docs/objectives.md` | 🔄 | `README.md`, `docs/architecture.md`, `docs/mcp.md`, `docs/evaluation.md`, `docs/safety.md`, `docs/decisions.md`, `prompts/README.md`, `eval/proofagent/README.md`; still to write: data, retrieval, checkpoints, the ingestion notebook |
 
-Tests: 634 passing (`python -m pytest tests -q`, ~20 s, no key or network needed) plus one behind `--run-models`,
+Tests: 637 passing (`python -m pytest tests -q`, ~20 s, no key or network needed) plus one behind `--run-models`,
 and the browser check `node frontend/e2e/smoke.cjs` against a running server.
 Lint clean (`ruff check src tests scripts eval`).
 
@@ -102,19 +102,19 @@ query instruction for the embedding model, category names matched by their words
 
 ## Next action
 
-1. When Kevin has run `scripts/mac_refresh.sh` (see "Waiting on Kevin"): stage the Mac's benchmark files
-   (`eval/results/retrieval/benchmark.*`, `eval/results/retrieval/paraphrase/`, `eval/results/speech/`) into the
-   workspace, put the Mac's numbers and latencies into `README.md`, `docs/retrieval.md` section 5 and this file,
-   commit, and send a bundle back.
-2. If Kevin runs `live4`: pull the folder, read every turn, add it to the comparison and to
-   `docs/evaluation.md` (the first jury measurement of failures 22 and 23 and of unit prices by code).
-3. Engineering showcase: the CI workflow is written and checked from a fresh clone (`.github/workflows/ci.yml`,
-   its own commit, last in the history, so that a push without the `workflow` scope can leave it out), and the
-   README opens with a recorded demo (`docs/images/demo.gif`, made by `frontend/e2e/demo.cjs`; worth recording
-   again on the Mac, where product images load and a turn is faster). Still open: a Dockerfile, one run with a
-   local model through Ollama (objective L6).
+1. If Kevin runs `live4`: pull the folder, read every turn, add it to the comparison and to
+   `docs/evaluation.md`. It is the first jury measurement of everything since `live3`: failures 22 and 23, unit
+   prices by code, the top pick as the first row, and the price look-up for a product a page describes.
+2. The laptop's live check turns after tonight's two repairs: `scripts/mac_refresh.sh` step 7 (or one
+   `voiceshop ask`, see "Waiting on Kevin"). The assignment's own example should now name a priced product
+   whose page states the quality.
+3. Engineering showcase. Done: the CI workflow, checked from a fresh clone (`.github/workflows/ci.yml`, kept
+   as its own commit on the branch `ci-workflow` and applied last, so that a push without the `workflow` scope
+   can leave it out), and a recorded demo at the top of the README (`docs/images/demo.gif`, made by
+   `frontend/e2e/demo.cjs`; worth recording again on the Mac, where product images load and a turn is
+   faster). Open: a Dockerfile, one run with a local model through Ollama (objective L6).
 4. The voice sample page (record real speakers for the speech evaluation).
-5. The presentation (Kevin said: technical side first).
+5. The presentation: a timed script for the live demo and the slides (Kevin said: technical side first).
 
 Open design items, described in `docs/evaluation.md` sections 5 and 6, each needing a jury run of its own: a
 record of earlier turns as evidence, so that a false statement about them can be corrected; a second look
@@ -127,17 +127,19 @@ Open points:
 - latency: the Critic's model call could run while the first sentence is synthesized;
 - pushing a GitHub Actions workflow needs the `workflow` scope on the token Kevin pushes with; CI therefore
   goes in a commit of its own;
-- syncing to the Mac: the Mac's own result files are modified there after every refresh or run. A pull is
-  refused when an incoming commit touches one of them. `scripts/mac_pull.sh` sets them aside in a git stash
-  (never dropped) and pulls the newest bundle.
+- syncing to the Mac: result files that a refresh or a run rewrites there are committed there first
+  (`git add` of exactly those files, as on 12 November), and the workspace rebases onto that commit. When a
+  pull is still refused, `scripts/mac_pull.sh` sets the changed files aside in a git stash (never dropped) and
+  pulls the newest bundle. The bridge needs its delete permission for git to work in the folder at all.
 
 ## Waiting on Kevin
 
 | # | What | Command | Needed for |
 |---|------|---------|------------|
-| 1 | Rebuild and re-measure on the Mac, about 18 minutes | `caffeinate -i bash scripts/mac_refresh.sh` | the catalog and index after the age fix; both retrieval benchmarks with the query instruction on the machine the numbers are quoted for |
-| 2 | Publish | `git push` (if the push is refused because of the workflow file: `gh auth refresh -s workflow`, then push again) | GitHub shows the last night's work |
-| 3 | Optional, about 12 minutes and $0.50: one more live run | `caffeinate -i bash scripts/run_proofagent.sh live4` | the first jury measurement of the fixes after `live3` |
+| 1 | Publish | `git push` | GitHub shows the work since the last push |
+| 2 | One more live run, about 12 minutes and $0.50 | `caffeinate -i bash scripts/run_proofagent.sh live4` | the first jury measurement of the fixes after `live3` |
+| 3 | The assignment's example against live search, 15 seconds | `uv run voiceshop ask "recommend an eco friendly stainless steel cleaner under fifteen dollars"` | shows whether the top pick now has a price and the quality, each with its source |
+| 4 | Optional: add CI | `git cherry-pick ci-workflow && git push` (if the push is refused for the `workflow` scope: `git push origin HEAD~1:main`) | lint, tests, UI build and a browser test on every push |
 
 After each, say "done" in the chat; nothing has to be committed by hand (Claude adds the commits). One run is
 enough: it is a measurement, not an attempt at a number.

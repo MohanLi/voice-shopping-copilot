@@ -163,7 +163,7 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 | D8 | `prompts/` folder: system, router, planner, tool-call, answerer/critic, guardrail prompts and few-shots, each mapped to its node/agent/tool | `prompts/` | ✅ |
 | D9 | Checkpoint 1: proposal, problem definition, data slice, tools, ingestion notebook, related work | `docs/checkpoints/checkpoint1.md`, `notebooks/01_data_ingestion.ipynb`, `docs/related-work.md` | ✅ |
 | D10 | Checkpoint 2: architecture diagram, LangGraph flow, MCP/tool calls, UI wireframe, RAG evaluation plan, MCP README + schemas, initial ProofAgent plan | `docs/checkpoints/checkpoint2.md` (each item in short, with the document that holds it in full) | ✅ |
-| D11 | Repository with clean code and README | repo: README with the measured results and a map of the documents; 634 tests and a lint check, run by `scripts/mac_refresh.sh` | ✅ |
+| D11 | Repository with clean code and README | repo: README with the measured results and a map of the documents; 637 tests and a lint check, run by `scripts/mac_refresh.sh` | ✅ |
 | D12 | ≤7-minute live demo and short presentation | later (not part of the technical build) | ⬜ |
 
 ## 3. Beyond the requirements
