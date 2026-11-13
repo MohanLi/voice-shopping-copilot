@@ -707,3 +707,61 @@ def test_naming_the_request_is_not_a_claim_about_the_product() -> None:
     assert _claims_in("It misses your eco-friendly requirement and the non-toxic criterion.") == []
     assert [name for name, _ in _claims_in("An eco-friendly cleaner that streaks.")] == ["eco-friendly"]
     assert [name for name, _ in _claims_in("It meets the request: eco-friendly and cheap.")] == ["eco-friendly"]
+
+
+def test_closest_to_an_amount_is_checked_against_the_other_rows() -> None:
+    """The fourth live run, turn 10: "Just show me the LEGO set that's closest to eight, even if it's over." The reply: "The LEGO set
+    closest to eight dollars is the Friends Stephanie's Summer Heart Box, 95 pieces for ages six and up, at a catalog price of $5.59",
+    with a LEGO set at $6.56 as the second row of the same table. Nine of nine jurors: contradicted by the answer's own evidence."""
+    heart = CatalogItem(ref="C2", doc_id="AMZ-B07PX3X1PR", sku="B07PX3X1PR", title="LEGO Friends Stephanie's Summer Heart Box 41386", price=5.59)
+    witch = CatalogItem(ref="C3", doc_id="AMZ-B07H7SBTHZ", sku="B07H7SBTHZ", title="LEGO BrickHeadz Halloween Witch building kit", price=6.56)
+    party = CatalogItem(ref="C1", doc_id="AMZ-B0788BRFCM", sku="B0788BRFCM", title="LEGO Minifigure Series 18 Party", price=4.95)
+    evidence, wanted = Evidence(catalog=[party, heart, witch], searched=["rag.search"]), Constraints(product="LEGO set", budget_max=8.0)
+
+    def findings(spoken: str, why: str = "95 pieces, for ages 6 and up.", first: str = "C2") -> list[tuple[str | None, str]]:
+        rows = [Recommendation(ref=first, why=why), *(Recommendation(ref=ref, why="A LEGO set.", caveat="For ages 10 and up." if ref == "C3" else None)
+                                                       for ref in ("C2", "C3", "C1") if ref != first)]
+        return [(i.where, i.message) for i in check_draft(AnswerDraft(recommendations=rows, spoken=spoken), evidence, wanted) if i.code == "superlative_not_true"]
+
+    said = "The LEGO set closest to eight dollars is the Friends Stephanie's Summer Heart Box, at a catalog price of $5.59."
+    assert findings(said) == [("spoken", "C2 is called the closest to $8 at $5.59, but C3 in the same answer costs $6.56, which is closer. "
+                                         "Remove the claim or give it to the right product.")]
+    # In the reason of a row, with the amount in figures, and for "closest to your budget". A caveat on the other row changes no price.
+    assert [where for where, _ in findings("My top pick is the Summer Heart Box at $5.59.", why="Closest LEGO building kit to $8 that stays under budget.")] == ["C2"]
+    assert [where for where, _ in findings("The Summer Heart Box is the closest to your budget, at $5.59.")] == ["spoken"]
+    # True of the table, hedged, or not about a price: nothing.
+    assert findings("The LEGO set closest to eight dollars is the BrickHeadz Halloween Witch, at a catalog price of $6.56.", first="C3") == []
+    assert findings("I cannot tell which set is closest to eight dollars; the Summer Heart Box is $5.59.") == []
+    assert findings("The Summer Heart Box, at $5.59, is the closest match to what you described.") == []
+    # "Without going over" leaves out the rows above the amount.
+    dear = CatalogItem(ref="C4", doc_id="AMZ-B000000004", sku="B000000004", title="LEGO Creator Mini Rocket", price=8.49)
+    capped = AnswerDraft(recommendations=[Recommendation(ref="C3", why="The closest to $8 without going over."),
+                                          Recommendation(ref="C4", why="A LEGO set.", caveat="$8.49 is above the $8 budget.")],
+                         spoken="The Halloween Witch is $6.56.")
+    assert not [i for i in check_draft(capped, Evidence(catalog=[witch, dear]), wanted) if i.code == "superlative_not_true"]
+    plain = capped.model_copy(update={"recommendations": [Recommendation(ref="C3", why="The closest to $8."), capped.recommendations[1]]})
+    assert [i.where for i in check_draft(plain, Evidence(catalog=[witch, dear]), wanted) if i.code == "superlative_not_true"] == ["C3"]
+
+
+def test_nothing_is_reported_from_a_web_search_that_was_not_made() -> None:
+    """The fourth live run, turn 5: "I saw that exact one for five dollars at Walmart yesterday. Just confirm it's five dollars." The Planner
+    answered from the list on screen, without a search, and the reply said "no current web price was found for it". Nothing had been looked
+    for. Three of nine jurors read it as contradicted, four of six as overstated."""
+    puzzle = CatalogItem(ref="C3", doc_id="AMZ-B00HEZ0APE", sku="B00HEZ0APE", title="Melissa & Doug Barnyard Wooden Jigsaw Puzzle (24 pcs)", price=7.99)
+    said = AnswerDraft(recommendations=[Recommendation(ref="C3", why="The catalog lists it at $7.99 for ages 3 to 5.")],
+                       spoken="The Melissa and Doug Barnyard jigsaw has a catalog price of $7.99; no current web price was found for it.")
+    wanted = Constraints(product="wooden puzzle")
+
+    def codes(draft: AnswerDraft, evidence: Evidence) -> list[str]:
+        return [i.code for i in check_draft(draft, evidence, wanted, focus=["C3"]) if i.code == "search_not_made"]
+
+    assert codes(said, Evidence(catalog=[puzzle], searched=["rag.search"])) == ["search_not_made"]
+    assert codes(said, Evidence(catalog=[puzzle], searched=[])) == ["search_not_made"]
+    # The web was searched and had nothing, or the search failed (which has its own sentence), or what ran is not recorded: no finding.
+    assert codes(said, Evidence(catalog=[puzzle], searched=["rag.search", "web.search"])) == []
+    assert codes(said, Evidence(catalog=[puzzle], searched=["rag.search"], failed_tools=["web.search"])) == []
+    assert codes(said, Evidence(catalog=[puzzle])) == []
+    for other in ("I found no live listing for it.", "A web search turned up nothing for it.", "The live web had no listing of it."):
+        assert codes(said.model_copy(update={"spoken": other}), Evidence(catalog=[puzzle], searched=["rag.search"])) == ["search_not_made"], other
+    for fine in ("Its catalog price is $7.99, from January 2020; I have not checked a current price on the web.", "I can only confirm the catalog price of $7.99."):
+        assert codes(said.model_copy(update={"spoken": fine}), Evidence(catalog=[puzzle], searched=["rag.search"])) == [], fine

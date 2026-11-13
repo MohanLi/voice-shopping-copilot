@@ -45,6 +45,19 @@ _CHEAPEST = re.compile(r"\b(?:cheapest|lowest[-\s]priced?|lowest\s+(?:price|cost
 _TOP_RATED = re.compile(r"\b(?:highest|best|top)[-\s]rated\b|\bhighest\s+(?:star\s+)?rating\b", re.I)
 
 
+# "Closest to eight dollars" is a statement about every price on the screen, like "cheapest".
+_CLOSEST_TO = re.compile(r"\bclosest\b(?:\s+[\w'-]+){0,5}?\s+to\s+(?:(?:your|the|that|my|a)\s+)?"
+                         r"(?:\$\s?(?P<amount>\d+(?:\.\d{1,2})?)|(?P<words>[a-z]+(?:[\s-][a-z]+)?)\s+(?:dollars?|bucks)|(?P<budget>budget|limit|price\s+(?:limit|cap)))", re.I)
+_NOT_OVER = re.compile(r"\b(?:under|below|within|without\s+going\s+over|not\s+over|inside)\b", re.I)
+# "No current web price was found for it" reports a search. Said when the web was not searched, it reports one that was never made.
+_WEB_HAD_NOTHING = re.compile(
+    r"\bno\s+(?:current|live|web|online|recent|newer|up[-\s]to[-\s]date)\s+(?:web\s+|online\s+|live\s+)?(?:price|listing|offer|result)s?\b[^.;!?]{0,40}?"
+    r"\b(?:found|turned\s+up|came\s+up|returned)\b"
+    r"|\b(?:found|find|returned|turned\s+up)\s+no\s+(?:current|live|web|online)\s+(?:web\s+|online\s+|live\s+)?(?:price|listing|offer|result)s?\b"
+    r"|\b(?:web|live|online)\s+search\s+(?:found|returned|turned\s+up|showed|came\s+back\s+with)\s+(?:nothing|no\b)"
+    r"|\bthe\s+(?:live\s+)?web\s+(?:had|has|returned|shows?|showed)\s+(?:nothing|no\b)", re.I)
+
+
 # "Cheaper per ounce" sets two prices per ounce against each other. With only one in the answer it compares nothing, and
 # next to a price per item it reads as if it did.
 _BETTER = r"(?:cheap(?:er|est)|lowest|lower|least|less|better\s+value|best\s+value)"
@@ -125,6 +138,35 @@ def _explained(amount: float, prices: list[float], constraints: Constraints, dif
         return True                                        # "about $12" for $12.49
     return differences and any(abs(amount - abs(a - b)) <= 0.011 or (abs(amount - round(amount)) < 1e-9 and abs(amount - abs(a - b)) < 0.5)
                for a, b in combinations(known, 2))
+
+
+def closer_to_the_amount(text: str | None, ref: str, draft: AnswerDraft, evidence: Evidence, constraints: Constraints) -> str | None:
+    """What to send back when ``text`` calls the product ``ref`` the closest to an amount and another row of the answer is closer, else None.
+
+    "The LEGO set closest to eight dollars is the Summer Heart Box, at a catalog price of $5.59" stood above a LEGO set
+    at $6.56 in the same table (the fourth live run, turn 10: nine of nine jurors called it contradicted). The amount is
+    the one named ("$8", "eight dollars") or, for "closest to your budget", the budget. Every priced row counts, with or
+    without a caveat: the claim is about prices. "Closest to $8 without going over" is compared with the rows not over it.
+    """
+    from voiceshop.agents.rules import words_to_number
+
+    said = asserted(_CLOSEST_TO, text or "")
+    item = evidence.get(ref)
+    if said is None or item is None or (price := best_price(item)) is None:
+        return None
+    target = (float(said.group("amount")) if said.group("amount") else words_to_number(said.group("words")) if said.group("words")
+              else constraints.budget_max)
+    if not target:
+        return None
+    capped = bool(_NOT_OVER.search((text or "")[said.end(): said.end() + 60]))
+    others = [(other.ref, p) for other in draft.recommendations if other.ref != ref and (o := evidence.get(other.ref)) is not None
+              and (p := best_price(o)) is not None and not (capped and p > target + 0.005)]
+    nearer = [(other, p) for other, p in others if abs(p - target) < abs(price - target) - 0.005]
+    if not nearer:
+        return None
+    other, p = min(nearer, key=lambda pair: abs(pair[1] - target))
+    return (f"{ref} is called the closest to ${target:g} at ${price:.2f}, but {other} in the same answer costs ${p:.2f}, which is closer. "
+            "Remove the claim or give it to the right product.")
 
 
 def _has_rating(item: CatalogItem | WebItem) -> bool:
@@ -426,6 +468,27 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
                 issues.append(Issue(code="superlative_not_true", severity="revise", where=rec.ref,
                                     message=f"{rec.ref} is called the highest rated at {item.rating:g}, but {above[0][0]} in the same answer is rated {above[0][1]:g}. "
                                             "Remove the claim or give it to the right product."))
+        nearer = closer_to_the_amount(rec.why, rec.ref, draft, evidence, constraints)
+        if nearer:
+            issues.append(Issue(code="superlative_not_true", severity="revise", where=rec.ref, message=nearer))
+
+    # ---- the sentence is about the first row: "the set closest to eight dollars is ..." has to hold against the rows below it
+    if draft.recommendations and not draft.abstain:
+        nearer = closer_to_the_amount(draft.spoken, draft.recommendations[0].ref, draft, evidence, constraints)
+        if nearer:
+            issues.append(Issue(code="superlative_not_true", severity="revise", where="spoken", message=nearer))
+
+    # ---- nothing is reported from a search that was not made
+    if evidence.searched is not None and "web.search" not in evidence.searched and "web.search" not in evidence.failed_tools and not evidence.web:
+        for where, text in [("spoken", draft.spoken), ("conflict_note", draft.conflict_note or ""),
+                            *((rec.ref, f"{rec.why} {rec.caveat or ''}") for rec in draft.recommendations)]:
+            said = _WEB_HAD_NOTHING.search(text or "")
+            if said:
+                issues.append(Issue(code="search_not_made", severity="revise", where=where,
+                                    message=f"'{said.group(0)}' reports a web search, and no live web search was made for this answer. "
+                                            "Say what the catalog states (a January 2020 price) and that it was not checked on the web; "
+                                            "do not say that nothing was found."))
+                break
 
     # ---- a comparison per ounce needs two prices per ounce
     with_ounce_price = [i.ref for i in priced_pool if i.price_per_oz is not None]
