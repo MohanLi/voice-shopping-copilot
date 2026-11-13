@@ -231,7 +231,8 @@ def echoed_tokens(text: str, user_text: str | None, evidence_text: str = "") -> 
     return out
 
 
-_PLACE = "first|second|third|fourth|fifth"
+_PLACES = ("first", "second", "third", "fourth", "fifth")
+_PLACE = "|".join((*_PLACES, "1st", "2nd", "3rd", "4th", "5th"))      # a recogniser may write "2nd"
 _OPENING_WORDS = r"(?:(?:ok(?:ay)?|and|so|um+|uh+|well|then|but|hey|hm+|alright|right|now|please)[\s,.!]+)*"
 _DEARER_OR_CHEAPER = r"(cheaper|less\s+expensive|more\s+expensive|pricier|costlier)"
 _PRICE_QUESTIONS = (
@@ -263,13 +264,13 @@ def settled_by_prices(asked: str | None, on_screen: list[str], evidence: Evidenc
     asked_about = next((found for pattern in _PRICE_QUESTIONS if (found := pattern.match((asked or "").strip())) is not None), None)
     if asked_about is None:
         return None
-    first, how, second = (group.lower() for group in asked_about.groups())
-    places = _PLACE.split("|")
-    if first == second or max(places.index(first), places.index(second)) >= len(on_screen):
+    one, how, other = (group.lower() for group in asked_about.groups())
+    first, second = (_PLACES[int(word[0]) - 1] if word[0].isdigit() else word for word in (one, other))
+    if first == second or max(_PLACES.index(first), _PLACES.index(second)) >= len(on_screen):
         return None
     prices: list[float] = []
     for place in (first, second):
-        item = evidence.get(on_screen[places.index(place)])
+        item = evidence.get(on_screen[_PLACES.index(place)])
         if item is None:
             return None
         own = {round(value, 2) for value in ([item.price, item.live.price if item.live else None] if isinstance(item, CatalogItem) else [item.price])

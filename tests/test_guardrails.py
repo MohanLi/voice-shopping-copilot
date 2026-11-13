@@ -618,6 +618,10 @@ def test_a_yes_or_no_about_two_prices_agrees_with_the_prices() -> None:
         True, "the first one ($14.95) is more expensive than the third one ($12.33)")
     assert settled_by_prices("Um, so is the second less expensive than the third one then?", on_screen, evidence) == (
         True, "the second one ($11.67) is less expensive than the third one ($12.33)")
+    assert settled_by_prices("Okay, and is the 2nd one cheaper than the 1st?", on_screen, evidence) == (                   # as a recogniser may write it
+        True, "the second one ($11.67) is cheaper than the first one ($14.95)")
+    assert settled_by_prices("the second one's cheaper than the first, right?", on_screen, evidence) == (                 # the statement with a tag
+        True, "the second one ($11.67) is cheaper than the first one ($14.95)")
     # Left to the model: a negated question, a choice, a second part, a name, a place that is not on screen, the same place twice.
     for asked in ("Isn't the first one cheaper than the second?", "Is the first one not cheaper than the second?", "Which is cheaper, the first or the second?",
                   "Is the first one cheaper than the second, and is it in stock?", "Is the Tsuro cheaper than the second one?",

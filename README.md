@@ -13,7 +13,7 @@ reply as it is spoken. Stretches in which nothing changes on screen are cut shor
 the two-CPU build workspace, which is slower than the laptop the system is built for (a median turn of 13.5 s
 against 8.4 s). Made by [`frontend/e2e/demo.cjs`](frontend/e2e/demo.cjs).*
 
-> **Status (12 November 2026): the system runs end to end and has been evaluated seven times with ProofAgent,
+> **Status (13 November 2026): the system runs end to end and has been evaluated seven times with ProofAgent,
 > the last three times on a laptop against live web search.**
 > Built and tested: data pipeline, hybrid retrieval, the MCP server, the agents, speech in and out, the API, the
 > web UI, and the evaluation with its scorecards and twenty-seven failure analyses
