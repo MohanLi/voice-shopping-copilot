@@ -118,8 +118,8 @@ product is for: "is the first one safe to use, we have a toddler at home", asked
 cleaner, sets no age (in code, `agents.router.not_the_childs`, and in the Router's prompt). In the fourth
 live run it did set one, and the rule above removed every cleaner for thirteen turns
 ([evaluation.md](evaluation.md), failure 28). The exception is kept narrow, because it switches a safety rule
-off: it applies to household chemicals only, and never to a product whose name says it is for play or for the
-child (a toy vacuum cleaner, pipe cleaners, a nail polish kit keep the age and the rule). The household is answered instead with one more fixed sentence
+off: it applies to household chemicals only, and never to a product whose name says it is a thing for play
+(a toy vacuum cleaner, pipe cleaners, a nail polish kit keep the age and the rule). The household is answered instead with one more fixed sentence
 next to the one about labels and mixing: "Keep cleaning products out of the reach of children.
 
 ## 5. Privacy and data

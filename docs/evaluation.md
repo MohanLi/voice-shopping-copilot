@@ -1356,8 +1356,8 @@ had not been run against a product that is nobody's toy.
 - An age is not kept when the product in question is a cleaning product (`agents.router.not_the_childs`; what
   counts as one is `guardrails.policy.is_chemical`, which the safety note already used). This is code, and it
   applies to the request, to the request in force and, when the request names no product, to the products on
-  screen. It is deliberately narrow, because it switches a safety rule off: a product whose name says it is for
-  play or for the child keeps the age, so "a toy vacuum cleaner for my two-year-old" and "pipe cleaners for my
+  screen. It is deliberately narrow, because it switches a safety rule off: a product whose name says it is a
+  thing for play keeps the age, so "a toy vacuum cleaner for my two-year-old" and "pipe cleaners for my
   toddler's crafts" are still answered under the rule for children under three. The first version of the fix
   was not narrow: it dropped the age for any product with "cleaner" or "polish" in its name. Reading the
   change again the same night found that before it left the workspace.

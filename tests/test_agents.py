@@ -1418,8 +1418,8 @@ def test_a_toddler_in_the_home_is_not_who_a_cleaner_is_for() -> None:
         assert routed.constraints.age_years is not None and routed.constraints.age_years < 3, product
     assert not policy.is_chemical("toy vacuum cleaner") and not policy.is_chemical("pipe cleaners, 100 count") and not policy.is_chemical("nail polish kit")
     assert policy.is_chemical("stainless steel cleaner") and policy.is_chemical("furniture polish") and policy.is_chemical("Vacuum cleaner filter cleaner spray")
-    for product in ("bleach", "laundry detergent", "all-purpose cleaner", "drain opener"):
-        assert not_the_childs(Constraints(product=product, age_years=2.0), product), product
+    for product in ("bleach", "laundry detergent", "all-purpose cleaner", "drain opener", "stainless steel cleaner safe for toddlers", "baby laundry detergent"):
+        assert not_the_childs(Constraints(product=product, age_years=2.0), product), product       # the adult's product, whoever is named with it
     # With no product in the request, the products on screen decide, and all of them have to be cleaning products.
     assert not_the_childs(Constraints(age_years=2.0), None, "Therapy Stainless Steel Cleaner & Polish", "Method Stainless Steel Cleaner")
     assert not not_the_childs(Constraints(age_years=2.0), None, "Therapy Stainless Steel Cleaner & Polish", "Melissa & Doug Safari Wooden Chunky Puzzle")

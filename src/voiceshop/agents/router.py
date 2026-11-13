@@ -179,8 +179,9 @@ def all_on_screen(text: str, shown: list[dict[str, Any]] | None) -> list[int]:
 
 
 # Words that make a product the child's own, whatever else its name says: a toy vacuum cleaner, pipe cleaners, a nail polish kit.
-_FOR_PLAY = re.compile(r"\b(?:toys?|pretend|play(?:set|house|time|ing)?|kids?|child(?:ren)?|toddlers?|bab(?:y|ies)|dolls?|dollhouse|costumes?|"
-                       r"crafts?|games?|vacuum|pipe|nail|bubbles?|slime|putty|dough|bath)\b", re.I)
+# Things, not people: "a stainless steel cleaner safe for toddlers" is still an adult's cleaner.
+_FOR_PLAY = re.compile(r"\b(?:toys?|pretend|play(?:set|house|time|ing)?|dolls?|dollhouse|costumes?|crafts?|games?|vacuum|pipe|nail|"
+                       r"bubbles?|slime|putty|dough|bath)\b", re.I)
 
 
 def not_the_childs(constraints: Constraints, product: str | None, *on_screen: str | None) -> bool:
@@ -194,9 +195,9 @@ def not_the_childs(constraints: Constraints, product: str | None, *on_screen: st
 
     Decided by the product the request is about; by the products on screen only when the request names none, and then
     every one of them has to be such a product. Only cleaning products and other household chemicals are recognised,
-    and never one whose name says it is for play or for the child: "a toy vacuum cleaner for my two-year-old" and "pipe
-    cleaners for my toddler's crafts" keep the age and the rule. For furniture or an appliance in a home with a toddler
-    the age still stands, which errs on the careful side in a catalog that is mostly toys.
+    and never one whose name says it is a thing for play: "a toy vacuum cleaner for my two-year-old" and "pipe cleaners
+    for my toddler's crafts" keep the age and the rule. For furniture or an appliance in a home with a toddler the age
+    still stands, which errs on the careful side in a catalog that is mostly toys.
     """
     if constraints.age_years is None:
         return False
