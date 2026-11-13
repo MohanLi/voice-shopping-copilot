@@ -203,7 +203,7 @@ rehearsal of the demonstration against live search (13 Nov).
 | 2026-11-12 | Building the web fallback: three replays of the live runs' questions, single turns, the UI check | 0.33 |
 | 2026-11-12 | On the Mac: the third live ProofAgent run (assistant 0.08, harness 0.40) and the refresh's live check turns | 0.50 |
 | 2026-11-12/13 | After the third live run, in the workspace (its ledger: 5.81 since 11 Nov, of which 4.69 is in the rows above): six replays of that run's questions, single turns, the demo recording, the rehearsals of the demonstration and the yes-or-no trials | 1.12 |
-| 2026-11-13 | On the Mac: the fourth live ProofAgent run (assistant 0.11, harness 2.19: seven jury calls retried on Sonnet) and a typed rehearsal | 2.31 |
+| 2026-11-13 | On the Mac: the fourth live ProofAgent run (assistant 0.11, harness 2.19, of which 1.26 for five jury calls retried on Sonnet) and a typed rehearsal | 2.31 |
 | 2026-11-13 | After the fourth live run, in the workspace (its ledger: 6.11 since 11 Nov): nineteen replays of the web-only turn on its recorded results, one replay of the run's thirty questions, single turns | 0.30 |
 | | **Total so far** | **about 12.6 of 50** |
 

@@ -1358,7 +1358,9 @@ had not been run against a product that is nobody's toy.
   applies to the request, to the request in force and, when the request names no product, to the products on
   screen. It is deliberately narrow, because it switches a safety rule off: a product whose name says it is for
   play or for the child keeps the age, so "a toy vacuum cleaner for my two-year-old" and "pipe cleaners for my
-  toddler's crafts" are still answered under the rule for children under three.
+  toddler's crafts" are still answered under the rule for children under three. The first version of the fix
+  was not narrow: it dropped the age for any product with "cleaner" or "polish" in its name. Reading the
+  change again the same night found that before it left the workspace.
 - Router prompt version 7 says whose age `age_years` is, with an eighteenth example: "is the first one safe to
   use, we have a toddler at home".
 - The household is not ignored. When a small child is mentioned next to a cleaning product, the reply carries
@@ -1476,7 +1478,7 @@ the top pick plant-based, which is true; the fourth was about wording. No templa
 product; twice an article was left out by code.
 
 **What this does not show.** Everything in failures 29 and 30 rests on the results of two live turns about
-one kind of product. The cloud workspace cannot reach the search API, so none of it has run against a live
+one kind of product. The build workspace cannot reach the search API, so none of it has run against a live
 search since. The rehearsal command in [demo-script.md](demo-script.md) is that test.
 
 ### Failure 31. "The set closest to eight dollars", one row above a closer one (Router and Answerer; fourth live run)
@@ -1525,9 +1527,9 @@ a presentation. Which of two fitting products goes first remains the model's cho
   between a run and a presentation without a jury.
 - *The jury failed more often than the assistant's code did.* Five of the jury's replies were not valid
   JSON and two calls were refused by the API ("credential validation failed"). The run script retries such
-  calls with a larger model, so five calls went to it and cost $1.26 of the $2.19 the harness spent: a run
-  that had cost $0.40 the time before. Five jury calls failed for good and their ballots are missing. Earlier
-  live runs: three, four and no such retries.
+  calls with a larger model; the report counts five calls to it, and they cost $1.26 of the $2.19 the harness
+  spent, on a run that had cost $0.40 the time before. Five jury calls failed for good and their ballots are
+  missing. Earlier live runs: three, four and no such retries.
 - *The harness then refused to write its own evidence record.* It counts the reason for a retry under the
   label "LLMError", and its export accepts only "a short lower-case label". The report on disk is left as the
   harness wrote it; the copy handed to the export has the label respelled (`report_for_record`), and the
@@ -1541,6 +1543,7 @@ a presentation. Which of two fitting products goes first remains the model's cho
   sections describe; on none did more than half of the jury object.
 - *Two warnings filled the terminal during the run* (a phonemizer notice per spoken reply, a logging notice
   from the model client). Both are harmless and both are now set to errors only.
+
 ## 5. What eight runs show, and what is still wrong
 
 **The score has been flat since run 2, and that is the finding.** 87%, then 95%, 95%, 94%, and on the laptop
