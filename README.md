@@ -20,8 +20,8 @@ against 8.4 s). Made by [`frontend/e2e/demo.cjs`](frontend/e2e/demo.cjs).*
 > ([docs/evaluation.md](docs/evaluation.md)). The last run lost five turns to one line of my own code. A live
 > turn with the assignment's own example then showed two more faults, and rehearsals of the demonstration two
 > more. All of it is fixed and tested, and none of it has been before a jury yet.
-> Not done yet: the slides (the demonstration itself is scripted in [docs/demo-script.md](docs/demo-script.md)),
-> a run with a second model provider, and a container image.
+> Not done yet: a rehearsal of the demonstration on the laptop (it is scripted in
+> [docs/demo-script.md](docs/demo-script.md)), a run with a second model provider, and a container image.
 > [PROGRESS.md](PROGRESS.md) is the build log; [docs/objectives.md](docs/objectives.md) lists every requirement
 > of the assignment with where it is met.
 

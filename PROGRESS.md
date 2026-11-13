@@ -1,6 +1,6 @@
 # PROGRESS — Voice Shopping Copilot build log
 
-**Last updated:** 2026-11-13 00:15 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
+**Last updated:** 2026-11-13 00:22 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
 (`~/Desktop/2026 Autumn/Applied Generative AI/Final Project/voice-shopping-copilot`).
 **The folder on the Mac is the source of truth.**
 
@@ -120,8 +120,9 @@ query instruction for the embedding model, category names matched by their words
 4. The voice sample page (record real speakers for the speech evaluation).
 5. The presentation. Done: `docs/demo-script.md`, the seven minutes turn by turn with what to say and point at, a
    checklist, fallbacks and the numbers with their sources; rehearsed here on sample data (which is how failures
-   26 and 27 were found). Open: a rehearsal on the laptop with live search and a microphone, and the four slides
-   (described in the script; build them when Kevin says how he wants them).
+   26 and 27 were found). Open: a rehearsal on the laptop with live search and a microphone. A first draft of the four slides is a
+   deck in Kevin's Claude artifacts ("Voice Shopping Copilot: demo slides", built 13 Nov, not checked by eye);
+   update its evaluation slide after `live4`, and ask Kevin whether he wants it as PowerPoint.
 6. Prompt disclosure (5 points of the rubric): `prompts/README.md` opens with the assignment's own list and
    where each item is; the root README links to it. Check it again whenever a prompt file is added.
 

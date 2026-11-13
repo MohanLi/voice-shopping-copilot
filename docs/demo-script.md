@@ -9,7 +9,8 @@ the "say" column is a suggestion in plain words; the turns and what to point at 
 **Status.** The four turns were rehearsed on 12 November in the build workspace, with the live model and the
 sample web data. The rehearsals found two faults, which are fixed ([failures 26 and 27](evaluation.md)). They have
 not been rehearsed on the laptop with live search and a microphone. Do that once before presenting; the command is in
-the last section. The four slides are described here and not built yet.
+the last section. A first draft of the four slides exists as a separate deck (not in this repository); its
+evaluation slide shows the seven runs and is to be updated when the eighth is in.
 
 ## Minute by minute
 

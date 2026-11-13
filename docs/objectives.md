@@ -164,7 +164,7 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 | D9 | Checkpoint 1: proposal, problem definition, data slice, tools, ingestion notebook, related work | `docs/checkpoints/checkpoint1.md`, `notebooks/01_data_ingestion.ipynb`, `docs/related-work.md` | ✅ |
 | D10 | Checkpoint 2: architecture diagram, LangGraph flow, MCP/tool calls, UI wireframe, RAG evaluation plan, MCP README + schemas, initial ProofAgent plan | `docs/checkpoints/checkpoint2.md` (each item in short, with the document that holds it in full) | ✅ |
 | D11 | Repository with clean code and README | repo: README with the measured results and a map of the documents; 641 tests and a lint check, run by `scripts/mac_refresh.sh` | ✅ |
-| D12 | ≤7-minute live demo and short presentation | `docs/demo-script.md`: four live turns and four slides in 6 minutes 40, what to say and point at, a checklist, fallbacks, the numbers with their sources. Rehearsed on sample data in the build workspace; to be rehearsed on the laptop with live search and a microphone. The slides are described there and not built | 🔄 |
+| D12 | ≤7-minute live demo and short presentation | `docs/demo-script.md`: four live turns and four slides in 6 minutes 40, what to say and point at, a checklist, fallbacks, the numbers with their sources. Rehearsed on sample data in the build workspace; to be rehearsed on the laptop with live search and a microphone. A first draft of the four slides exists as a separate deck; its numbers are those of seven runs | 🔄 |
 
 ## 3. Beyond the requirements
 
