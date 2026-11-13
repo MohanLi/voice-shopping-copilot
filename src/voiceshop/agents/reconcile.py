@@ -23,11 +23,13 @@ from __future__ import annotations
 
 import re
 import time
+from collections import Counter
 from typing import Any
+from urllib.parse import urlparse
 
 from rapidfuzz import fuzz
 
-from voiceshop.agents.rules import short_name
+from voiceshop.agents.rules import one_product_page, short_name
 from voiceshop.agents.state import CatalogItem, Constraints, Evidence, LiveOffer, TurnState, WebItem, step
 
 MATCH_THRESHOLD = 0.72            # below this a web result is not treated as the same product
@@ -154,19 +156,105 @@ def _product_words(title: str) -> list[str]:
     return seen
 
 
-def text_about(offer: WebItem, page: WebItem) -> str | None:
+def site_label(item: WebItem) -> str:
+    """The name in a result's own address: "therapyclean" for https://therapyclean.com/products/..., "example" for shop.example.co.uk."""
+    host = (urlparse(item.url or "").netloc or item.source or "").lower().split(":")[0]
+    parts = [part for part in host.split(".") if part and part != "www"]
+    if len(parts) >= 3 and len(parts[-1]) == 2 and parts[-2] in ("co", "com", "org", "net", "ac"):
+        parts = parts[:-1]                                    # example.co.uk
+    return re.sub(r"[^a-z0-9]", "", parts[-2] if len(parts) >= 2 else "".join(parts[:1]))
+
+
+def sold_by_its_site(offer: WebItem, page: WebItem) -> bool:
+    """Whether the store of a listing is the site ``page`` is on: "Therapy Clean" and therapyclean.com, "The Plant Connector" and theplantconnector.com."""
+    label = site_label(page)
+    labels = {label, label.removeprefix("the")} - {""}
+    seller = re.sub(r"[^a-z0-9]", "", (offer.source or "").lower())
+    return bool(seller) and (seller in labels or seller.removeprefix("the") in labels)
+
+
+def kind_words(web: list[WebItem]) -> frozenset[str]:
+    """The words that most results of a turn have in their titles: they name the kind of product looked for, not a product.
+
+    "Stainless", "steel" and "cleaner" for a search for stainless steel cleaners. A listing whose whole name is made of
+    such words ("Stainless Steel Cleaner", $7.50 at some store) is named by its kind alone, and every page about a
+    cleaner of that kind has its name in the title. With fewer than three results nothing can be told.
+    """
+    titles = [set(_product_words(w.title)) for w in web if not w.flagged]
+    if len(titles) < 3:
+        return frozenset()
+    counts = Counter(word for words in titles for word in words)
+    return frozenset(word for word, n in counts.items() if 2 * n > len(titles))
+
+
+def makers_words(offer: WebItem, page: WebItem) -> set[str]:
+    """The leading words of a listing's title that are the name of the site ``page`` is on: {"therapy"} on therapyclean.com.
+
+    A maker's own page seldom repeats the maker's name in its title: the address carries it. The listing "Therapy
+    Stainless Steel Cleaner & Polish", sold by Therapy Clean, and the page "Stainless Steel Cleaner & Polish 16 oz." at
+    therapyclean.com were one product and stayed two rows, the first with a price and "no source states its ingredients",
+    the second with "natural coconut oil" and no price (the fourth live run, the assignment's own example).
+
+    The words count when they spell the site's name in full ("Koala Eco" on koalaeco.com, whoever sells it), or when
+    they begin it and the listing is sold by that site itself ("Therapy ...", sold by Therapy Clean). A first word that
+    merely begins like some site ("Plant-Based ..." and theplantconnector.com) names nobody.
+    """
+    label = site_label(page)
+    labels = {label, label.removeprefix("the")} - {""}
+    own_listing = sold_by_its_site(offer, page)
+    tokens = _norm(offer.title).split()
+    for count in (3, 2, 1):
+        name = "".join(tokens[:count])
+        if len(name) < 5 or len(tokens) <= count:
+            continue
+        if name in labels or (own_listing and any(known.startswith(name) for known in labels)):
+            return {_singular(token) for token in tokens[:count]}
+    return set()
+
+
+def page_of(offer: WebItem, page: WebItem, kind: frozenset[str] = frozenset()) -> bool:
+    """Whether ``page`` as a whole is the page of the one product ``offer`` lists: the two are one product, found twice.
+
+    Either the page's title holds the listing's whole name, or it holds the name without the maker's words and the
+    maker's name stands in the page's address (:func:`makers_words`). Two things it is not:
+
+    - an article, whatever its title. "7 Best Stainless Steel Cleaners 2026 Reviewed" contains every word of a listing
+      sold as "Stainless Steel Cleaner", and "our pick is plant-based" is said there of some other cleaner;
+    - any page about that kind of product, for a listing named by its kind alone (``kind``, :func:`kind_words`).
+      "Stainless Steel Cleaner", $7.50 at a marketplace store, is not the "Plant-Based Stainless Steel Cleaner" of
+      another maker's site, unless that site is the store that lists it.
+    """
+    words = _product_words(offer.title)
+    if len(words) < MIN_SHARED_WORDS or page.price is not None or not one_product_page(page):
+        return False
+    title_words = set(_product_words(page.title))
+    if all(_in(w, title_words) for w in words):
+        return any(w not in kind for w in words) or sold_by_its_site(offer, page)
+    maker = makers_words(offer, page)
+    named = [w for w in words if w not in maker]
+    return bool(maker) and len(named) >= 2 and all(_in(w, title_words) for w in named)
+
+
+def text_about(offer: WebItem, page: WebItem, kind: frozenset[str] = frozenset()) -> str | None:
     """The part of ``page`` that is about the product in ``offer``, or None.
 
-    A page whose title names the product is about it as a whole. A page that only mentions it
-    (a round-up of several products) contributes just the sentences that name its first word,
-    so one product's "plant-based" is not credited to the product in the next sentence.
+    The product's own page is about it as a whole (:func:`page_of`), and so is an article whose title holds the whole
+    name of a named product (a review of that one product). A page that only mentions the product (a round-up of
+    several products) contributes just the sentences that name its first word, so one product's "plant-based" is not
+    credited to the product in the next sentence. A listing named by its kind alone (``kind``) is mentioned by every
+    page about that kind of product: none of them is credited to it.
     """
     words = _product_words(offer.title)
     if len(words) < MIN_SHARED_WORDS:
         return None
     title_words = set(_product_words(page.title))
-    if all(_in(w, title_words) for w in words):
+    if page_of(offer, page, kind):
         return f"{page.title}. {page.snippet}"
+    named = any(w not in kind for w in words)
+    if all(_in(w, title_words) for w in words):
+        return f"{page.title}. {page.snippet}" if named else None
+    if not named:
+        return None
     everything = title_words | set(_product_words(page.snippet))
     if not all(_in(w, everything) for w in words):
         return None
@@ -198,9 +286,10 @@ def link_descriptions(web: list[WebItem]) -> None:
         offer.described_by, offer.claims_elsewhere, offer.cautions_elsewhere = [], {}, {}
     offers = [w for w in web if w.price is not None and not w.flagged]
     pages = [w for w in web if w.price is None and not w.flagged and w.snippet]
+    kind = kind_words(web)
     for offer in offers:
         for page in pages:
-            passage = text_about(offer, page)
+            passage = text_about(offer, page, kind)
             if not passage:
                 continue
             claims = [c for c in stated_claims(passage) if c not in offer.claims]
@@ -211,6 +300,25 @@ def link_descriptions(web: list[WebItem]) -> None:
                     offer.claims_elsewhere[page.ref] = claims
                 if cautions:
                     offer.cautions_elsewhere[page.ref] = cautions
+
+
+def own_pages(web: list[WebItem]) -> dict[str, list[WebItem]]:
+    """For each priced listing that is joined to its product's own page (:func:`page_of`): the listing's ref -> those pages.
+
+    Only pages already linked by :func:`link_descriptions` count, so a page that states nothing about the product
+    joins nothing. A page that describes several listings (the same cleaner at two stores) belongs to the first.
+    """
+    by_ref = {w.ref: w for w in web}
+    joined: dict[str, list[WebItem]] = {}
+    taken: set[str] = set()
+    kind = kind_words(web)
+    for offer in web:
+        for ref in offer.described_by:
+            page = by_ref.get(ref)
+            if page is not None and ref not in taken and page_of(offer, page, kind):
+                joined.setdefault(offer.ref, []).append(page)
+                taken.add(ref)
+    return joined
 
 
 def _rank_offer(web: WebItem, score: float) -> tuple[float, int, int, float]:

@@ -1,6 +1,6 @@
 ---
 name: router
-version: 6
+version: 7
 used_by: LangGraph node `router` (voiceshop.agents.router) — intent classification, constraint extraction, safety detection, and the choice of fixed sentences for anything that is not a product request. Output schema - RouteDecision.
 rules:
   - "Classify the request as product_search (the default when in doubt), follow_up, compare, chitchat, out_of_scope or unsafe."
@@ -29,7 +29,7 @@ A message often mixes things. Read every sentence. If any part of it is an ordin
 2. CONSTRAINTS - only what the user said. Never guess a budget, a brand or a category.
 - product: what they want in a few plain words, without the constraints ("wooden jigsaw puzzle", "stainless steel cleaner").
 - budget_max / budget_min: "under twenty dollars" -> budget_max 20. "around thirty" -> budget_max 30. "between ten and twenty" -> 10 and 20.
-- age_years: age of the person the product is for. "three year old" -> 3. "eighteen months" -> 1.5. If no age is given but the recipient is a newborn or infant use 0.25, a baby 0.75, a toddler 2. Otherwise leave it empty.
+- age_years: age of the person the product is for. "three year old" -> 3. "eighteen months" -> 1.5. If no age is given but the recipient is a newborn or infant use 0.25, a baby 0.75, a toddler 2. Otherwise leave it empty. A child who lives in the home but will not use the product (a cleaner, an appliance, furniture: "we have a toddler") is not the person it is for: leave age_years empty, say who is in the home in recipient, and name the concern in safety_reason.
 - brand, category, materials: only if named.
 - must_have: other properties they asked for (theme, size, piece count, "eco-friendly", "educational").
 - avoid: things they do not want ("batteries", "small parts", "plastic").
@@ -80,6 +80,9 @@ User: "recommend an eco friendly stainless steel cleaner under fifteen dollars"
 
 User: "is the second one in stock right now"   (products are on screen)
 -> intent follow_up; refers_to [2]; constraints: wants_current_info true; safety ok.
+
+User: "is the first one safe to use, we have a toddler at home"   (three stainless steel cleaners are on screen)
+-> intent follow_up; refers_to [1]; constraints: recipient "home with a toddler" (no age: the cleaner is not for the child); safety caution (cleaning product in a home with a small child).
 
 User: "something for my baby to chew on"
 -> intent product_search; constraints: product "teething toy", age_years 0.75, recipient "baby"; safety caution (child under three).

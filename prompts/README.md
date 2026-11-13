@@ -16,7 +16,7 @@ the system ever gave you can see exactly which wording produced it.
 | Tool-call instructions | [`retriever.md`](retriever.md), and the descriptions of the two tools that the MCP server publishes and the models read (see "Tool descriptions are prompts too" below) |
 | Answerer/Critic prompts | [`answerer.md`](answerer.md), [`critic.md`](critic.md) |
 | Guardrail instructions | [`safety_policy.md`](safety_policy.md), included word for word in the Router's, the Answerer's and the Critic's prompt. The guardrails that are code and not instructions are listed under "What is deliberately *not* left to a prompt". |
-| Few-shot examples | Inside the files that use them: seventeen routing examples in `router.md`, seven finding / no-finding examples in `critic.md`. The other prompts have no examples section; a rule that needs an illustration carries it in its own sentence (`"Funko Pop! Star Wars …" → "Funko"` in `catalog_enrichment.md`). |
+| Few-shot examples | Inside the files that use them: eighteen routing examples in `router.md`, seven finding / no-finding examples in `critic.md`. The other prompts have no examples section; a rule that needs an illustration carries it in its own sentence (`"Funko Pop! Star Wars …" → "Funko"` in `catalog_enrichment.md`). |
 
 The three remaining files are prompts of offline steps (data enrichment and the two sets of benchmark
 requests); they are disclosed for the same reason and no agent uses them at run time.
@@ -36,13 +36,13 @@ requests); they are disclosed for the same reason and no agent uses them at run 
 | [`eval_paraphrase_generation.md`](eval_paraphrase_generation.md) | offline evaluation step `voiceshop eval make-queries --paraphrase` — same module | one request per product that uses no word of the product's title (checked by code, sent back with the offending words when it does) | `ParaphraseBatch` |
 
 There is no separate "system prompt" for the assistant as a whole: each agent has its own, listed above. The
-few-shot examples used are inside the files that use them (`router.md` has seventeen routing examples, `critic.md`
+few-shot examples used are inside the files that use them (`router.md` has eighteen routing examples, `critic.md`
 has seven finding / no-finding examples). Each file's header also carries a short `rules:` list, the prompt's
 operative rules one line each; the document the ProofAgent evaluation is given as the system's instructions is
 generated from those lists, the safety policy and the fixed sentences (`voiceshop eval proofagent` writes it to
 `eval/proofagent/context/system_prompt.md`).
 
-Current versions: router 6, planner 4, retriever 3, answerer 12, critic 7, safety policy 4. What changed in each
+Current versions: router 7, planner 4, retriever 3, answerer 13, critic 8, safety policy 4. What changed in each
 and why is in [docs/evaluation.md](../docs/evaluation.md) and [docs/decisions.md](../docs/decisions.md).
 
 **Tool descriptions are prompts too.** The models read the descriptions of `rag.search` and `web.search` that the

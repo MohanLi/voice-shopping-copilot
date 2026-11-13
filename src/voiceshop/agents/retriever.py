@@ -357,6 +357,35 @@ def web_fallback_calls(deps: Deps, constraints: Constraints, records: list[ToolR
 PRICE_LOOKUPS = 2
 
 
+MARKETPLACES = frozenset({"amazon", "walmart", "target", "ebay", "etsy", "homedepot", "lowes", "wayfair", "costco", "bestbuy", "macys", "kohls",
+                          "google", "samsclub", "acehardware", "walgreens", "cvs", "iherb", "chewy", "instacart"})
+
+
+def lookup_pages(constraints: Constraints, builder: EvidenceBuilder) -> list[WebItem]:
+    """The pages a look-up by name is for: each is about one product, states the quality the shopper asked for, and gives no price.
+
+    Pages that state the quality in the shopper's own word come first, then those that state a related one ("natural" for
+    "plant-based"). Articles are left out (``rules.one_product_page``).
+    """
+    wishes = {wish.lower() for wish in constraints.must_have}
+    pages = [w for w in builder.web.values() if not w.flagged and w.price is None and rules.wish_support(w, constraints) and rules.one_product_page(w)]
+    return sorted(pages, key=lambda page: not any(claim.lower() in wishes for claim in rules.wish_support(page, constraints)))      # stable
+
+
+def lookup_name(page: WebItem) -> str:
+    """What to search the listings for: the page's name for the product, with the name of its site when the title does not say whose it is.
+
+    "Stainless Steel Cleaner & Polish 16 oz." at therapyclean.com, searched as it stands, brought back five makers'
+    cleaners of that name (the fourth live run). The maker's own site says whose it is; a marketplace does not.
+    """
+    from voiceshop.agents.reconcile import _norm, site_label
+
+    name, label = rules.short_name(page), site_label(page)
+    spelled = "".join(_norm(name).split())
+    said = any(known in spelled for known in {label, label.removeprefix("the")} - {""})
+    return name if said or not label or label in MARKETPLACES else f"{name} {label}"
+
+
 def price_lookup_calls(deps: Deps, constraints: Constraints, builder: EvidenceBuilder) -> list[tuple[str, dict[str, Any]]]:
     """Shopping searches, by name, for products that a page describes as what the shopper asked for and that no listing prices.
 
@@ -366,32 +395,29 @@ def price_lookup_calls(deps: Deps, constraints: Constraints, builder: EvidenceBu
     products whose pages said plant-based were recommended with "price not stated", beside a priced one that no source
     called eco-friendly. The sample data had hidden this: its listings and its pages were written about the same products.)
 
-    So each such product, at most :data:`PRICE_LOOKUPS`, is looked for among the listings by the name its page gives it.
-    The reconcile step then joins a listing to the page that describes it, as it does for the planned searches. No price
-    limit is sent: a product that costs more than the budget should be seen to, not found to have no price.
+    So each such product, at most :data:`PRICE_LOOKUPS`, is looked for among the listings by the name its page gives it
+    (:func:`lookup_pages`, :func:`lookup_name`). The reconcile step then joins a listing to the page that describes it,
+    as it does for the planned searches. No price limit is sent: a product that costs more than the budget should be
+    seen to, not found to have no price.
 
     Nothing is returned unless the shopper asked for a quality, a page states it, and no priced listing in the evidence
     is of a product such a page describes; nor when live search is off, a web search of this turn failed, the product
     is for a child under three, or the query is one the safety policy does not allow.
     """
-    from voiceshop.agents.reconcile import distinguishing_words as words
-    from voiceshop.agents.reconcile import text_about
+    from voiceshop.agents.reconcile import kind_words, text_about
 
     if not (deps.web_available and constraints.must_have) or any(r.tool == "web.search" and not r.ok for r in builder.records):
         return []
     if constraints.age_years is not None and constraints.age_years < 3:
         return []
-    found = [w for w in builder.web.values() if not w.flagged]
-    pages = [w for w in found if w.price is None and rules.wish_support(w, constraints)]
-    offers = [w for w in found if w.price is not None]
-    if not pages or any(text_about(offer, page) for offer in offers for page in pages):
-        return []
-    asked = words(constraints.product or "")
+    pages = lookup_pages(constraints, builder)
+    offers = [w for w in builder.web.values() if not w.flagged and w.price is not None]
+    kind = kind_words(list(builder.web.values()))
+    if any(text_about(offer, page, kind) for offer in offers for page in pages):
+        return []                                             # one product has both the quality and a price: enough to answer with
     calls: list[tuple[str, dict[str, Any]]] = []
     for page in pages:
-        name = rules.short_name(page)
-        if words(name) <= asked:                              # the title is the kind of product and nothing more: the site says whose it is
-            name = f"{name} {(page.source or '').split('.')[0]}".strip()
+        name = lookup_name(page)
         call = ("web.search", {"query": name[:160], "max_results": 5, "kind": "shopping"})
         if unsafe_query(name) or call_key(*call) in builder.seen_calls or call in calls:
             continue
@@ -399,6 +425,28 @@ def price_lookup_calls(deps: Deps, constraints: Constraints, builder: EvidenceBu
         if len(calls) == PRICE_LOOKUPS:
             break
     return calls
+
+
+def keep_what_was_looked_up(builder: EvidenceBuilder, records: list[ToolRecord], constraints: Constraints) -> int:
+    """Of the listings the look-ups by name brought back, keep those of a product that one of the pages describes; how many were kept.
+
+    A search for a product's name returns that product and four that are named alike. The four were evidence like any
+    other (twenty web results for one request in the fourth live run) and answered nothing that was asked.
+    """
+    from voiceshop.agents.reconcile import kind_words, text_about
+
+    found = {ref for record in records for ref in record.refs}
+    pages = lookup_pages(constraints, builder)
+    kind = kind_words(list(builder.web.values()))
+    kept = 0
+    for address, item in list(builder.web.items()):
+        if item.ref not in found:
+            continue
+        if any(text_about(item, page, kind) for page in pages):
+            kept += 1
+        else:
+            del builder.web[address]
+    return kept
 
 
 def fallback_after_abstention(state: TurnState, deps: Deps) -> list[tuple[str, dict[str, Any]]]:
@@ -562,8 +610,10 @@ def make_retriever_node(deps: Deps):  # type: ignore[no-untyped-def]
             planned += await _run_calls(deps, builder, wider, origin="fallback", round_no=0)
         # A page says a product is what was asked for and no listing prices it: the listings are asked for it by name.
         priced = [] if seeded else price_lookup_calls(deps, constraints, builder)
+        listings = 0
         if priced:
             planned += await _run_calls(deps, builder, priced, origin="price", round_no=0)
+            listings = keep_what_was_looked_up(builder, [record for record in builder.records if record.origin == "price"], constraints)
         model_calls, notes, error = 0, [], None
         if go and rules_mode("retriever"):
             notes = await _rule_round(deps, plan, constraints, builder)
@@ -580,7 +630,7 @@ def make_retriever_node(deps: Deps):  # type: ignore[no-untyped-def]
         summary = (f"{len(builder.records)} tool call(s): {len(evidence.catalog)} catalog product(s), {len(evidence.web)} web result(s)"
                    + (f" | {len(failed)} failed" if failed else "") + (f" | constraints loosened: {', '.join(evidence.relaxed)}" if evidence.relaxed else "")
                    + (" | nothing close in the catalog, so the live web was searched as well" if wider else "")
-                   + (f" | {len(priced)} product(s) described without a price were looked up among the listings" if priced else ""))
+                   + (f" | {len(priced)} product(s) described without a price were looked up among the listings: {listings} listing(s) of them found" if priced else ""))
         return {
             "evidence": evidence,
             "tool_log": builder.records,

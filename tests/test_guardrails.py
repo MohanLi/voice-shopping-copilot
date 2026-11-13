@@ -695,3 +695,15 @@ def test_the_catalog_price_of_the_product_a_live_listing_was_matched_to_may_be_s
     assert ungrounded(Evidence(catalog=[game], web=[listing])) == []
     unmatched = listing.model_copy(update={"matched_ref": None})                    # not the same product as far as the evidence knows: the price is someone else's
     assert ungrounded(Evidence(catalog=[game], web=[unmatched])) == ["W1", "spoken"]
+
+
+def test_naming_the_request_is_not_a_claim_about_the_product() -> None:
+    """A rehearsal of the demonstration: the third row's caveat said the cleaner "contains petroleum distillates according to a
+    review page, which works against the eco-friendly request". The claim rule read "eco-friendly" as said of the cleaner, the
+    revision kept the phrase, and the template replaced an answer in which nothing was wrong."""
+    from voiceshop.guardrails.output import _claims_in
+
+    assert _claims_in("Contains petroleum distillates according to a review page, which works against the eco-friendly request.") == []
+    assert _claims_in("It misses your eco-friendly requirement and the non-toxic criterion.") == []
+    assert [name for name, _ in _claims_in("An eco-friendly cleaner that streaks.")] == ["eco-friendly"]
+    assert [name for name, _ in _claims_in("It meets the request: eco-friendly and cheap.")] == ["eco-friendly"]

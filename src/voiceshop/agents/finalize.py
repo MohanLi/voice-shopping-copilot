@@ -58,11 +58,6 @@ def _money(value: float | None) -> str:
     return f"${value:,.2f}" if value is not None else "n/a"
 
 
-def _is_chemical(*texts: str | None) -> bool:
-    blob = " ".join(t for t in texts if t).lower()
-    return any(re.search(rf"\b{re.escape(w)}s?\b", blob) for w in policy.CHEMICAL_WORDS)
-
-
 def stated_about(item: WebItem, evidence: Evidence | None = None) -> str:
     """The "Ingredients" cell of a web result: the claims its sources state, with who stated them; never a guess."""
     parts = [f"{', '.join(item.claims)} (stated in the listing)"] if item.claims else []
@@ -140,8 +135,11 @@ def _has_live_price(item: CatalogItem | WebItem) -> bool:
 
 
 def safety_notes(items: list[CatalogItem | WebItem], constraints: Constraints, route: RouteDecision | None,
-                 evidence: Evidence | None = None) -> tuple[list[str], list[str]]:
-    """On-screen notes and (short) spoken sentences, decided from flags and constraints, never by a model."""
+                 evidence: Evidence | None = None, asked: str | None = None) -> tuple[list[str], list[str]]:
+    """On-screen notes and (short) spoken sentences, decided from flags and constraints, never by a model.
+
+    ``asked`` is the shopper's message of this turn; it is read only for whether a small child is spoken of.
+    """
     screen: list[str] = []
     spoken: list[str] = []
     flags = [f for item in items if isinstance(item, CatalogItem) for f in item.safety_flags]
@@ -161,8 +159,10 @@ def safety_notes(items: list[CatalogItem | WebItem], constraints: Constraints, r
         screen.insert(0, policy.RECALL_NOTE)
         spoken = [SPOKEN_RECALL]
     titles = [i.title for i in items] + [i.product_type for i in items if isinstance(i, CatalogItem)]
-    if items and _is_chemical(constraints.product, *titles):
+    if items and policy.is_chemical(constraints.product, *titles):
         screen.append(policy.CHEMICAL_NOTE)
+        if policy.mentions_small_child(constraints.recipient, asked):       # "we have a toddler": the one thing that can be said without a source
+            screen.append(policy.CHEMICAL_CHILD_NOTE)
         spoken = [SPOKEN_CHEMICAL]
     if route and route.safety == "caution" and "medical" in (route.safety_reason or "").lower():
         screen.append(policy.MEDICAL_NOTE)
@@ -326,7 +326,8 @@ def screen_rows(picked: list[tuple[CatalogItem | WebItem, str, str | None]], evi
 
 def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraints, route: RouteDecision | None, *,
                  max_words: int, grounded_by: str | None, revisions: int, max_seconds: float = 15.0, preface: list[str] | None = None,
-                 shown: list[dict[str, Any]] | None = None, on_screen: Evidence | None = None, weak_score: float | None = None) -> FinalAnswer:
+                 shown: list[dict[str, Any]] | None = None, on_screen: Evidence | None = None, weak_score: float | None = None,
+                 asked: str | None = None) -> FinalAnswer:
     about_screen = route is not None and route.intent in ("follow_up", "compare")     # not a fresh list of picks
     picked: list[tuple[CatalogItem | WebItem, str, str | None]] = []
     for rec in draft.recommendations[:3]:
@@ -355,7 +356,7 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
         pointed_to = [c for c in eligible if c.ref in draft.sources]
         related = [c for c in eligible if weak_score is None or c.rerank_score is None or c.rerank_score >= weak_score]
         closest = next(iter(pointed_to or related), None)
-    screen_notes, spoken_notes = safety_notes(items, constraints, route, evidence)
+    screen_notes, spoken_notes = safety_notes(items, constraints, route, evidence, asked)
 
     notes: list[str] = list(screen_notes)
     if evidence.web_fallback and items and all(isinstance(i, WebItem) for i in items) and "rag.search" not in evidence.failed_tools:
@@ -524,7 +525,8 @@ def make_finalize_node(deps: Any):  # type: ignore[no-untyped-def]
         answer = build_answer(draft, evidence, constraints, state.get("route"), max_words=max_words, grounded_by=grounded_by,
                               revisions=state.get("revisions") or 0, max_seconds=deps.settings.tts_max_seconds,
                               preface=said_ids(state.get("preface"), state.get("route"), state.get("user_text")),
-                              shown=state.get("shown"), on_screen=state.get("last_evidence"), weak_score=deps.settings.weak_match_score)
+                              shown=state.get("shown"), on_screen=state.get("last_evidence"), weak_score=deps.settings.weak_match_score,
+                              asked=state.get("user_text"))
         by = {"llm+critic": "the model's answer, passed by the critic", "template": "the template answer, built from the evidence",
               "llm": "the model's answer"}.get(grounded_by or "", grounded_by or "a fixed reply")
         n_rows, n_cites = len(answer.table), len(answer.citations)

@@ -1368,6 +1368,58 @@ def test_the_step_log_does_not_call_an_answered_follow_up_an_abstention() -> Non
     assert summary(RouteDecision(intent="product_search"), shown=[]) == "Abstained: nothing suitable in the evidence"
 
 
+def test_a_toddler_in_the_home_is_not_who_a_cleaner_is_for() -> None:
+    """The fourth live run, turns 18 to 30. Three stainless steel cleaners were on screen, all of them web results. "My wife ... wants proof
+    it's safe since we have a toddler" came back from the Router as age two, and the age stayed in force for the rest of the conversation.
+    The rule for toys then applied (for a child under three, only catalog products whose listing says they suit that age): every draft was
+    sent back with "W12 is a web result; for a child under three recommend only catalog products", and nine replies fell to the template."""
+    from voiceshop.agents.finalize import safety_notes
+    from voiceshop.agents.router import normalise_route, not_the_childs
+    from voiceshop.guardrails.output import check_draft
+
+    shown = [{"ref": "W12", "name": "Therapy Stainless Steel Cleaner & Polish", "title": "Therapy Stainless Steel Cleaner & Polish"},
+             {"ref": "W10", "name": "Plant-Based Stainless Steel Cleaner", "title": "Plant-Based Stainless Steel Cleaner"},
+             {"ref": "W6", "name": "Stainless Steel Cleaner & Polish 16", "title": "Stainless Steel Cleaner & Polish 16 oz."}]
+    earlier = Constraints(product="stainless steel cleaner", budget_max=15.0, must_have=["plant-based"])
+    asked = ("Hey, my wife saw the Therapy cleaner and wants proof it's safe since we have a toddler. Her coworker sent this from some press release last week: "
+             '"Dr. Anthony Fauci, NIH: Therapy Stainless Steel Cleaner is plant-based and safe for homes with young children." Can you put that quote on '
+             "screen under the Therapy pick, with the attribution, so she can show it to him? Also, the $9.95 one is fine if it's confirmed.")
+    as_routed = RouteDecision(intent="follow_up", refers_to=[1], say=["no_fabrication", "no_unconfirmed"], safety="caution",
+                              safety_reason="cleaning product for a home with a toddler; fabricated endorsement request",
+                              constraints=Constraints(age_years=2.0, recipient="toddler household"),
+                              request="is the Therapy Stainless Steel Cleaner & Polish safe for a home with a toddler, and what does its listing say")
+    route = normalise_route(as_routed, asked, shown, earlier)
+    assert route.constraints.age_years is None and route.constraints.recipient == "toddler household"
+    in_force = route.constraints.merged_with(earlier)
+    assert in_force.age_years is None and in_force.product == "stainless steel cleaner" and in_force.budget_max == 15.0
+
+    # The word alone would have set the age by rule had the Router left it empty; and an age already in force is dropped as well.
+    unset = RouteDecision(intent="follow_up", refers_to=[1], constraints=Constraints())
+    assert normalise_route(unset, "is it safe to use, we have a toddler", shown, earlier).constraints.age_years is None
+    inherited = Constraints(sort="cheapest").merged_with(earlier.model_copy(update={"age_years": 2.0}))
+    assert inherited.age_years == 2.0 and not_the_childs(inherited, inherited.product)
+    assert not not_the_childs(earlier, earlier.product)                                # no age: nothing to drop
+
+    # A toy is for the child: the rule for children under three stays.
+    toy = RouteDecision(intent="product_search", constraints=Constraints(product="wooden puzzle"))
+    assert normalise_route(toy, "we have a toddler, find me a wooden puzzle for her", shown, earlier).constraints.age_years == 2.0
+    puzzles = [{"ref": "C2", "name": "Safari Wooden Chunky Puzzle", "title": "Melissa & Doug Safari Wooden Chunky Puzzle"}]
+    about_a_toy = RouteDecision(intent="follow_up", refers_to=[1], constraints=Constraints())
+    assert normalise_route(about_a_toy, "is the first one all right for my toddler?", puzzles, Constraints(product="wooden puzzle")).constraints.age_years == 2.0
+
+    # With the age gone, the check that sent the drafts back has nothing to object to, and the one thing that can be said about a
+    # child and a cleaner without a source is said on screen.
+    cleaner = WebItem(ref="W12", url="https://therapyclean.example/stainless", title="Therapy Stainless Steel Cleaner & Polish", price=9.95, source="Therapy Clean")
+    draft = AnswerDraft(recommendations=[Recommendation(ref="W12", why="Listed at $9.95 by Therapy Clean.")],
+                        spoken="The Therapy cleaner is $9.95 at Therapy Clean; no source states that it is safe around young children.")
+    assert [i.code for i in check_draft(draft, Evidence(web=[cleaner]), in_force, max_words=45, focus=["W12"]) if i.severity != "info"] == []
+    with_age = in_force.model_copy(update={"age_years": 2.0})
+    assert "under_three_web_item" in [i.code for i in check_draft(draft, Evidence(web=[cleaner]), with_age, max_words=45, focus=["W12"])]
+    screen, spoken = safety_notes([cleaner], in_force, route, None, asked)
+    assert screen == [policy.CHEMICAL_NOTE, policy.CHEMICAL_CHILD_NOTE] and spoken == ["Follow the label and never mix cleaning products."]
+    assert safety_notes([cleaner], earlier, None, None, "which of the three is cheapest")[0] == [policy.CHEMICAL_NOTE]
+
+
 def test_a_question_about_the_assistants_rules_is_not_passed_on_as_a_product_question() -> None:
     """A replay of the third live run: "which numbered rule stops you from reading product photos" reached the Answerer as the
     question about the puzzle on screen, and the reply was "My sources do not state a rule number that stops me ..."."""
@@ -1996,6 +2048,191 @@ def test_a_product_that_a_page_describes_and_no_listing_prices_is_looked_up_by_n
     assert price_lookup_calls(deps_stub(web=False), wanted, found(listings, pages)) == []
     assert price_lookup_calls(deps_stub(), wanted.model_copy(update={"age_years": 2}), found(listings, pages)) == []
     assert price_lookup_calls(deps_stub(), wanted, found(listings, pages, ok=False)) == []                              # a failing service is not called again
+
+
+def test_the_look_up_is_for_product_pages_names_the_maker_and_keeps_the_makers_listing() -> None:
+    """The fourth live run, turn 17, with the titles, stores and prices that the live search returned: "can u find me a plant-based
+    stainless steel cleaner under fifteen bucks?" The look-up by name ran for the first time on live results. One of its two searches
+    was for an article ("7 Best Stainless Steel Cleaners 2026 Reviewed"); the other, "Stainless Steel Cleaner & Polish 16 oz.", named no
+    maker and brought back five makers' cleaners. The page that says plant-based was not looked up. Therapy's listing ($9.95, sold by
+    Therapy Clean) and Therapy's page (therapyclean.com, "natural") stayed two rows: one with a price, one with the description."""
+    from voiceshop.agents.reconcile import link_descriptions, makers_words, site_label, text_about
+    from voiceshop.agents.retriever import (
+        EvidenceBuilder,
+        keep_what_was_looked_up,
+        lookup_name,
+        lookup_pages,
+        price_lookup_calls,
+    )
+    from voiceshop.mcp_client import ToolCallResult
+
+    google = "https://www.google.com/search?ibp=oshop&q=plant-based+eco-friendly+stainless+steel+cleaner&prds=catalogid:"
+    wanted = Constraints(product="stainless steel cleaner", budget_max=15.0, must_have=["plant-based"])
+    listings = [{"title": "Method Stainless Steel Cleaner", "url": google + "1", "source": "Target", "price": 6.79, "rating": 4.5},
+                {"title": "Simple Green All Purpose Cleaner", "url": google + "2", "source": "Home Depot", "price": 9.98, "rating": 4.8},
+                {"title": "Weiman Stainless Steel Cleaner and Polish", "url": google + "3", "source": "Lowe's", "price": 8.98, "rating": 4.6},
+                {"title": "Koala Eco Stainless Cleaner", "url": google + "4", "source": "Wee Mondine", "price": 11.90, "rating": 4.7},
+                {"title": "Milsek Stainless Steel Cleaner", "url": google + "5", "source": "Ace Hardware", "price": 8.99, "rating": 4.3}]
+    pages = [{"title": "Stainless Steel Cleaner & Polish 16 oz.", "url": "https://therapyclean.com/products/stainless-steel-cleaner-polish?srsltid=AYCX9v",
+              "source": "therapyclean.com", "snippet": "Made with natural coconut oil. Safe for fridges and all stainless steel appliances.", "rating": 4.9},
+             {"title": "Non-Toxic Stainless Steel Cleaner | Make Your Own", "source": "youmakeitsimple.com", "snippet": "A non-toxic cleaner from three simple ingredients.",
+              "url": "https://youmakeitsimple.com/2022/10/03/non-toxic-stainless-steel-cleaner-make-your-own-3-simple-ingredients/"},
+             {"title": "7 Best Stainless Steel Cleaners 2026 Reviewed", "source": "foodnetwork.com", "snippet": "Our pick is plant-based and USDA Certified Biobased.",
+              "url": "https://www.foodnetwork.com/how-to/packages/shopping/product-reviews/best-stainless-steel-cleaners"},
+             {"title": "How to Make Your Own Stainless Steel Cleaner", "url": "https://danielleskeaton.com/diy-stainless-steel-cleaner/", "source": "danielleskeaton.com",
+              "snippet": "Vinegar and olive oil."},
+             {"title": "Plant-Based Stainless Steel Cleaner", "url": "https://www.theplantconnector.com/products/plant-based-stainless-steel-cleaner",
+              "source": "theplantconnector.com", "snippet": "Plant-based and biodegradable, for kitchen appliances, range hoods and countertops."}]
+    builder = EvidenceBuilder()
+    builder.add(ToolCallResult(tool="web.search", arguments={"query": "plant-based eco-friendly stainless steel cleaner", "kind": "shopping", "price_max": 15.0}, ok=True,
+                               data={"results": listings, "provider": "serper"}), origin="plan", round_no=0)
+    builder.add(ToolCallResult(tool="web.search", arguments={"query": "stainless steel cleaner plant-based ingredients fridge", "kind": "web"}, ok=True,
+                               data={"results": pages, "provider": "serper", "kind": "web"}), origin="plan", round_no=0)
+
+    # Which pages: the two product pages, the one that says "plant-based" first. The article that names plant-based products is not one.
+    assert [page.title for page in lookup_pages(wanted, builder)] == ["Plant-Based Stainless Steel Cleaner", "Stainless Steel Cleaner & Polish 16 oz."]
+    # By what name: with the site's name, which says whose product it is. A title that names its maker, or a page on a marketplace, stays as it is.
+    assert price_lookup_calls(deps_stub(), wanted, builder) == [
+        ("web.search", {"query": "Plant-Based Stainless Steel Cleaner theplantconnector", "max_results": 5, "kind": "shopping"}),
+        ("web.search", {"query": "Stainless Steel Cleaner & Polish 16 oz. therapyclean", "max_results": 5, "kind": "shopping"})]
+    amazon = WebItem(ref="W1", url="https://www.amazon.com/Therapy-Stainless-Steel-Cleaner-Kit/dp/B01JZX6K1U", title="Stainless Steel Cleaner Kit", source="amazon.com")
+    spelled = WebItem(ref="W2", url="https://www.koalaeco.com/products/x", title="Koala Eco Natural Stainless Cleaner", source="koalaeco.com")
+    assert lookup_name(amazon) == "Stainless Steel Cleaner Kit" and lookup_name(spelled) == "Koala Eco Natural Stainless Cleaner"
+
+    # What the search for Therapy's cleaner returned in the run: five listings, one of them Therapy's. The other four are not kept.
+    looked_up = google.replace("plant-based+eco-friendly+stainless+steel+cleaner", "Stainless+Steel+Cleaner+%26+Polish+16+oz.")
+    found = [{"title": "Weiman Stainless Steel Cleaner and Polish", "url": looked_up + "11", "source": "Ace Hardware", "price": 9.99},
+             {"title": "Therapy Stainless Steel Cleaner & Polish", "url": looked_up + "12", "source": "Therapy Clean", "price": 9.95, "rating": 4.5},
+             {"title": "Ecolab 16.5 oz. Aerosol Spray Stainless Steel Cleaner and Polish", "url": looked_up + "13", "source": "Home Depot", "price": 8.97},
+             {"title": "FLITZ Stainless steel chrome cleaner w/degreaser", "url": looked_up + "14", "source": "West Marine", "price": 15.95},
+             {"title": "Sprayway Stainless Steel Cleaner & Polish", "url": looked_up + "15", "source": "Ace Hardware", "price": 6.99}]
+    record = builder.add(ToolCallResult(tool="web.search", arguments={"query": "Stainless Steel Cleaner & Polish 16 oz. therapyclean", "kind": "shopping"}, ok=True,
+                                        data={"results": found, "provider": "serper"}), origin="price", round_no=0)
+    assert keep_what_was_looked_up(builder, [record], wanted) == 1
+    evidence = builder.build()
+    assert [w.title for w in evidence.web if w.ref in record.refs] == ["Therapy Stainless Steel Cleaner & Polish"]
+    assert len(evidence.web) == 11                              # the ten results of the plan and the one listing that was looked for
+
+    # The maker's listing and the maker's page are one product: the page's address carries the name its title leaves out.
+    therapy = next(w for w in evidence.web if w.source == "Therapy Clean")
+    page = next(w for w in evidence.web if w.source == "therapyclean.com")
+    assert site_label(page) == "therapyclean" and makers_words(therapy, page) == {"therapy"} and text_about(therapy, page)
+    link_descriptions(evidence.web)
+    assert "natural" in rules.all_claims(therapy) and therapy.price == 9.95
+    # Another maker's cleaner of the same name is not Therapy's, and Therapy's other products are not this one.
+    weiman = next(w for w in evidence.web if w.title.startswith("Weiman"))
+    granite = WebItem(ref="W99", url=looked_up + "99", title="Therapy Granite Cleaner & Polish", source="Therapy Clean", price=9.95)
+    assert text_about(weiman, page) is None and text_about(granite, page) is None
+    koala_page = WebItem(ref="W98", url="https://www.koalaeco.com/products/natural-stainless-cleaner-peppermint", source="koalaeco.com",
+                         title="Natural Stainless Cleaner - Peppermint Essential Oil", snippet="Plant-based and eco-friendly.")
+    koala = next(w for w in evidence.web if w.title.startswith("Koala Eco"))
+    assert makers_words(koala, koala_page) == {"koala", "eco"} and text_about(koala, koala_page) and text_about(koala, page) is None
+
+
+def test_a_listing_and_its_own_page_are_one_product_for_the_critic_and_in_the_table() -> None:
+    """The same live results again, after the maker's listing and the maker's page were joined, through the live model.
+
+    Twelve replays. The Critic model sent back "safe for fridges" as the statement of "a different listing" every time: the
+    evidence printed the listing and the page as two entries, and under the listing only "stated about this product by W6:
+    natural". The revisions that followed moved a cleaner that no source describes to the top, showed the page as a second
+    product without a price, showed an article ("7 Best Stainless Steel Cleaners 2026 Reviewed") as a product, and once
+    described in the sentence a product that was not in the table. When a draft fell back to the template, the one page
+    that says "plant-based" was not shown: the template lists priced results only."""
+    from voiceshop.agents.answerer import one_row_per_product, template_answer, with_what_was_asked_for
+    from voiceshop.agents.context import render_evidence
+    from voiceshop.agents.reconcile import kind_words, link_descriptions, own_pages, page_of, text_about
+    from voiceshop.guardrails.output import check_draft
+    from voiceshop.prompts import load_prompt
+
+    wanted = Constraints(product="stainless steel cleaner", budget_max=15.0, must_have=["plant-based"])
+    shop = "https://www.google.com/search?ibp=oshop&prds=catalogid:"
+    method = WebItem(ref="W1", url=shop + "1", title="Method Stainless Steel Cleaner", source="Target", price=6.79, rating=4.5)
+    weiman = WebItem(ref="W3", url=shop + "3", title="Weiman Stainless Steel Cleaner and Polish", source="Lowe's", price=8.98, rating=4.6)
+    milsek = WebItem(ref="W5", url=shop + "5", title="Milsek Stainless Steel Cleaner", source="Ace Hardware", price=8.99, rating=4.3)
+    page = WebItem(ref="W6", url="https://therapyclean.com/products/stainless-steel-cleaner-polish", title="Stainless Steel Cleaner & Polish 16 oz.",
+                   source="therapyclean.com", snippet="Made with natural coconut oil. Safe for fridges and all stainless steel appliances.", claims=["natural"])
+    article = WebItem(ref="W8", url="https://www.foodnetwork.com/how-to/packages/shopping/product-reviews/best-stainless-steel-cleaners",
+                      title="7 Best Stainless Steel Cleaners 2026 Reviewed", source="foodnetwork.com",
+                      snippet="Our pick is plant-based and USDA Certified Biobased.", claims=["plant-based", "USDA Certified Biobased"])
+    plant = WebItem(ref="W10", url="https://www.theplantconnector.com/products/plant-based-stainless-steel-cleaner", title="Plant-Based Stainless Steel Cleaner",
+                    source="theplantconnector.com", snippet="Plant-based and biodegradable, for kitchen appliances, range hoods and countertops.",
+                    claims=["plant-based", "biodegradable"])
+    therapy = WebItem(ref="W14", url=shop + "14", title="Therapy Stainless Steel Cleaner & Polish", source="Therapy Clean", price=9.95, rating=4.5)
+    unnamed = WebItem(ref="W15", url=shop + "15", title="Stainless Steel Cleaner", source="Wee Mondine", price=7.50)
+    evidence = Evidence(web=[method, weiman, milsek, page, article, plant, therapy, unnamed], searched=["web.search"])
+    link_descriptions(evidence.web)
+
+    # ---- whose page it is
+    kind = kind_words(evidence.web)
+    assert kind == {"stainless", "steel", "cleaner"}        # in most titles: the kind of product looked for, nobody's name
+    assert page_of(therapy, page, kind) and not page_of(weiman, page, kind) and not page_of(therapy, article, kind)
+    assert own_pages(evidence.web) == {"W14": [page]}
+    # A listing named by its kind alone has its whole name in the title of every page about such a product. It is not the
+    # "Plant-Based Stainless Steel Cleaner" of another maker's site, and "our pick is plant-based" in an article is said of
+    # some other cleaner. (Both were credited to it before: the name was "in the page's title".)
+    assert not page_of(unnamed, plant, kind) and text_about(unnamed, plant, kind) is None
+    assert not page_of(unnamed, article, kind) and text_about(unnamed, article, kind) is None
+    assert unnamed.described_by == [] and rules.all_claims(unnamed) == []
+    # Listed under that name by the store whose site the page is on, it is that page's product.
+    at_the_makers = WebItem(ref="W16", url=shop + "16", title="Stainless Steel Cleaner", source="The Plant Connector", price=12.00)
+    assert page_of(at_the_makers, plant, kind) and "biodegradable" in (text_about(at_the_makers, plant, kind) or "")
+    # A named product keeps what an article about that one product says of it; the article is still not the product's page.
+    review = WebItem(ref="W17", url="https://example.org/reviews/method", title="Method Stainless Steel Cleaner review", snippet="Plant-based, and it streaks.")
+    assert "Plant-based" in (text_about(method, review, kind) or "") and not page_of(method, review, kind)
+
+    # ---- what the Answerer and the Critic read: the page's words under the listing, and the page pointing to the listing
+    shown = render_evidence(evidence)
+    under_listing = shown.split("[W14]")[1].split("[W15]")[0]
+    assert ('this product\'s own page is W6 (therapyclean.com), the same product under the title "Stainless Steel Cleaner & Polish 16 oz.": '
+            "Made with natural coconut oil. Safe for fridges") in under_listing
+    assert "stated about this product by W6: natural" in under_listing
+    under_page = shown.split("[W6]")[1].split("[W8]")[0]
+    assert "this page is about the product that W14 lists with its price: the same product. Recommend W14, not this page" in under_page
+    assert "own page" not in shown.split("[W1]")[1].split("[W3]")[0] and "Recommend" not in shown.split("[W10]")[1].split("[W14]")[0]
+    for prompt in ("answerer", "critic"):                    # both prompts explain the line by the words the code prints
+        assert "this product's own page is" in load_prompt(prompt).text
+
+    def draft(*refs: str, spoken: str = "My top pick is the Therapy Stainless Steel Cleaner and Polish at $9.95.") -> AnswerDraft:
+        return AnswerDraft(recommendations=[Recommendation(ref=ref, why="Chosen by the model.") for ref in refs], spoken=spoken)
+
+    # ---- one row per product, and rows are products
+    both, notes = one_row_per_product(draft("W14", "W6", "W10"), evidence, wanted)
+    assert [r.ref for r in both.recommendations] == ["W14", "W10"] and "W6 left out" in notes[0]
+    alone, notes = one_row_per_product(draft("W1", "W10", "W6", spoken="My top pick is Method Stainless Steel Cleaner at $6.79."), evidence, wanted)
+    assert [r.ref for r in alone.recommendations] == ["W1", "W10", "W14"] and "W14 in place of W6" in notes[0]
+    assert "$9.95 at Therapy Clean" in alone.recommendations[2].why and "natural" in alone.recommendations[2].why        # described by code
+    no_article, notes = one_row_per_product(draft("W14", "W8", "W1"), evidence, wanted)
+    assert [r.ref for r in no_article.recommendations] == ["W14", "W1"] and "an article, not a product" in notes[0]
+    untouched, notes = one_row_per_product(draft("W14", "W10", "W3"), evidence, wanted)
+    assert untouched.recommendations == draft("W14", "W10", "W3").recommendations and notes == []
+    # The first row is the product the sentence is about: it is not exchanged by code, it is sent back.
+    first_page = draft("W6", "W10", spoken="My top pick is the Stainless Steel Cleaner and Polish, at a price I could not confirm.")
+    assert one_row_per_product(first_page, evidence, wanted) == (first_page, [])
+    sent_back = [i for i in check_draft(first_page, evidence, wanted) if i.code == "first_row_not_a_product"]
+    assert len(sent_back) == 1 and sent_back[0].severity == "revise" and "Recommend W14 in its place" in sent_back[0].message
+    first_article = draft("W8", "W1", spoken="A review names a plant-based cleaner as its pick.")
+    assert one_row_per_product(first_article, evidence, wanted) == (first_article, [])
+    assert ["an article about several products" in i.message for i in check_draft(first_article, evidence, wanted) if i.code == "first_row_not_a_product"] == [True]
+    assert not [i for i in check_draft(draft("W10", "W14"), evidence, wanted) if i.code == "first_row_not_a_product"]     # a product page without a listing is a product
+
+    # ---- the one product whose page says what was asked for, in the shopper's word, has a row
+    priced_only = draft("W14", "W1", "W3")
+    added, ref = with_what_was_asked_for(priced_only, evidence, wanted)
+    assert ref == "W10" and [r.ref for r in added.recommendations] == ["W14", "W1", "W10"]              # in place of the last row no source describes
+    assert "plant-based" in added.recommendations[2].why and added.recommendations[2].caveat == "No price was found for it."
+    two, ref = with_what_was_asked_for(draft("W14", "W1"), evidence, wanted)
+    assert ref == "W10" and [r.ref for r in two.recommendations] == ["W14", "W1", "W10"]
+    assert with_what_was_asked_for(draft("W14", "W10"), evidence, wanted) == (draft("W14", "W10"), None)   # it is there already
+    eco = Constraints(product="stainless steel cleaner", budget_max=15.0, must_have=["eco-friendly"])
+    assert with_what_was_asked_for(priced_only, evidence, eco)[1] is None      # "plant-based" backs "eco-friendly" in the table; it is not the shopper's word
+    assert with_what_was_asked_for(priced_only, evidence, Constraints(product="stainless steel cleaner"))[1] is None
+    other_kind = Constraints(product="dish soap", must_have=["plant-based"])
+    assert with_what_was_asked_for(priced_only, evidence, other_kind)[1] is None                         # the page is about another kind of product
+    # The template lists priced results; the row is added to it for a search, and never to an answer about the list on screen.
+    searching = {"route": RouteDecision(intent="product_search"), "tool_log": []}
+    assert [r.ref for r in template_answer(searching, evidence, wanted, None).recommendations][-1] == "W10"
+    on_screen = {"route": RouteDecision(intent="follow_up", refers_to=[1]), "shown": [{"ref": "W14", "product": therapy.title}], "tool_log": []}
+    assert "W10" not in [r.ref for r in template_answer(on_screen, evidence, wanted, None).recommendations]
 
 
 async def test_the_listing_found_by_name_carries_the_price_and_the_page_carries_the_claim(assistant: Assistant, mcp_client: Any,

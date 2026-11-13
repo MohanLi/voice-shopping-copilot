@@ -7,6 +7,7 @@ and ``prompts/safety_policy.md`` is the copy of the policy the models are shown.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 ASSISTANT_SCOPE = "I can help you find and compare products, check prices, and answer questions about items in the catalog."
@@ -209,6 +210,7 @@ UNDER_3_NOTE = (
     "Always check the age label on the packaging."
 )
 CHEMICAL_NOTE = "Cleaning products: follow the label directions, ventilate the room, and never mix products."
+CHEMICAL_CHILD_NOTE = "Keep cleaning products out of the reach of children."
 RECALL_NOTE = "A source states that this product was recalled or discontinued. It is shown so that you know, not as a recommendation."
 WITHDRAWN = ("recalled", "discontinued")       # stated cautions (agents.claims) that mean a product should not be bought
 CATALOG_PRICE_NOTE = "Catalog prices are from a January 2020 snapshot and may have changed."
@@ -237,6 +239,21 @@ CHEMICAL_WORDS = (
     "cleaner", "cleaning spray", "detergent", "bleach", "disinfectant", "degreaser", "polish", "solvent", "drain opener",
     "pesticide", "insecticide", "weed killer", "paint thinner", "adhesive remover", "descaler", "sanitizer",
 )
+
+
+def is_chemical(*texts: str | None) -> bool:
+    """Whether any of the texts names a cleaning product or another household chemical."""
+    blob = " ".join(t for t in texts if t).lower()
+    return any(re.search(rf"\b{re.escape(word)}s?\b", blob) for word in CHEMICAL_WORDS)
+
+
+_SMALL_CHILD = re.compile(r"\b(?:bab(?:y|ies)|toddlers?|infants?|newborns?|(?:small|young|little)\s+(?:child(?:ren)?|kids?|ones?)|"
+                          r"(?:\d+|one|two|three|four|five|six|eighteen|twelve)[\s-]*(?:months?|years?)[\s-]*olds?)\b", re.I)
+
+
+def mentions_small_child(*texts: str | None) -> bool:
+    """Whether a baby, a toddler or a small child is spoken of ("we have a toddler", "homes with young children")."""
+    return any(_SMALL_CHILD.search(t) for t in texts if t)
 
 # Claims that must be backed by the product's own listing text before the assistant may repeat them.
 SENSITIVE_CLAIMS: dict[str, tuple[str, ...]] = {

@@ -178,6 +178,21 @@ def all_on_screen(text: str, shown: list[dict[str, Any]] | None) -> list[int]:
     return []
 
 
+def not_the_childs(constraints: Constraints, *products: str | None) -> bool:
+    """Whether a child's age was read into a request for something the child will not use: a cleaning product.
+
+    An age is the age of whoever the product is for. "My wife wants proof it's safe since we have a toddler", asked about a
+    stainless steel cleaner, came back as age two. That switched on the rule made for toys (for a child under three, only
+    catalog products whose listing says they suit that age). Every cleaner is a web result, so every draft was sent back
+    and nine replies of the fourth live run fell to the template. The cleaner is used by an adult; what can be said
+    about the child is where to keep it (``policy.CHEMICAL_CHILD_NOTE``).
+
+    Only cleaning products and other household chemicals are recognised. For furniture or an appliance in a home with a
+    toddler the age still stands, which errs on the careful side in a catalog that is mostly toys.
+    """
+    return constraints.age_years is not None and policy.is_chemical(*products)
+
+
 def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]] | None, earlier: Constraints | None = None) -> RouteDecision:
     """Code backstops applied to whatever the Router model returned."""
     c = route.constraints
@@ -195,6 +210,9 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
         c.budget_max = limits[-1]                             # two limits in one message: the later one is the correction
     if c.age_years is None:                                   # "my son's eighteen months", "for my baby": the under-three rule is switched on by rule
         c.age_years = rules.small_child_age(text) or rules.recipient_age(f"{text} {c.recipient or ''}")
+    on_screen = [str(entry.get("title") or entry.get("name") or "") for entry in shown or []] if route.intent in ("follow_up", "compare") else []
+    if not_the_childs(c, c.product or (earlier.product if earlier is not None else None), *on_screen):
+        c.age_years = None
     if _WEB_ASK.search(text):                                 # "just check the web if you don't have it" is a request for a live look-up
         c.wants_current_info = True
     route.say = list(dict.fromkeys(route.say))[:MAX_SAY]      # type: ignore[assignment]
@@ -401,6 +419,8 @@ def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
             # puzzles for a four-year-old stayed on screen, and "rank all three" was answered about the puzzles with "for a
             # child under three I only suggest toys labelled for that age" at the end.)
             constraints = route.constraints.merged_with(constraints_in_force(route, text, earlier, state.get("shown_constraints")))
+            if not_the_childs(constraints, constraints.product):                   # an age inherited from the request before
+                constraints = constraints.model_copy(update={"age_years": None})
         elif route.intent == "product_search":
             constraints = route.constraints
         else:

@@ -141,11 +141,20 @@ def _has_live_price(item: CatalogItem | WebItem) -> bool:
     return isinstance(item, WebItem) or (item.live is not None and item.live.price is not None)
 
 
+# "Which works against the eco-friendly request" names what the shopper asked for; it says nothing about the product.
+_THE_REQUEST = r"(?!\s+(?:request|requirement|criteri(?:on|a)|constraint|wish|preference|brief|ask)\b)"
+
+
 def _claims_in(text: str) -> list[tuple[str, tuple[str, ...]]]:
-    """Sensitive claims the text asserts. "No source confirms it is eco-friendly" asserts nothing and is the right thing to say."""
+    """Sensitive claims the text asserts. "No source confirms it is eco-friendly" asserts nothing and is the right thing to say.
+
+    Nor does a mention of the request itself. A caveat that a cleaner "contains petroleum distillates according to a
+    review page, which works against the eco-friendly request" was read as calling that cleaner eco-friendly, twice in
+    one turn, and a correct answer was replaced by the template (a rehearsal of the demonstration, 13 November).
+    """
     low = (text or "").lower()
     return [(name, variants) for name, variants in policy.SENSITIVE_CLAIMS.items()
-            if any(asserted(re.compile(re.escape(v)), low) for v in variants)]
+            if any(asserted(re.compile(re.escape(v) + _THE_REQUEST), low) for v in variants)]
 
 
 _NAME_WORD = re.compile(r"[a-z0-9]+")
@@ -322,6 +331,22 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
         issues.append(Issue(code="no_recommendation", severity="revise", message="No recommendation and no abstention. Recommend an item or set abstain."))
     if draft.recommendations and draft.abstain:
         issues.append(Issue(code="abstain_with_recommendations", severity="revise", message="The draft abstains but also recommends items. Do one or the other."))
+
+    # ---- the first row is a product with what is known of it: not the page of a product that is listed with its price, not an article
+    if items and isinstance(items[0], WebItem) and items[0].price is None and draft.recommendations[0].ref == items[0].ref:
+        from voiceshop.agents.reconcile import own_pages
+        from voiceshop.agents.rules import one_product_page
+
+        first = items[0]
+        listing = next((ref for ref, pages in own_pages(evidence.web).items() if first in pages), None)
+        if listing is not None:
+            issues.append(Issue(code="first_row_not_a_product", severity="revise", where=first.ref,
+                                message=f"{first.ref} is the page of the product that {listing} lists with its price: one product. "
+                                        f"Recommend {listing} in its place and state its price; what {first.ref} says may be reported as that page's statement."))
+        elif not one_product_page(first):
+            issues.append(Issue(code="first_row_not_a_product", severity="revise", where=first.ref,
+                                message=f"{first.ref} is an article about several products, not a product. Recommend a product; "
+                                        f"what the article says of a named product may be reported as its statement."))
 
     # What the spoken text is checked against: the recommended items, or, when the draft abstains, everything retrieved.
     # (An abstention may still report what was found: "the listing gives $7.99 but states no ingredients". A live check

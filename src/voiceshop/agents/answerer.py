@@ -23,6 +23,7 @@ from voiceshop.agents.retriever import searched_tools as tools_that_returned
 from voiceshop.agents.router import said_ids
 from voiceshop.agents.state import (
     AnswerDraft,
+    CatalogItem,
     Constraints,
     Critique,
     Evidence,
@@ -30,6 +31,7 @@ from voiceshop.agents.state import (
     Plan,
     RouteDecision,
     TurnState,
+    WebItem,
     step,
 )
 from voiceshop.guardrails import policy
@@ -152,6 +154,12 @@ def focus_refs(state: TurnState) -> list[str]:
     return [str(shown[p - 1].get("ref")) for p in route.refers_to if 0 < p <= len(shown)]
 
 
+def a_search(state: TurnState) -> bool:
+    """Whether this turn looks for products (a new list), as opposed to a question about the list on screen."""
+    route: RouteDecision | None = state.get("route")
+    return route is None or route.intent not in ("follow_up", "compare")
+
+
 def searched_tools(state: TurnState) -> set[str]:
     """The tools that ran in this turn and returned (with or without results): what "I couldn't find it" may speak about."""
     return set(tools_that_returned(state.get("tool_log") or []))
@@ -178,6 +186,100 @@ def in_shopper_words(draft: AnswerDraft, evidence: Evidence | None = None) -> An
 
 _TOP_PICK = re.compile(r"\b(?:top|first|best)\s+(?:pick|choice|match|recommendation)\s+(?:is|would\s+be)\b|\bmy\s+pick\s+is\b|"
                        r"\bI(?:'d|\s+would)?\s+(?:recommend|suggest|pick|go\s+with)\b", re.I)
+
+
+def one_row_per_product(draft: AnswerDraft, evidence: Evidence, constraints: Constraints) -> tuple[AnswerDraft, list[str]]:
+    """The rows of the table are products, one row each. Returns the draft and what was changed, for the step log.
+
+    A listing and its product's own page are one product, found twice (``reconcile.own_pages``): the listing has the
+    price and, through the join, what the page states.
+
+    - Recommended side by side they read as two products, "Therapy Stainless Steel Cleaner & Polish, $9.95" and
+      "Stainless Steel Cleaner & Polish 16 oz., price not stated" (the fourth live run's results, replayed after the
+      join was made). The page's row is dropped.
+    - The page recommended without its listing, below the first row, gives way to the listing, described by code.
+    - An article is not a product. "7 Best Stainless Steel Cleaners 2026 Reviewed" was shown as the second of three
+      products with the price "not stated" (the same replays). Below the first row it is dropped.
+
+    The first row is the product the spoken sentence was written about, so it is not exchanged here: a page or an
+    article there is sent back by the rule check (``first_row_not_a_product``).
+    """
+    from voiceshop.agents.reconcile import own_pages
+
+    recs = list(draft.recommendations)
+    if draft.abstain or not recs:
+        return draft, []
+    listing_of = {page.ref: ref for ref, pages in own_pages(evidence.web).items() for page in pages}
+    refs = {rec.ref for rec in recs}
+    kept: list[Any] = []
+    notes: list[str] = []
+    for place, rec in enumerate(recs):
+        item, listing = evidence.get(rec.ref), listing_of.get(rec.ref)
+        if listing in refs:
+            notes.append(f"{rec.ref} left out: the page of the product that {listing} lists with its price")
+        elif listing is not None and place and (offer := evidence.get(listing)) is not None:
+            kept.append(rules.recommendation_for(offer, constraints))
+            refs.add(listing)
+            notes.append(f"{listing} in place of {rec.ref}: the listing, with a price, of the product that page describes")
+        elif place and isinstance(item, WebItem) and item.price is None and not rules.one_product_page(item):
+            notes.append(f"{rec.ref} left out: an article, not a product")
+        else:
+            kept.append(rec)
+    return (draft.model_copy(update={"recommendations": kept}), notes) if notes else (draft, [])
+
+
+def with_what_was_asked_for(draft: AnswerDraft, evidence: Evidence, constraints: Constraints) -> tuple[AnswerDraft, str | None]:
+    """A product whose own page states the quality the shopper asked for, in the shopper's word, has a row when there is one.
+
+    "A plant-based stainless steel cleaner under fifteen dollars": one page in the evidence said plant-based, of a cleaner
+    no listing priced. Drafts over the same evidence sometimes showed it and sometimes showed three priced cleaners,
+    none of which any source called plant-based. Which products to show is the model's choice; that the one product
+    said to be what was asked for is among them is not left to it. The row is added last (in place of the last row
+    without any support when there are three already), described by code, with "no price was found" where that is so.
+    The first row and the spoken sentence are not touched.
+
+    Only a page about one product of the kind asked for counts, and only the shopper's own word ("plant-based", not
+    "natural" for it). Nothing is added when a recommended product already has such a source.
+    """
+    from voiceshop.agents.reconcile import distinguishing_words, own_pages
+
+    wishes = {wish.lower() for wish in constraints.must_have}
+    recs = list(draft.recommendations)
+    if draft.abstain or not wishes or not recs:
+        return draft, None
+
+    def states(item: CatalogItem | WebItem | None) -> bool:
+        return item is not None and any(claim.lower() in wishes for claim in rules.wish_support(item, constraints))
+
+    shown = [evidence.get(rec.ref) for rec in recs]
+    if any(states(item) for item in shown):
+        return draft, None
+    kind = distinguishing_words(constraints.product or "")
+    described = {page.ref for pages in own_pages(evidence.web).values() for page in pages}     # shown as their listings
+    found = [w for w in evidence.web if states(w) and not w.flagged and w.ref not in described and w not in shown and rules.one_product_page(w)
+             and kind and kind <= distinguishing_words(w.title) and w.availability != "out_of_stock"
+             and not any(c in policy.WITHDRAWN for c in rules.all_cautions(w))]
+    if not found:
+        return draft, None
+    within = [w for w in found if w.price is not None and (constraints.budget_max is None or w.price <= constraints.budget_max + 0.005)]
+    pick = (within or [w for w in found if w.price is not None] or found)[0]
+    rec = rules.recommendation_for(pick, constraints)
+    if pick.price is None and not rec.caveat:
+        rec = rec.model_copy(update={"caveat": "No price was found for it."})
+    if len(recs) < 3:
+        recs.append(rec)
+    else:
+        without = [n for n, item in enumerate(shown) if n and item is not None and not rules.wish_support(item, constraints)]
+        if not without:
+            return draft, None
+        recs[without[-1]] = rec
+    return draft.model_copy(update={"recommendations": recs}), pick.ref
+
+
+def template_answer(state: TurnState, evidence: Evidence, constraints: Constraints, weak: float | None) -> AnswerDraft:
+    """The answer built by code from the evidence, with the row for the product that states what was asked for (a search only)."""
+    draft = rules.answer(evidence, constraints, weak, focus_refs(state), focus_labels(state), searched_tools(state))
+    return with_what_was_asked_for(draft, evidence, constraints)[0] if a_search(state) else draft
 
 
 def top_pick_first(draft: AnswerDraft, evidence: Evidence) -> tuple[AnswerDraft, str | None]:
@@ -251,7 +353,7 @@ def make_answerer_node(deps: Deps):  # type: ignore[no-untyped-def]
         budget = lead_budget(deps, state)
 
         if evidence.empty:
-            draft = rules.answer(evidence, constraints, weak, focus_refs(state), focus_labels(state), searched_tools(state))
+            draft = template_answer(state, evidence, constraints, weak)
             return {"draft": draft, "draft_source": "template",
                     "trace": [step("answerer", "Nothing was retrieved: abstaining with the template answer", status="warn",
                                    started=started, grounded_by="template")]}
@@ -262,20 +364,28 @@ def make_answerer_node(deps: Deps):  # type: ignore[no-untyped-def]
             user += ("\n\nYOUR PREVIOUS DRAFT WAS REJECTED BY THE CRITIC. Fix every finding and return the full corrected answer.\n"
                      f"{_draft_block(previous) if previous else ''}\nFindings:\n{findings}")
         fallback, used_template, moved_first = None, False, None
+        merged: list[str] = []
+        added: str | None = None
         try:
             draft, meta = await call_structured(
                 "answerer", "answerer", AnswerDraft, user=user, turn_id=state.get("turn_id", ""),
                 variables={"max_words": budget, "safety_policy": load_prompt("safety_policy").text},
             )
             draft, moved_first = top_pick_first(in_shopper_words(draft, evidence), evidence)
+            draft, merged = one_row_per_product(draft, evidence, constraints)
+            if a_search(state):
+                draft, added = with_what_was_asked_for(draft, evidence, constraints)
         except BudgetExceededError:
             raise
         except LLMCallError as exc:
-            draft, meta, fallback, used_template = (rules.answer(evidence, constraints, weak, focus_refs(state), focus_labels(state), searched_tools(state)),
-                                                    {"model": "rules"}, fallback_note(exc), True)
+            draft, meta, fallback, used_template = template_answer(state, evidence, constraints, weak), {"model": "rules"}, fallback_note(exc), True
         picks = ", ".join(r.ref for r in draft.recommendations) or ("abstained" if draft.abstain else "none")
         if moved_first:
             picks += f" ({moved_first} moved first: the sentence calls it the top pick)"
+        for note in merged:
+            picks += f" ({note})"
+        if added:
+            picks += f" ({added} added by code: its page states what was asked for)"
         return {
             "draft": draft,
             "draft_source": "template" if used_template else "llm",
@@ -479,7 +589,7 @@ def make_critic_node(deps: Deps):  # type: ignore[no-untyped-def]
         update: dict[str, Any] = {"critique": critique, "draft": draft}
         grounded_by = None
         if verdict == "fallback":
-            update["draft"] = rules.answer(evidence, constraints, settings.weak_match_score, focus_refs(state), focus_labels(state), searched_tools(state))
+            update["draft"] = template_answer(state, evidence, constraints, settings.weak_match_score)
             update["draft_source"] = grounded_by = "template"
         n = len(blocking)
         summary = {"pass": "Passed after a repair by code" if rebuilt else "Passed",

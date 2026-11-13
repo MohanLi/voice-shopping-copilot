@@ -487,6 +487,28 @@ def all_cautions(item: WebItem) -> list[str]:
     return list(dict.fromkeys([*item.cautions, *(c for cautions in item.cautions_elsewhere.values() for c in cautions)]))
 
 
+_ARTICLE_TITLE = re.compile(r"\b(?:best|top\s+\d+|review(?:ed|s)?|tested|ranked|round-?up|how\s+to|make\s+your\s+own|diy|guide|recipes?|"
+                            r"vs\.?|versus|alternatives?|things\s+to\s+know)\b|\b20[12]\d\b|^\s*\d+\+?\s", re.I)
+_PRODUCT_PATH = re.compile(r"/(?:products?|shop|item|dp|p|pd|ip)/", re.I)
+_ARTICLE_PATH = re.compile(r"/(?:blog|blogs|news|articles?|how-to|guides?|features?|reviews?|stories|magazine)/|/20[12]\d/\d{1,2}/", re.I)
+
+
+def one_product_page(page: WebItem) -> bool:
+    """Whether a web page is about one product, as far as its address and title tell: a product page, not an article.
+
+    "7 Best Stainless Steel Cleaners 2026 Reviewed" names plant-based products and is not one. Looked up among the
+    listings by that title, it brought back five unrelated cleaners, one of them a $39.99 multi-pack, and used up one of
+    the two look-ups while the page of a plant-based cleaner went without (the fourth live run; the rehearsal on the
+    laptop spent the same look-up on "I Tested 15+ Natural And Nontoxic Cleaning Products").
+    An address under /products/ or /dp/ settles it; an address under /blog/, /how-to/ or a date says article; otherwise the
+    title decides.
+    """
+    address = page.url or ""
+    if _PRODUCT_PATH.search(address):
+        return True
+    return not (_ARTICLE_PATH.search(address) or _ARTICLE_TITLE.search(page.title or ""))
+
+
 def wish_support(item: CatalogItem | WebItem, constraints: Constraints) -> list[str]:
     """The stated claims that back the qualities the shopper asked for (empty when nothing does)."""
     from voiceshop.agents.claims import supporting
