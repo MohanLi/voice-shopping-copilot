@@ -1,6 +1,6 @@
 # PROGRESS — Voice Shopping Copilot build log
 
-**Last updated:** 2026-11-13 05:03 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
+**Last updated:** 2026-11-13 05:24 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
 (`~/Desktop/2026 Autumn/Applied Generative AI/Final Project/voice-shopping-copilot`).
 **The folder on the Mac is the source of truth.**
 
@@ -107,7 +107,8 @@ to 31 and the smaller findings after them):
 Tested from the run's own records, by twelve replays of the web-only turn on its recorded live results (the
 priced listing first every time, eight without a revision), by one replay of the run's thirty questions on
 sample results (six of the nine template turns are written by the Answerer, two by the Router, one is still
-the template for another reason) and by single turns. **Not tested against a live search**: the workspace
+the template for another reason), by a replay of the third live run's questions (22 answers, none revised by
+a rule, none replaced), by the browser check that CI runs, and by single turns. **Not tested against a live search**: the workspace
 cannot reach Serper. Prompts: router 7, planner 4, retriever 3, answerer 13, critic 8.
 
 ## Next action
@@ -204,8 +205,8 @@ rehearsal of the demonstration against live search (13 Nov).
 | 2026-11-12 | On the Mac: the third live ProofAgent run (assistant 0.08, harness 0.40) and the refresh's live check turns | 0.50 |
 | 2026-11-12/13 | After the third live run, in the workspace (its ledger: 5.81 since 11 Nov, of which 4.69 is in the rows above): six replays of that run's questions, single turns, the demo recording, the rehearsals of the demonstration and the yes-or-no trials | 1.12 |
 | 2026-11-13 | On the Mac: the fourth live ProofAgent run (assistant 0.11, harness 2.19, of which 1.26 for five jury calls retried on Sonnet) and a typed rehearsal | 2.31 |
-| 2026-11-13 | After the fourth live run, in the workspace (its ledger: 6.11 since 11 Nov): nineteen replays of the web-only turn on its recorded results, one replay of the run's thirty questions, single turns | 0.30 |
-| | **Total so far** | **about 12.6 of 50** |
+| 2026-11-13 | After the fourth live run, in the workspace (its ledger: 6.23 since 11 Nov): nineteen replays of the web-only turn on its recorded results, replays of the thirty questions of the third and the fourth live run, single turns | 0.42 |
+| | **Total so far** | **about 12.7 of 50** |
 
 Serper credits used: about 170 of 2,500, estimated from the searches logged (the fourth live run made 35 live searches, about 55 credits; the earlier live runs about 20 each; a refresh about 15). The Serper dashboard has the exact figure.
 
