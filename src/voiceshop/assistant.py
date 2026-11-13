@@ -42,6 +42,7 @@ from voiceshop.config import Settings, get_settings
 from voiceshop.llm.ledger import BudgetExceededError, get_ledger
 from voiceshop.mcp_client import MCPToolClient
 from voiceshop.mcp_server.controls import redact
+from voiceshop.oversight import prune_logs
 
 log = logging.getLogger(__name__)
 TURN_LOG = "turns.jsonl"
@@ -132,6 +133,12 @@ class Assistant:
     # --------------------------------------------------------------- lifecycle
     async def start(self) -> Assistant:
         if self.graph is None:
+            try:                                             # before anything writes: what is older than the retention time goes
+                removed = prune_logs(self.settings)
+                if removed:
+                    log.info("retention (%s days): removed %s", self.settings.log_retention_days, removed)
+            except OSError as exc:  # pragma: no cover
+                log.debug("retention: %s", exc)
             if not self.mcp.connected:
                 await self.mcp.start()
             self.graph = build_graph(Deps(mcp=self.mcp, speech=self.speech, settings_override=self._settings), self.checkpointer)

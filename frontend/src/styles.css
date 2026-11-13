@@ -197,6 +197,11 @@ blockquote.heard--doubt { background: none; color: var(--ink-soft); }
 .source-list li::before { content: counter(source); position: absolute; left: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
 .source-meta { color: var(--ink-soft); font-size: var(--step--1); }
 
+.flag { margin-top: 1.75rem; max-width: 46rem; font-size: var(--step--1); color: var(--ink-soft); }
+.flag__reasons { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin-top: 0.5rem; }
+.flag__reasons .button { font-size: var(--step--1); padding: 0.4rem 0.8rem; }
+.flag__problem { margin-top: 0.5rem; color: var(--red); }
+
 .earlier { margin-top: 3rem; padding-top: 0.5rem; border-top: 1px solid var(--rule); max-width: 46rem; }
 .earlier li + li { margin-top: 1rem; }
 .earlier__said { font-weight: 650; }

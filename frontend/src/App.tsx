@@ -4,6 +4,7 @@ import { getHealth, resetConversation, sendAudio, sendText } from "./api";
 import { AskBar } from "./components/AskBar";
 import { ComparisonTable } from "./components/ComparisonTable";
 import { Drawer, type Panel } from "./components/Drawer";
+import { Flag } from "./components/Flag";
 import { Heard } from "./components/Heard";
 import { Receipt } from "./components/Receipt";
 import { Reply } from "./components/Reply";
@@ -180,6 +181,7 @@ export function App() {
             <p className="followup">{answer.follow_up_question}</p>
           )}
           {answer && <Sources answer={answer} />}
+          {answer && current?.result?.turn_id && <Flag turnId={current.result.turn_id} />}
 
           {earlier.length > 0 && (
             <section className="earlier" aria-label="Earlier in this conversation">

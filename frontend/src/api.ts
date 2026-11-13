@@ -1,4 +1,4 @@
-import type { EvalReport, Health, StreamEvent, ToolSpec } from "./types";
+import type { EvalReport, FlagReason, Health, StreamEvent, ToolSpec } from "./types";
 
 /** Read a server-sent-event response body and hand each event's JSON document to `onEvent`. */
 async function readEvents(response: Response, onEvent: (event: StreamEvent) => void): Promise<void> {
@@ -62,4 +62,10 @@ export const getEvaluation = () => getJson<{ reports: EvalReport[] }>("/api/eval
 
 export function resetConversation(threadId: string): Promise<Response> {
   return fetch("/api/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ thread_id: threadId }) });
+}
+
+/** Flag an answer for the operator's review. The server keeps it with the turn's id; nothing leaves the machine it runs on. */
+export async function sendFlag(turnId: string, reason: FlagReason): Promise<void> {
+  const response = await fetch("/api/feedback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ turn_id: turnId, reason }) });
+  if (!response.ok) throw new Error(`/api/feedback answered ${response.status}`);
 }

@@ -51,6 +51,13 @@ function check(condition, message) {
   console.log(spoken ? "ok  the reply has audio (play button present)" : "--  speech synthesis is off on this server; no audio to check");
   if (shots) await page.screenshot({ path: `${shots}/ui-answer.png`, fullPage: true });
 
+  // ---- nobody checks an answer before it is spoken: the shopper can flag it, and the flag reaches the review log
+  await page.click("text=Report this answer");
+  await page.click(".flag__reasons button:has-text('Wrong or misleading')");
+  await page.waitForSelector(".flag [role=status]");
+  const flags = await (await page.request.get(`${base}/api/flags`)).json();
+  check(flags.length >= 1 && flags[0].reason === "wrong" && /^[a-f0-9]{6,}$/.test(flags[0].turn_id), "an answer can be reported, and the flag is stored with the turn's id");
+
   // ---- a follow-up in the same conversation
   await page.fill("#request", "tell me more about the first one");
   await page.click("button:has-text('Ask')");

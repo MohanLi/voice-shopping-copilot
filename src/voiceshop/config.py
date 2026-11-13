@@ -130,6 +130,8 @@ class Settings(BaseSettings):
     memory_turns: int = Field(default=4, ge=0, le=12)
     # Write full prompts and model outputs to logs/llm_calls.jsonl (prompt name, version and hash are always logged).
     log_prompts: bool = True
+    # Days a turn's local records are kept (turn log, model calls, tool calls, flags, reply audio); 0 keeps them until deleted by hand.
+    log_retention_days: int = Field(default=30, ge=0, le=3650)
 
     # ------------------------------------------------------------- service
     api_host: str = "127.0.0.1"

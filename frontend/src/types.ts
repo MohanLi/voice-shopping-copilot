@@ -166,6 +166,9 @@ export interface EvalReport {
   data?: Record<string, unknown>;
 }
 
+/** Why a shopper flags an answer for the operator's review (POST /api/feedback). */
+export type FlagReason = "wrong" | "unsafe" | "other";
+
 export type StreamEvent =
   | { type: "listening"; turn_id: string }
   | { type: "transcript"; turn_id: string; transcript: Transcript }

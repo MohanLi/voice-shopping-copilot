@@ -145,3 +145,56 @@ async def test_tools_turn_log_and_evaluation_endpoints(client: httpx.AsyncClient
     assert any(r["name"].endswith("benchmark.md") and "hit@1" in r["text"] for r in reports)
     root = await client.get("/")
     assert root.status_code == 200
+
+
+async def test_a_shopper_can_flag_an_answer_and_the_flag_is_kept_with_the_turn_for_review(client: httpx.AsyncClient) -> None:
+    """Nobody approves a reply before it is spoken. What there is instead: a flag that reaches the operator, under the turn's id."""
+    from voiceshop.config import get_settings
+    from voiceshop.oversight import FLAG_LOG
+
+    turn = (await client.post("/api/turn", json={"text": REQUEST, "thread_id": "flag", "stream": False})).json()
+    sent = await client.post("/api/feedback", json={"turn_id": turn["turn_id"], "reason": "wrong",
+                                                    "note": "The second price looks old.   Write to me at ann@example.com or 312-555-0188."})
+    assert sent.status_code == 200 and sent.json() == {"ok": True, "turn_id": turn["turn_id"]}
+    (flag,) = (await client.get("/api/flags")).json()
+    assert flag["turn_id"] == turn["turn_id"] and flag["reason"] == "wrong" and flag["ts"]
+    assert flag["note"] == "The second price looks old. Write to me at [email address] or [phone number]."          # personal details never reach a log
+    assert "ann@example.com" not in (get_settings().logs_dir / FLAG_LOG).read_text(encoding="utf-8")
+    logged = {row["turn_id"] for row in (await client.get("/api/turns")).json()}
+    assert turn["turn_id"] in logged                                                                                 # the flag points at a turn that can be replayed
+    # Only the three reasons, a turn id that looks like one, and a note of bounded length.
+    assert (await client.post("/api/feedback", json={"turn_id": turn["turn_id"], "reason": "refund me"})).status_code == 422
+    assert (await client.post("/api/feedback", json={"turn_id": "../../etc", "reason": "other"})).status_code == 422
+    assert (await client.post("/api/feedback", json={"turn_id": turn["turn_id"], "reason": "other", "note": "x" * 501})).status_code == 422
+
+
+def test_what_a_turn_leaves_on_disk_is_deleted_after_the_retention_time(tmp_path: Path) -> None:
+    import os
+    import time
+
+    from voiceshop.config import Settings
+    from voiceshop.oversight import prune_logs, record_flag
+
+    now = time.time()
+
+    def stamp(days_ago: float) -> str:
+        return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(now - days_ago * 86400))
+
+    settings = Settings(logs_dir=tmp_path, log_retention_days=30)
+    for name in ("turns.jsonl", "llm_calls.jsonl", "mcp_calls.jsonl"):
+        (tmp_path / name).write_text("".join(json.dumps({"ts": stamp(age), "user_text": f"asked {age} days ago"}) + "\n" for age in (45, 31, 29, 0)) + "not json\n",
+                                     encoding="utf-8")
+    (tmp_path / "llm_ledger.jsonl").write_text(json.dumps({"ts": stamp(400), "cost_usd": 0.01}) + "\n", encoding="utf-8")
+    record_flag(settings, "abc123def456", "unsafe", "kept: it is new")
+    (tmp_path / "audio").mkdir()
+    for name, age in (("old_0.wav", 40), ("new_0.wav", 1)):
+        (tmp_path / "audio" / name).write_bytes(b"RIFF")
+        os.utime(tmp_path / "audio" / name, (now - age * 86400, now - age * 86400))
+
+    assert prune_logs(settings, now=now) == {"turns.jsonl": 2, "llm_calls.jsonl": 2, "mcp_calls.jsonl": 2, "audio": 1}
+    kept = (tmp_path / "turns.jsonl").read_text(encoding="utf-8").splitlines()
+    assert [json.loads(line)["user_text"] for line in kept[:2]] == ["asked 29 days ago", "asked 0 days ago"] and kept[2] == "not json"   # undatable rows stay
+    assert (tmp_path / "llm_ledger.jsonl").read_text(encoding="utf-8").strip()                # amounts, no text: the spending limit is worked out from it
+    assert [p.name for p in (tmp_path / "audio").iterdir()] == ["new_0.wav"] and len((tmp_path / "flags.jsonl").read_text(encoding="utf-8").splitlines()) == 1
+    assert prune_logs(settings, now=now) == {}                                                 # nothing left to remove
+    assert prune_logs(Settings(logs_dir=tmp_path, log_retention_days=0), now=now + 400 * 86400) == {}     # 0 days: kept until deleted by hand

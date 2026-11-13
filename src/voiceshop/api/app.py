@@ -7,6 +7,8 @@
     GET  /api/health                                             models, providers, catalog, speech: what is live and what is offline data
     GET  /api/tools                                              the MCP tools the agents discovered, with their schemas
     GET  /api/turns?limit=20                                     recent turns from the turn log
+    POST /api/feedback  {"turn_id": "...", "reason": "wrong"}    a shopper flags an answer for the operator's review
+    GET  /api/flags?limit=50                                     the flags, newest first
     GET  /api/evaluation                                         evaluation evidence (benchmarks, scorecards) shown in the UI
 
 Turns are answered as server-sent events (``text/event-stream``) so the UI can draw the step
@@ -40,6 +42,7 @@ from voiceshop import __version__
 from voiceshop.assistant import Assistant, TurnResult
 from voiceshop.config import Settings, get_settings
 from voiceshop.mcp_client import MCPConnectionError
+from voiceshop.oversight import MAX_NOTE, FlagReason, read_flags, record_flag
 from voiceshop.paths import project_root
 
 log = logging.getLogger(__name__)
@@ -57,6 +60,14 @@ class TurnRequest(BaseModel):
 
 class ResetRequest(BaseModel):
     thread_id: str = Field(default="default", pattern=THREAD_ID)
+
+
+class FeedbackRequest(BaseModel):
+    """A shopper's flag on one answer. The turn's own record is already in the turn log under the same id."""
+
+    turn_id: str = Field(pattern=r"^[A-Za-z0-9_-]{4,64}$")
+    reason: FlagReason
+    note: str = Field(default="", max_length=MAX_NOTE)
 
 
 def audio_url(path: str | None) -> str | None:
@@ -225,6 +236,16 @@ def create_app(assistant: Assistant | None = None, settings: Settings | None = N
             row["speech"] = public_speech(row.get("speech"), str(row.get("turn_id", "")))
             rows.append(row)
         return rows[::-1]
+
+    @app.post("/api/feedback")
+    async def feedback(request: FeedbackRequest) -> dict[str, Any]:
+        """Flag an answer. Stored locally with the turn's id for the operator to review; personal details in the note are replaced."""
+        record_flag(cfg(), request.turn_id, request.reason, request.note)
+        return {"ok": True, "turn_id": request.turn_id}
+
+    @app.get("/api/flags")
+    async def flags(limit: int = Query(default=50, ge=1, le=500)) -> list[dict[str, Any]]:
+        return read_flags(cfg(), limit)
 
     @app.get("/api/evaluation")
     async def evaluation() -> dict[str, Any]:
