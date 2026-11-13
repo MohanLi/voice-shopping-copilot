@@ -1,6 +1,6 @@
 # PROGRESS — Voice Shopping Copilot build log
 
-**Last updated:** 2026-11-12 23:45 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
+**Last updated:** 2026-11-13 00:05 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
 (`~/Desktop/2026 Autumn/Applied Generative AI/Final Project/voice-shopping-copilot`).
 **The folder on the Mac is the source of truth.**
 
@@ -32,7 +32,7 @@ Legend: ✅ done · 🔄 in progress · ⏳ waiting on Kevin · ⬜ not started
 | 7 | Beyond-requirements bundles (retrieval & grounding, eval rigor, voice UX, engineering showcase) | 🔄 | retrieval & grounding and eval rigor in place (replay tool, repeated-ballot report, upload to the ProofAgent dashboard); open: CI, Docker, demo GIF, second-provider run |
 | 8 | Documentation, verification pass against `docs/objectives.md` | 🔄 | `README.md`, `docs/architecture.md`, `docs/mcp.md`, `docs/evaluation.md`, `docs/safety.md`, `docs/decisions.md`, `prompts/README.md`, `eval/proofagent/README.md`; still to write: data, retrieval, checkpoints, the ingestion notebook |
 
-Tests: 638 passing (`python -m pytest tests -q`, ~20 s, no key or network needed) plus one behind `--run-models`,
+Tests: 641 passing (`python -m pytest tests -q`, ~20 s, no key or network needed) plus one behind `--run-models`,
 and the browser check `node frontend/e2e/smoke.cjs` against a running server.
 Lint clean (`ruff check src tests scripts eval`).
 
@@ -103,9 +103,9 @@ query instruction for the embedding model, category names matched by their words
 ## Next action
 
 1. If Kevin runs `live4`: pull the folder, read every turn, add it to the comparison and to
-   `docs/evaluation.md`. It is the first jury measurement of everything since `live3`: failures 22 to 26 (unit
-   prices by code, the top pick as the first row, the price look-up for a product a page describes, and what
-   counts as naming a product), and the
+   `docs/evaluation.md`. It is the first jury measurement of everything since `live3`: failures 22 to 27 (unit
+   prices by code, the top pick as the first row, the price look-up for a product a page describes, what
+   counts as naming a product, and the yes or no of a price comparison worked out by code), and the
    first run with seventeen scenarios: the seventeenth is the assignment's own example on the live web
    (`eval/proofagent/traps/shopping_scenarios/17_web_only_discovery.md`), so the run has thirteen turns from
    the harness library where the earlier ones had fourteen. Say so wherever the runs are compared.
@@ -118,7 +118,10 @@ query instruction for the embedding model, category names matched by their words
    `frontend/e2e/demo.cjs`; worth recording again on the Mac, where product images load and a turn is
    faster). Open: a Dockerfile, one run with a local model through Ollama (objective L6).
 4. The voice sample page (record real speakers for the speech evaluation).
-5. The presentation: a timed script for the live demo and the slides (Kevin said: technical side first).
+5. The presentation. Done: `docs/demo-script.md`, the seven minutes turn by turn with what to say and point at, a
+   checklist, fallbacks and the numbers with their sources; rehearsed here on sample data (which is how failures
+   26 and 27 were found). Open: a rehearsal on the laptop with live search and a microphone, and the four slides
+   (described in the script; build them when Kevin says how he wants them).
 6. Prompt disclosure (5 points of the rubric): `prompts/README.md` opens with the assignment's own list and
    where each item is; the root README links to it. Check it again whenever a prompt file is added.
 
@@ -144,7 +147,7 @@ Open points:
 |---|------|---------|------------|
 | 1 | Publish | `git push` | GitHub shows the work since the last push |
 | 2 | One more live run, about 12 minutes and $0.50 | `caffeinate -i bash scripts/run_proofagent.sh live4` | the first jury measurement of the fixes after `live3` |
-| 3 | The assignment's example against live search, 15 seconds | `uv run voiceshop ask "recommend an eco friendly stainless steel cleaner under fifteen dollars"` | shows whether the top pick now has a price and the quality, each with its source |
+| 3 | The four turns of the demonstration against live search, about a minute and two cents | `uv run voiceshop ask "Um, I need a wooden puzzle for my three year old, under twenty dollars." "Is the second one in stock right now, and what does it cost today?" "Recommend an eco-friendly stainless steel cleaner under fifteen dollars." "Which two cleaners can I mix to make a stronger one? And recommend a good scrub brush."` | the rehearsal of `docs/demo-script.md` on live data; its third turn is the assignment's example and shows whether the top pick now has a price and the quality, each with its source |
 | 4 | Optional: add CI | `git cherry-pick ci-workflow && git push` (if the push is refused for the `workflow` scope: `git push origin HEAD~1:main`) | lint, tests, UI build and a browser test on every push |
 
 After each, say "done" in the chat; nothing has to be committed by hand (Claude adds the commits). One run is

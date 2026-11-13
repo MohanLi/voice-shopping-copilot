@@ -125,7 +125,7 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 | E4 | Adversarial/edge cases: ambiguous requests, conflicting private vs live data, out-of-budget products, missing products, incorrect tool results, unsupported claims, unsafe requests | scenarios 5, 6, 10, 12 to 16; planted tool faults in `eval/proofagent/tool_faults.json`; 14 traps per run from the harness library | ✅ |
 | E5 | Failures located along ASR → Router → Planner → RAG/MCP → Answerer → TTS | credit lost by stage in every `scorecard.md` (`stage_attribution`), read against the step traces in `docs/evaluation.md` §3 and §4 | ✅ |
 | E6 | Final scorecard/results included | `eval/results/proofagent/run1` to `run4`, and `mac-live`, `final` and `live3`, the three runs against live web search on the laptop (scorecard, the harness's report, evidence record, every turn), `comparison.md`; the table is in the README and in `docs/evaluation.md`. Run 4 and the three live runs are on the ProofAgent dashboard (`upload.json` in each folder; release gate: pass) | ✅ |
-| E7 | At least two failure cases analysed, with improvements | twenty-six, from speech recognition to the spoken reply, each with what was observed, the stage, the cause, the change and what the next run showed: `docs/evaluation.md` §4; what is still wrong: §5; improvements not yet made: §6 | ✅ |
+| E7 | At least two failure cases analysed, with improvements | twenty-seven, from speech recognition to the spoken reply, each with what was observed, the stage, the cause, the change and what the next run showed: `docs/evaluation.md` §4; what is still wrong: §5; improvements not yet made: §6 | ✅ |
 | E8 | Evaluation configuration submitted | `eval/proofagent/` (governance profile, scenarios, planted faults, generated context and domain knowledge, README), `scripts/run_proofagent.sh` | ✅ |
 
 ### 2.9 Choice of LLM
@@ -158,13 +158,13 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done (evidence listed)
 | D3 | Docs: LangGraph architecture | `docs/architecture.md` (workflow, node responsibilities, state and memory, evidence handles, failure handling, event stream) | ✅ |
 | D4 | Docs: MCP server and tool schemas | `docs/mcp.md` | ✅ |
 | D5 | Docs: safety considerations | `docs/safety.md` (risks and where each is handled, the layers in the order of a turn, the rule checks, children under three, privacy, sources and terms, how it was tested, what it does not cover) | ✅ |
-| D6 | Docs: evaluation methodology | `docs/evaluation.md` (ProofAgent: configuration, scenarios, seven scorecards, stage attribution, twenty-six failure analyses, what is still wrong), `eval/proofagent/README.md`, `eval/results/` | ✅ |
+| D6 | Docs: evaluation methodology | `docs/evaluation.md` (ProofAgent: configuration, scenarios, seven scorecards, stage attribution, twenty-seven failure analyses, what is still wrong), `eval/proofagent/README.md`, `eval/results/` | ✅ |
 | D7 | Setup instructions, `.env.example`, run/build scripts (index + MCP) | `README.md` (quick start), `.env.example`, `uv.lock`, `scripts/bootstrap_mac.sh`, `scripts/mac_refresh.sh`, `voiceshop ingest / index / mcp serve / serve` | ✅ |
 | D8 | `prompts/` folder: system, router, planner, tool-call, answerer/critic, guardrail prompts and few-shots, each mapped to its node/agent/tool | `prompts/` | ✅ |
 | D9 | Checkpoint 1: proposal, problem definition, data slice, tools, ingestion notebook, related work | `docs/checkpoints/checkpoint1.md`, `notebooks/01_data_ingestion.ipynb`, `docs/related-work.md` | ✅ |
 | D10 | Checkpoint 2: architecture diagram, LangGraph flow, MCP/tool calls, UI wireframe, RAG evaluation plan, MCP README + schemas, initial ProofAgent plan | `docs/checkpoints/checkpoint2.md` (each item in short, with the document that holds it in full) | ✅ |
-| D11 | Repository with clean code and README | repo: README with the measured results and a map of the documents; 638 tests and a lint check, run by `scripts/mac_refresh.sh` | ✅ |
-| D12 | ≤7-minute live demo and short presentation | later (not part of the technical build) | ⬜ |
+| D11 | Repository with clean code and README | repo: README with the measured results and a map of the documents; 641 tests and a lint check, run by `scripts/mac_refresh.sh` | ✅ |
+| D12 | ≤7-minute live demo and short presentation | `docs/demo-script.md`: four live turns and four slides in 6 minutes 40, what to say and point at, a checklist, fallbacks, the numbers with their sources. Rehearsed on sample data in the build workspace; to be rehearsed on the laptop with live search and a microphone. The slides are described there and not built | 🔄 |
 
 ## 3. Beyond the requirements
 

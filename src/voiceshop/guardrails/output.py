@@ -231,13 +231,69 @@ def echoed_tokens(text: str, user_text: str | None, evidence_text: str = "") -> 
     return out
 
 
+_PLACE = "first|second|third|fourth|fifth"
+_OPENING_WORDS = r"(?:(?:ok(?:ay)?|and|so|um+|uh+|well|then|but|hey|hm+|alright|right|now|please)[\s,.!]+)*"
+_DEARER_OR_CHEAPER = r"(cheaper|less\s+expensive|more\s+expensive|pricier|costlier)"
+_PRICE_QUESTIONS = (
+    # "is the second one cheaper than the first?"
+    re.compile(rf"^{_OPENING_WORDS}(?:is|was)\s+(?:the\s+)?({_PLACE})(?:\s+one)?\s+(?:really\s+|actually\s+)?{_DEARER_OR_CHEAPER}\s+than\s+"
+               rf"(?:the\s+)?({_PLACE})(?:\s+one)?(?:\s+(?:then|though|or\s+not|right\s+now|today))?[\s?.!]*$", re.I),
+    # "the second one's cheaper than the first, right?"
+    re.compile(rf"^{_OPENING_WORDS}(?:the\s+)?({_PLACE})(?:\s+one)?(?:'s|\s+is|\s+was)\s+(?:really\s+|actually\s+)?{_DEARER_OR_CHEAPER}\s+than\s+"
+               rf"(?:the\s+)?({_PLACE})(?:\s+one)?(?:\s+(?:then|though|right\s+now|today))?(?:,?\s*(?:right|yeah|yes|correct|isn't\s+it))?[\s?.!]*$", re.I),
+)
+_OPENS_YES_NO = re.compile(r"^\s*(yes|yeah|yep|no|nope)\s*[,.;:!]", re.I)
+
+
+def settled_by_prices(asked: str | None, on_screen: list[str], evidence: Evidence) -> tuple[bool, str] | None:
+    """The answer to "is the first one cheaper than the second?", worked out from the two prices: (yes or no, the statement).
+
+    A yes or a no about two prices is arithmetic, and the model got the word wrong about once in five while stating both
+    prices correctly: "Yes, Calliope Tsuro costs $14.95 in the catalog, while Tic Tac Two costs $11.67, so Tic Tac Two is
+    cheaper" (rehearsals of the demonstration, 12 November: 3 of 12 such answers). The rule checks pass such a sentence,
+    because every price in it is right, and so did the model critic.
+
+    None unless the whole question is that one comparison, between two different places in the list, each product is in
+    the evidence with exactly one price (a product with a catalog price and another live price has two answers), and
+    the prices differ. ``on_screen`` holds the handles of the list on screen in order. The statement with a tag counts as
+    the question ("the second one's cheaper than the first, right?": both forms are in the recorded runs). A question
+    about names, a question with a second part, a negated one ("isn't the first one cheaper") and "which is cheaper" are
+    left to the model.
+    """
+    asked_about = next((found for pattern in _PRICE_QUESTIONS if (found := pattern.match((asked or "").strip())) is not None), None)
+    if asked_about is None:
+        return None
+    first, how, second = (group.lower() for group in asked_about.groups())
+    places = _PLACE.split("|")
+    if first == second or max(places.index(first), places.index(second)) >= len(on_screen):
+        return None
+    prices: list[float] = []
+    for place in (first, second):
+        item = evidence.get(on_screen[places.index(place)])
+        if item is None:
+            return None
+        own = {round(value, 2) for value in ([item.price, item.live.price if item.live else None] if isinstance(item, CatalogItem) else [item.price])
+               if value is not None}
+        if len(own) != 1:
+            return None
+        prices.append(own.pop())
+    if prices[0] == prices[1]:
+        return None
+    more = how.startswith(("more", "pricier", "costlier"))
+    answer = prices[0] > prices[1] if more else prices[0] < prices[1]
+    how = " ".join(how.split())
+    return answer, f"the {first} one (${prices[0]:.2f}) is {'' if answer else 'not '}{how} than the {second} one (${prices[1]:.2f})"
+
+
 def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints, *, max_words: int = 42,
                 max_seconds: float | None = None, spoken_after: list[str] | None = None, total_seconds: float | None = None,
-                user_text: str | None = None, focus: list[str] | None = None) -> list[Issue]:
+                user_text: str | None = None, focus: list[str] | None = None, settled: tuple[bool, str] | None = None) -> list[Issue]:
     """All rule-based findings for one draft.
 
     ``focus`` lists the handles of on-screen products a follow-up refers to: their prices may be stated next to a
     recommended product's ("$7.99, against $9.99 for the first one"), whether or not they are recommended themselves.
+    ``settled`` is the answer code worked out to a yes-or-no question about two prices (:func:`settled_by_prices`); a
+    spoken sentence that opens with the other word is sent back.
 
     Length of the spoken sentence, in order of preference: with ``spoken_after`` (the sentences code will add
     after it) and ``total_seconds``, the reply as it will really be said must fit the limit at the fastest
@@ -436,6 +492,13 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
     # Live run, turn 25. Two live results were matched to the first product on screen: a listing with a price and no word about
     # stock, and a Walmart page with no price that said "out of stock". The reply's own text on screen named the Walmart page; its
     # spoken sentence said "neither the listing nor my sources state whether the first one is in stock".
+    # ---- a spoken "yes" or "no" about two prices agrees with the prices
+    opens = _OPENS_YES_NO.match(draft.spoken or "")
+    if settled is not None and opens is not None and (opens.group(1).lower() in ("yes", "yeah", "yep")) != settled[0]:
+        issues.append(Issue(code="yes_no_contradicts_prices", severity="revise", where="spoken",
+                            message=f"The spoken sentence opens with \"{opens.group(1)}\", but by the prices in the evidence {settled[1]}. "
+                                    f"Open with \"{'Yes' if settled[0] else 'No'}\" and state both prices."))
+
     # "The product" is one the answer is about. One it only names does not count: its stock is not what the sentence denies.
     for sentence in re.split(r"(?<=[.!?;])\s+", draft.spoken):
         if not (_STOCK_WORDS.search(sentence) and _NOT_STATED.search(sentence)):

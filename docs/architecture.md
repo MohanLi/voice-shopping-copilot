@@ -82,7 +82,11 @@ cell cannot contain something the tools did not return, whatever the model write
 Arithmetic is code's as well. A price per item or per ounce is worked out when the evidence is built, for a
 catalog product at ingestion and for a live listing from its own title, by the same rules (`data/units.py`,
 `retriever.web_unit_prices`). The evidence then lists the unit prices in order, lowest first, so that the model
-reads a comparison off and does not make one.
+reads a comparison off and does not make one. The same holds for the smallest comparison there is: asked "is the
+first one cheaper than the second?", the Answerer is given the yes or no that the two prices settle
+(`guardrails.output.settled_by_prices`), because one such answer in four had opened with the wrong word in front
+of the right prices. Code answers only when the question is that one comparison between two places on screen and
+each product has a single price.
 
 The free text the model does write (the reasons and the spoken sentence) is checked twice: by rules
 (`guardrails/output.py`: every dollar amount must be a price of a product the answer is about, a price above the

@@ -5,10 +5,10 @@ The finished assistant, voice path included, was evaluated seven times with the
 recorded search results, so that the runs can be compared, and three times on the laptop against live web search.
 Every run found failures; they were analysed, fixed and covered by tests before the next one. What the last run
 found is fixed as well. So are two faults that a live check turn on the laptop showed afterwards, on the
-assignment's own example, and one that a rehearsal of the demonstration showed in those repairs. None of these
-changes has been before a jury (failures 22 to 26). This document gives the configuration, the test
-scenarios, the scorecards, where in the pipeline the failures occurred, the analysis of twenty-six failures
-with what was changed for each, what the jury itself contributes to the numbers, and what is still wrong.
+assignment's own example, and two that rehearsals of the demonstration showed, one of them in those repairs.
+None of these changes has been before a jury (failures 22 to 27). This document gives the configuration, the
+test scenarios, the scorecards, where in the pipeline the failures occurred, the analysis of twenty-seven
+failures with what was changed for each, what the jury itself contributes to the numbers, and what is still wrong.
 
 | | Run 1 | Run 2 | Run 3 | Run 4 | Live run 1 | Live run 2 | Live run 3 |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -361,8 +361,8 @@ are from the runs' `turns.jsonl.gz`. Failures 1 to 5 come from run 1; 6 was foun
 the fixes; 7 and 8 come from run 2; 9 to 13 from run 3; 14 and 15 from run 4; 16 to 19 from the first live run;
 20 from the second; 21 from both, fixed after them; 22 and 23 from the third; 24 and 25 from one turn against
 the live search API that the laptop's refresh script runs, the assignment's own example, which no jury run had
-asked. Quotations of that turn are from the laptop's turn log. 26 was found rehearsing the demonstration on the
-sample results, in the repairs for the failures before it. Every one is a regression test now.
+asked. Quotations of that turn are from the laptop's turn log. 26 and 27 were found rehearsing the demonstration
+on the sample results, 26 in the repairs for the failures before it. Every one is a regression test now.
 
 ### Failure 1. One declined clause cost the shopper the whole message (input guard, Router)
 
@@ -1229,6 +1229,56 @@ asks for, and it was still wrong. An audit over recorded outputs shows that a ch
 recorded. It says nothing about a sentence nobody had recorded yet; running the demonstration on data the code
 was not written against did.
 
+### Failure 27. A "yes" in front of two prices that said no (Answerer; rehearsals on sample results)
+
+**Observed.** Not in a jury run; the same rehearsals. A list of board games was on screen, the first at $14.95
+and the second at $11.67, and the question was "Is the first one cheaper than the second?" The reply: "Yes,
+Calliope Tsuro costs $14.95 in the catalog, while Tic Tac Two costs $11.67, so Tic Tac Two is cheaper." Both
+prices are right and so is the conclusion. The first word is wrong, and the first word is what a listener
+keeps. The rule checks passed the sentence, because every figure in it is a price of the product it is said
+of. The model critic recorded it as "checked and found supported".
+
+To see how often this happens, twelve such questions were asked over three lists (first against second, second
+against first, third against first, "more expensive than"). Three answers opened with the wrong word, each
+with both prices right. None of the three was to "is the second one cheaper than the first", the one form the
+evaluation scenario uses, and every recorded answer to that form is right. The jury runs could not have
+shown this.
+
+**Why.** The Answerer is told to state the fact and not to open with "yes" or "no". It opens with one in most
+answers. Nothing compared the word with the prices: a comparison of two numbers was left to the model, in a
+system whose rule is that arithmetic is done by code (the unit prices after failure 22).
+
+**Changed.** When the whole question is one comparison of price between two places on screen ("is the second
+one cheaper than the first?", or "the second one's cheaper than the first, right?"), each of the two products
+has exactly one price and the prices differ, code works out the answer (`guardrails.output.settled_by_prices`).
+The Answerer and the Critic are given it with the question: "the answer was worked out by code from the two
+prices: no, the first one ($14.95) is not cheaper than the second one ($11.67)". A spoken sentence
+that opens with the other word is sent back.
+
+Everything else stays with the model: a question about products by name, a negated question, a question with a
+second part, "which is cheaper", and a product that has a catalog price and a different live price. A wrong
+answer from code would be worse than a model that is wrong one time in four.
+
+After the change, 23 such questions with the live model: 23 opened with the right word, and none needed the
+revision.
+
+### Smaller findings of the rehearsals
+
+- *The step beside an answered follow-up read "Abstained: nothing suitable in the evidence".* A sentence that
+  answers a question about the list recommends nothing new, so the turn has no table of its own. The step now
+  reads "One sentence about the list on screen ...; the list stays as it is".
+- *Open: the sentence that survives the cut is not always the one that answers.* "Find me a cheaper LEGO set
+  under fifteen dollars", after a question about a three-year-old. The first draft answered it: the cheapest
+  LEGO product found is a storage box at $9.89, which is not a building set. It also listed the set from before,
+  at $19.78, without saying that it is over the budget, and was sent back for that. The revision said so first
+  and the answer second, the time allowed one sentence, and the reply aloud was "The LEGO Classic Creative
+  Suitcase is over your budget, at a catalog price of $19.78 ...". The table was right. The caveat could have
+  been added by code without asking the model again; that finding occurred three times in 210 recorded turns,
+  and it is left as it is.
+- *Fourteen further turns were read* (a board game with two comparisons, a named LEGO set, the cleaner with a
+  question per ounce, a marble run for an eighteen-month-old, "is it non-toxic? I just need a yes"). Apart from
+  failure 27 and the item before this one, the replies were what the sources state.
+
 ## 5. What seven runs show, and what is still wrong
 
 **The score has been flat since run 2, and that is the finding.** 87%, then 95%, 95%, 94%, and 94% three times
@@ -1327,7 +1377,7 @@ changes that: nobody approves a reply before it is spoken.
 - Two of thirty turns went through audio, with one synthetic voice. Recognition is evaluated separately
   (`eval/results/speech/`), also on synthetic voices.
 - Each set of changes was seen by a jury in the run after it, up to the third live run. What was changed after
-  that run (failures 22 to 26, the unit prices worked out by code, and the smaller findings listed with them)
+  that run (failures 22 to 27, the unit prices worked out by code, and the smaller findings listed with them)
   is covered by tests built from the run's own records, by single turns and by four replays of its questions
   with the live model, not by a jury. The folder of the second live run is called `final` because it was meant
   to be the last; the code has moved on twice since.
@@ -1358,7 +1408,7 @@ changes that: nobody approves a reply before it is spoken.
    too much), by asserting per-stage expectations for each scenario: the words the recogniser must return, the
    constraints the Router must extract, the tool the plan must call, the handle a position must resolve to.
    Failure 16 began at the recogniser and is charged to the Answerer.
-5. **A deterministic regression suite from the recorded runs.** The twenty-six failures above are unit tests now.
+5. **A deterministic regression suite from the recorded runs.** The twenty-seven failures above are unit tests now.
    The replay tool could assert, for every recorded turn, the route, the tools called and the stage that wrote
    the reply, and fail a build when they change for the worse. Failure 9 is the argument for it: a scenario that
    passed in one run failed in the next on a rewording that no test contained. Failure 22 is a second argument,

@@ -85,6 +85,7 @@ only when the first product has them, otherwise "One of the options contains mag
 
 - a dollar amount must be a price of a product the answer is about (or the shopper's budget, or a difference of two such prices). "About" means recommended or referred to on screen. The price of one more kind of product may be stated: one the answer names, by a word that is in its title, in no other title of the evidence, and nowhere in the listings of the products the answer is about. Naming a product admits its prices and nothing else; a rating, a stock status or a claim is still checked against the products the answer is about. A price per item or per ounce counts when code worked it out from the listing's own title (`data/units.py`); a figure the model divided out itself does not;
 - nothing is called cheaper per ounce unless at least two products of the answer have a price per ounce;
+- a spoken "yes" or "no" to "is the first one cheaper than the second?" must agree with the two prices (worked out by code and given to the Answerer beforehand);
 - a rating or a review count must exist in the evidence;
 - "in stock", "ships today" need a live result that says so; a catalog price is not called current;
 - a claim such as non-toxic, BPA-free or eco-friendly must be stated by a source for that product;

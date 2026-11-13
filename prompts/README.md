@@ -58,7 +58,7 @@ input schemas, is [`eval/proofagent/context/tools.json`](../eval/proofagent/cont
 | `router` | `$safety_policy`, `$history` (earlier turns), `$shown` (products on screen) | the transcript, after the input screen has removed declined clauses and personal details |
 | `planner` | `$tools` (from MCP discovery), `$web_policy` (from `WEB_PRICE_CHECK`), `$history`, `$shown` | JSON: the product request, intent, constraints, on-screen positions referred to, safety level, and what was already declined |
 | `retriever` | `$rounds_left`, `$max_calls`, `$verify_n`, `$request`, `$declined`, `$constraints`, `$plan`, `$verify` | the results of the planned searches, fenced as data |
-| `answerer` | `$max_words` (spoken budget), `$safety_policy` | the product request, constraints, comparison criteria, which on-screen product is "the second one", then the **evidence** fenced as data (and, on a revision, the Critic's findings) |
+| `answerer` | `$max_words` (spoken budget), `$safety_policy` | the product request, constraints, comparison criteria, which on-screen product is "the second one", for a yes-or-no question about the prices of two products on screen the answer worked out by code, then the **evidence** fenced as data (and, on a revision, the Critic's findings) |
 | `critic` | `$safety_policy` | the product request, constraints, the evidence, the draft answer |
 
 The Answerer and the Critic see the retrieved evidence and nothing else about the products ("limit context to
@@ -74,6 +74,9 @@ Some things are too important to depend on a model following instructions, so co
   model (`voiceshop/guardrails/input.py`) and the Router choose sentences by id; no model writes one.
 * **Numbers on screen** — prices, ratings, materials, citations — are copied from the evidence by
   `voiceshop/agents/finalize.py`. The model picks items and writes reasons; it never types a table cell.
+* **Arithmetic.** Unit prices (per item, per ounce) and the yes or no of "is the first one cheaper than the
+  second?" are worked out by code and handed to the model with the evidence; a sentence that opens with the
+  other word is sent back.
 * **The count of alternatives, the safety sentence and the notes** in the spoken and on-screen answer are added
   by code from the evidence and the product's safety flags.
 * **Grounding rules** (a price that is not in the evidence, a rating that does not exist, "in stock" without a

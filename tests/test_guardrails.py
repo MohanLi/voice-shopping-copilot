@@ -18,7 +18,15 @@ from voiceshop.agents.state import (
 )
 from voiceshop.guardrails import policy
 from voiceshop.guardrails.input import screen_input
-from voiceshop.guardrails.output import asserted, check_draft, named_in, repair, trim_spoken, word_count
+from voiceshop.guardrails.output import (
+    asserted,
+    check_draft,
+    named_in,
+    repair,
+    settled_by_prices,
+    trim_spoken,
+    word_count,
+)
 from voiceshop.speech.text import MAX_SPEED, fits, spoken_words
 
 # ------------------------------------------------------------------ input screen
@@ -590,6 +598,54 @@ def test_a_word_that_describes_the_answers_own_product_does_not_name_another_lis
     assert named_in(f"{unstated} {why}", bare, bare.catalog) == [lake]
     assert codes(unstated, bare) == []
     assert codes("The Barnyard puzzle is $7.99 in the catalog and rated 4.5 stars.", bare) == ["rating_not_in_evidence"]
+
+
+def test_a_yes_or_no_about_two_prices_agrees_with_the_prices() -> None:
+    """Rehearsals of the demonstration, 12 November. "Is the first one cheaper than the second?", with $14.95 first and $11.67 second, was
+    answered "Yes, Calliope Tsuro costs $14.95 in the catalog, while Tic Tac Two costs $11.67, so Tic Tac Two is cheaper." Three of twelve
+    such answers opened with the wrong word and gave both prices correctly; the rule checks and the model critic passed them."""
+    tsuro = CatalogItem(ref="C2", doc_id="AMZ-B000NOIUZC", sku="B000NOIUZC", title="Calliope Tsuro: The Game of the Path", price=14.95)
+    tictac = CatalogItem(ref="C1", doc_id="AMZ-B07JM71P83", sku="B07JM71P83", title="Tic Tac Two", price=11.67)
+    mastermind = CatalogItem(ref="C4", doc_id="AMZ-B00000DMBF", sku="B00000DMBF", title="Mastermind for Kids", price=12.33)
+    evidence = Evidence(catalog=[tictac, tsuro, mastermind])
+    on_screen = ["C2", "C1", "C4"]                             # the order of the table, not of the handles
+
+    settled = settled_by_prices("Is the first one cheaper than the second?", on_screen, evidence)
+    assert settled == (False, "the first one ($14.95) is not cheaper than the second one ($11.67)")
+    assert settled_by_prices("okay, and is the second one cheaper than the first", on_screen, evidence) == (
+        True, "the second one ($11.67) is cheaper than the first one ($14.95)")
+    assert settled_by_prices("Okay, and is the first one more expensive than the third?", on_screen, evidence) == (
+        True, "the first one ($14.95) is more expensive than the third one ($12.33)")
+    assert settled_by_prices("Um, so is the second less expensive than the third one then?", on_screen, evidence) == (
+        True, "the second one ($11.67) is less expensive than the third one ($12.33)")
+    # Left to the model: a negated question, a choice, a second part, a name, a place that is not on screen, the same place twice.
+    for asked in ("Isn't the first one cheaper than the second?", "Is the first one not cheaper than the second?", "Which is cheaper, the first or the second?",
+                  "Is the first one cheaper than the second, and is it in stock?", "Is the Tsuro cheaper than the second one?",
+                  "Is the fourth one cheaper than the first?", "Is the first one cheaper than the first?", "Tell me if the first one is cheaper than the second", None):
+        assert settled_by_prices(asked, on_screen, evidence) is None, asked
+    # A product with a catalog price and a different live price has two answers; equal prices have none.
+    with_live = tsuro.model_copy(update={"live": LiveOffer(web_ref="W1", url="https://shop.example/tsuro", source="Example Games", price=10.99)})
+    assert settled_by_prices("Is the first one cheaper than the second?", on_screen, Evidence(catalog=[tictac, with_live, mastermind])) is None
+    assert settled_by_prices("Is the first one cheaper than the second?", on_screen,
+                             Evidence(catalog=[tictac.model_copy(update={"price": 14.95}), tsuro, mastermind])) is None
+    assert settled_by_prices("Is the first one cheaper than the second?", ["C2", "C9", "C4"], evidence) is None      # not in the evidence
+
+    def codes(spoken: str, answer: tuple[bool, str] | None = settled) -> list[str]:
+        draft = AnswerDraft(recommendations=[Recommendation(ref="C2", why="Catalog price $14.95."), Recommendation(ref="C1", why="Catalog price $11.67.")], spoken=spoken)
+        return [i.code for i in check_draft(draft, evidence, Constraints(), max_words=45, focus=["C2", "C1"], settled=answer) if i.severity != "info"]
+
+    as_recorded = "Yes, Calliope Tsuro costs $14.95 in the catalog, while Tic Tac Two costs $11.67, so Tic Tac Two is cheaper."
+    assert codes(as_recorded) == ["yes_no_contradicts_prices"]
+    told = next(i.message for i in check_draft(AnswerDraft(recommendations=[Recommendation(ref="C2", why="Catalog price $14.95.")], spoken=as_recorded),
+                                               evidence, Constraints(), max_words=45, focus=["C2", "C1"], settled=settled) if i.code == "yes_no_contradicts_prices")
+    assert "is not cheaper than the second one ($11.67)" in told and told.endswith('Open with "No" and state both prices.')
+    assert codes("No, Calliope Tsuro costs $14.95 in the catalog, while Tic Tac Two costs $11.67.") == []
+    assert codes("Calliope Tsuro costs $14.95 in the catalog, while Tic Tac Two costs $11.67, so Tic Tac Two is cheaper.") == []       # no yes, no no: nothing to contradict
+    assert codes("No lower price was found: Calliope Tsuro costs $14.95 and Tic Tac Two $11.67.") == []                                # "no" here is not an answer
+    assert codes(as_recorded, None) == []                     # nothing worked out by code: the word is the model's
+    yes = settled_by_prices("okay, and is the second one cheaper than the first", on_screen, evidence)
+    assert codes("No, the second one is cheaper: Tic Tac Two is $11.67, against $14.95 for Calliope Tsuro.", yes) == ["yes_no_contradicts_prices"]
+    assert codes("Yes, the second one is cheaper: Tic Tac Two is $11.67, against $14.95 for Calliope Tsuro.", yes) == []
 
 
 def test_a_product_is_not_called_the_cheapest_or_the_highest_rated_next_to_one_that_beats_it() -> None:

@@ -528,8 +528,16 @@ def make_finalize_node(deps: Any):  # type: ignore[no-untyped-def]
         by = {"llm+critic": "the model's answer, passed by the critic", "template": "the template answer, built from the evidence",
               "llm": "the model's answer"}.get(grounded_by or "", grounded_by or "a fixed reply")
         n_rows, n_cites = len(answer.table), len(answer.citations)
-        summary = (f"{n_rows} product{'s' if n_rows != 1 else ''} in the table, {n_cites} citation{'s' if n_cites != 1 else ''}, about "
-                   f"{estimate_seconds(answer.spoken):.0f} s to say; {by}") if answer.table else "Abstained: nothing suitable in the evidence"
+        route = state.get("route")
+        if answer.table:
+            summary = (f"{n_rows} product{'s' if n_rows != 1 else ''} in the table, {n_cites} citation{'s' if n_cites != 1 else ''}, about "
+                       f"{estimate_seconds(answer.spoken):.0f} s to say; {by}")
+        elif route is not None and route.intent in ("follow_up", "compare") and route.refers_to and state.get("shown") and answer.spoken:
+            # A question about the list on screen that one sentence answers ("no, the second one is not cheaper: ...") recommends
+            # nothing new. The step used to read "Abstained: nothing suitable in the evidence" next to a reply that answered.
+            summary = f"One sentence about the list on screen, about {estimate_seconds(answer.spoken):.0f} s to say; the list stays as it is; {by}"
+        else:
+            summary = "Abstained: nothing suitable in the evidence"
         if answer.kind == "abstain" and "**Closest for this age:" in answer.text:
             summary = "Abstained on what was asked for; the closest product labelled for the child's age is named, chosen by code"
         return {
