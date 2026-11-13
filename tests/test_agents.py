@@ -1408,6 +1408,22 @@ def test_a_toddler_in_the_home_is_not_who_a_cleaner_is_for() -> None:
     # A toy is for the child: the rule for children under three stays.
     toy = RouteDecision(intent="product_search", constraints=Constraints(product="wooden puzzle"))
     assert normalise_route(toy, "we have a toddler, find me a wooden puzzle for her", shown, earlier).constraints.age_years == 2.0
+    # So is a toy whose name has a cleaning word in it. The age is dropped for a household chemical and for nothing that is for play.
+    for product, asked_for in (("toy vacuum cleaner", "a toy vacuum cleaner for my two year old"), ("pipe cleaners", "pipe cleaners for my toddler's crafts"),
+                               ("kids nail polish kit", "a nail polish kit for my toddler"), ("play cleaning set", "a pretend cleaning set, she's eighteen months"),
+                               ("baby bath cleaner toy", "something for my baby's bath")):
+        child = Constraints(product=product, age_years=2.0)
+        assert not not_the_childs(child, product), product
+        routed = normalise_route(RouteDecision(intent="product_search", constraints=Constraints(product=product)), asked_for, [], None)
+        assert routed.constraints.age_years is not None and routed.constraints.age_years < 3, product
+    assert not policy.is_chemical("toy vacuum cleaner") and not policy.is_chemical("pipe cleaners, 100 count") and not policy.is_chemical("nail polish kit")
+    assert policy.is_chemical("stainless steel cleaner") and policy.is_chemical("furniture polish") and policy.is_chemical("Vacuum cleaner filter cleaner spray")
+    for product in ("bleach", "laundry detergent", "all-purpose cleaner", "drain opener"):
+        assert not_the_childs(Constraints(product=product, age_years=2.0), product), product
+    # With no product in the request, the products on screen decide, and all of them have to be cleaning products.
+    assert not_the_childs(Constraints(age_years=2.0), None, "Therapy Stainless Steel Cleaner & Polish", "Method Stainless Steel Cleaner")
+    assert not not_the_childs(Constraints(age_years=2.0), None, "Therapy Stainless Steel Cleaner & Polish", "Melissa & Doug Safari Wooden Chunky Puzzle")
+    assert not not_the_childs(Constraints(age_years=2.0), None)
     puzzles = [{"ref": "C2", "name": "Safari Wooden Chunky Puzzle", "title": "Melissa & Doug Safari Wooden Chunky Puzzle"}]
     about_a_toy = RouteDecision(intent="follow_up", refers_to=[1], constraints=Constraints())
     assert normalise_route(about_a_toy, "is the first one all right for my toddler?", puzzles, Constraints(product="wooden puzzle")).constraints.age_years == 2.0

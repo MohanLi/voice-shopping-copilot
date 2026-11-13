@@ -1355,13 +1355,17 @@ had not been run against a product that is nobody's toy.
 **Changed.**
 - An age is not kept when the product in question is a cleaning product (`agents.router.not_the_childs`; what
   counts as one is `guardrails.policy.is_chemical`, which the safety note already used). This is code, and it
-  applies to the request, to the request in force and to the products on screen that a follow-up is about.
+  applies to the request, to the request in force and, when the request names no product, to the products on
+  screen. It is deliberately narrow, because it switches a safety rule off: a product whose name says it is for
+  play or for the child keeps the age, so "a toy vacuum cleaner for my two-year-old" and "pipe cleaners for my
+  toddler's crafts" are still answered under the rule for children under three.
 - Router prompt version 7 says whose age `age_years` is, with an eighteenth example: "is the first one safe to
   use, we have a toddler at home".
 - The household is not ignored. When a small child is mentioned next to a cleaning product, the reply carries
   one more fixed sentence: "Keep cleaning products out of the reach of children."
-- `test_a_toddler_in_the_home_is_not_who_a_cleaner_is_for` holds the three cases and the case that must not
-  change: a toy for a two-year-old still gets the under-three rule.
+- `test_a_toddler_in_the_home_is_not_who_a_cleaner_is_for` holds the three cases and the cases that must not
+  change: a toy for a two-year-old still gets the under-three rule, including a toy with a cleaning word in
+  its name.
 
 A replay of the run's thirty questions with the changes in place, on sample search results (the build
 workspace cannot reach the live search, so the questions about "the Therapy cleaner" met a list without it).

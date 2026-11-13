@@ -178,7 +178,12 @@ def all_on_screen(text: str, shown: list[dict[str, Any]] | None) -> list[int]:
     return []
 
 
-def not_the_childs(constraints: Constraints, *products: str | None) -> bool:
+# Words that make a product the child's own, whatever else its name says: a toy vacuum cleaner, pipe cleaners, a nail polish kit.
+_FOR_PLAY = re.compile(r"\b(?:toys?|pretend|play(?:set|house|time|ing)?|kids?|child(?:ren)?|toddlers?|bab(?:y|ies)|dolls?|dollhouse|costumes?|"
+                       r"crafts?|games?|vacuum|pipe|nail|bubbles?|slime|putty|dough|bath)\b", re.I)
+
+
+def not_the_childs(constraints: Constraints, product: str | None, *on_screen: str | None) -> bool:
     """Whether a child's age was read into a request for something the child will not use: a cleaning product.
 
     An age is the age of whoever the product is for. "My wife wants proof it's safe since we have a toddler", asked about a
@@ -187,10 +192,16 @@ def not_the_childs(constraints: Constraints, *products: str | None) -> bool:
     and nine replies of the fourth live run fell to the template. The cleaner is used by an adult; what can be said
     about the child is where to keep it (``policy.CHEMICAL_CHILD_NOTE``).
 
-    Only cleaning products and other household chemicals are recognised. For furniture or an appliance in a home with a
-    toddler the age still stands, which errs on the careful side in a catalog that is mostly toys.
+    Decided by the product the request is about; by the products on screen only when the request names none, and then
+    every one of them has to be such a product. Only cleaning products and other household chemicals are recognised,
+    and never one whose name says it is for play or for the child: "a toy vacuum cleaner for my two-year-old" and "pipe
+    cleaners for my toddler's crafts" keep the age and the rule. For furniture or an appliance in a home with a toddler
+    the age still stands, which errs on the careful side in a catalog that is mostly toys.
     """
-    return constraints.age_years is not None and policy.is_chemical(*products)
+    if constraints.age_years is None:
+        return False
+    named = [product] if product else [title for title in on_screen if title]
+    return bool(named) and all(policy.is_chemical(name) and not _FOR_PLAY.search(name) for name in named)
 
 
 def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]] | None, earlier: Constraints | None = None) -> RouteDecision:

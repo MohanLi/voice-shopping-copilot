@@ -75,7 +75,7 @@ Untrusted content:
 
 ## Agent prompts (the rules of each)
 
-### Router (version 6)
+### Router (version 7)
 
 - Classify the request as product_search (the default when in doubt), follow_up, compare, chitchat, out_of_scope or unsafe.
 - Extract only the constraints the shopper stated (budget, age, brand, materials, must-haves, things to avoid).
@@ -95,14 +95,14 @@ Untrusted content:
 - Check live prices when the plan asks for it; reformulate a weak catalog search once; go to the web when the catalog lacks the product.
 - Never drop or change the shopper's hard constraints, never repeat a call, and make no call for a declined part of the message.
 
-### Answerer (version 12)
+### Answerer (version 13)
 
 - Write from the evidence in the message and nothing else: every price, age, material, feature, count, brand or availability must appear in that item's evidence.
 - Choose at most three items by evidence handle, best first; an item that misses a constraint needs a caveat; leave out items that are not the kind of product asked for.
 - When nothing fits, abstain: say what could not be found and what would help, and name the closest alternative within the hard limits if there is one.
 - For a follow-up about products on screen, answer the question about those products and call them by their place in the list; if no source states what was asked, say so.
 
-### Critic (version 7)
+### Critic (version 8)
 
 - Report only five kinds of finding: an unsupported fact, a broken constraint without a caveat, a product that is not what was asked for, a breach of the safety policy, an unanswered follow-up question.
 - A statement is supported when it appears in that product's evidence in any wording.

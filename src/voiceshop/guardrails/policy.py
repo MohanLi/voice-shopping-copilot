@@ -241,9 +241,13 @@ CHEMICAL_WORDS = (
 )
 
 
+# "Cleaner" and "polish" in the names of things that are not household chemicals.
+_NOT_A_CHEMICAL = re.compile(r"\b(?:vacuum|pipe)[\s-]+cleaners?\b|\bnail[\s-]+polish(?:es)?\b", re.I)
+
+
 def is_chemical(*texts: str | None) -> bool:
-    """Whether any of the texts names a cleaning product or another household chemical."""
-    blob = " ".join(t for t in texts if t).lower()
+    """Whether any of the texts names a cleaning product or another household chemical. A vacuum cleaner, pipe cleaners and nail polish are none."""
+    blob = _NOT_A_CHEMICAL.sub(" ", " ".join(t for t in texts if t).lower())
     return any(re.search(rf"\b{re.escape(word)}s?\b", blob) for word in CHEMICAL_WORDS)
 
 
