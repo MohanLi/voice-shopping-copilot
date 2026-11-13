@@ -255,6 +255,7 @@ notebooks/      01_data_ingestion.ipynb: the data work, executed, every count ch
 | shopping assistants that exist, and what was taken from them | [docs/related-work.md](docs/related-work.md) |
 | the two course checkpoints | [docs/checkpoints/](docs/checkpoints/) |
 | the seven-minute demonstration: turns, timing, fallbacks | [docs/demo-script.md](docs/demo-script.md) |
+| the four slides of the demonstration, with speaker notes | [docs/slides/Voice-Shopping-Copilot-demo.pptx](docs/slides/Voice-Shopping-Copilot-demo.pptx) |
 | what was decided, when, on what evidence | [docs/decisions.md](docs/decisions.md) |
 
 ## Safety

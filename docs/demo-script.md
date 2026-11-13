@@ -11,8 +11,9 @@ sample web data, and on 13 November on the laptop against live search (typed). T
 which are fixed ([failures 26, 27, 29 and 30](evaluation.md)): on live results the third turn had put a product
 without a price first. That fix is tested on the recorded live results and has not met a live search since.
 Rehearse the four turns once more on the laptop before presenting (the command is in the last section), and
-once by voice with a timer. The four slides exist as a PowerPoint file, `Voice-Shopping-Copilot-demo.pptx`
-(not in this repository); its evaluation slide shows the eight runs.
+once by voice with a timer. The four slides are a PowerPoint file with the "say" column as speaker notes:
+[`slides/Voice-Shopping-Copilot-demo.pptx`](slides/Voice-Shopping-Copilot-demo.pptx). Its evaluation slide shows
+the eight runs.
 
 ## Minute by minute
 
