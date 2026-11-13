@@ -248,7 +248,7 @@ _OPENS_YES_NO = re.compile(r"^\s*(yes|yeah|yep|no|nope)\s*[,.;:!]", re.I)
 def settled_by_prices(asked: str | None, on_screen: list[str], evidence: Evidence) -> tuple[bool, str] | None:
     """The answer to "is the first one cheaper than the second?", worked out from the two prices: (yes or no, the statement).
 
-    A yes or a no about two prices is arithmetic, and the model got the word wrong about once in five while stating both
+    A yes or a no about two prices is arithmetic, and the model got the word wrong about one time in four while stating both
     prices correctly: "Yes, Calliope Tsuro costs $14.95 in the catalog, while Tic Tac Two costs $11.67, so Tic Tac Two is
     cheaper" (rehearsals of the demonstration, 12 November: 3 of 12 such answers). The rule checks pass such a sentence,
     because every price in it is right, and so did the model critic.

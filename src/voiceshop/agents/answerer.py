@@ -134,8 +134,13 @@ def settled_question(state: TurnState) -> tuple[bool, str] | None:
     route: RouteDecision | None = state.get("route")
     if route is None or route.intent not in ("follow_up", "compare"):
         return None
-    on_screen = [str(entry.get("ref")) for entry in state.get("shown") or []]
-    return settled_by_prices(state.get("request_text") or state.get("user_text"), on_screen, state.get("evidence") or Evidence())
+    evidence: Evidence = state.get("evidence") or Evidence()
+    on_screen = []
+    for entry in state.get("shown") or []:
+        item = evidence.get(str(entry.get("ref")))
+        # A place counts only while its handle still means the product that is shown there (failure 7: one handle, two products).
+        on_screen.append(str(entry.get("ref")) if item is not None and entry.get("title") in (None, item.title) else "")
+    return settled_by_prices(state.get("request_text") or state.get("user_text"), on_screen, evidence)
 
 
 def focus_refs(state: TurnState) -> list[str]:

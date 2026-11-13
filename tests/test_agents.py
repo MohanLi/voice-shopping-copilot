@@ -1337,6 +1337,11 @@ def test_the_answerer_is_given_the_yes_or_no_that_the_prices_settle() -> None:
     # Nothing is worked out for another kind of question, or for a request that is not about the list on screen.
     assert "worked out by code" not in _request_block(state("Which of the two is better for a family of four?"), Constraints(), None)
     assert settled_question(state("Is the first one cheaper than the second?", intent="product_search")) is None
+    # Nor when a handle no longer means the product shown in that place (run 2 had one handle for two products).
+    moved = [{"ref": "C2", "name": "Calliope Tsuro", "title": "Calliope Tsuro: The Game of the Path"}, {"ref": "C1", "name": "Labyrinth", "title": "Ravensburger Labyrinth"}]
+    assert settled_question(state("Is the first one cheaper than the second?", shown=moved)) is None
+    same = [{"ref": "C2", "title": "Calliope Tsuro: The Game of the Path"}, {"ref": "C1", "title": "Tic Tac Two"}]
+    assert settled_question(state("Is the first one cheaper than the second?", shown=same)) == (False, "the first one ($14.95) is not cheaper than the second one ($11.67)")
 
 
 def test_the_step_log_does_not_call_an_answered_follow_up_an_abstention() -> None:
