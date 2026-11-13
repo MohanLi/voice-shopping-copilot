@@ -151,26 +151,25 @@ needs its arithmetic done by code, which it now is. None of that has been before
 open are named in the evaluation document, not hidden in the average. Run 4 and the three live runs are on the
 ProofAgent dashboard (release gate: pass).
 
-**Retrieval** — two benchmarks on the full index of 9,740 products, one known target per request
+**Retrieval** — two benchmarks on the full index of 9,740 products, one known target per request, on an M2 Max
 ([how they were made and what they show](docs/retrieval.md)). 600 requests written from the listings, and 165
 paraphrases that code checked to share no word with the product's title:
 
-| hit@3 (hit@1) | 600 from the listings | 165 paraphrases | budget and age kept in the top 3 |
-|---|---:|---:|---|
-| BM25 | 91.0 (81.2) | 32.7 (23.6) | no: 64-78% |
-| dense (bge-small) | 85.3 (74.8) | 35.8 (24.2) | no: 67-80% |
-| BM25 + metadata filters | 92.0 (84.2) | 41.2 (27.9) | 100% |
-| dense + metadata filters | 88.7 (79.2) | 40.6 (28.5) | 100% |
-| hybrid (reciprocal-rank fusion) + filters | 93.0 (84.5) | 49.1 (28.5) | 100% |
-| + cross-encoder on the first 10, fused (default) | 93.0 (84.7) | 49.7 (27.3) | 100% |
+| hit@3 (hit@1) | 600 from the listings | 165 paraphrases | budget and age kept in the top 3 | median |
+|---|---:|---:|---|---:|
+| BM25 | 91.2 (81.0) | 32.7 (22.4) | no: 64-78% | 0.3 ms |
+| dense (bge-small) | 85.3 (74.8) | 35.8 (24.2) | no: 67-80% | 13 ms |
+| BM25 + metadata filters | 92.2 (84.2) | 41.2 (27.9) | 100% | 0.3 ms |
+| dense + metadata filters | 88.7 (79.2) | 40.6 (28.5) | 100% | 58 ms |
+| hybrid (reciprocal-rank fusion) + filters | 93.0 (84.7) | 49.1 (28.5) | 100% | 58 ms |
+| + cross-encoder on the first 10, fused (default) | 93.0 (84.5) | 49.7 (27.3) | 100% | 167 ms |
 
 Three honest readings: filters, not embeddings, are what guarantee the budget and the age. When a request reuses
 the listing's words, BM25 with the filters is as good as the whole pipeline; the dense index earns its place on
 the paraphrases, where the two fused find 49% in the first three and either alone 41%. And the cross-encoder
 adds nothing measurable to the ranking; it is kept because the score of its best candidate flags 84% of requests
 the catalog cannot answer while wrongly flagging 3% of those it can, and that flag is what sends a search to the
-live web. These hit rates are from the build machine ([tables](eval/results/retrieval/linux-2cpu/)); on the M2
-Max a search with the default settings took 165 ms at the median when last measured there.
+live web ([full tables](eval/results/retrieval/benchmark.md)).
 
 **Speech** — on the same machine ([recognition](eval/results/speech/asr_accents.md),
 [spoken replies](eval/results/speech/tts_duration.md)): 10 shopping requests read by 17 synthetic voices in nine

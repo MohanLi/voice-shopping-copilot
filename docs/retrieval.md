@@ -190,38 +190,37 @@ with the words it borrowed, up to eight times. 165 of the 200 products got a par
 rule is about the title only: a third of a paraphrase's words (the median) still occur somewhere else in the
 listing, in a bullet or the description.
 
-Both on the full index of 9,740 products, measured on the two-CPU build machine
-(`eval/results/retrieval/linux-2cpu/`, with the full tables). Latency is a property of the machine and is not in
-these tables: there a search with the default settings takes 610 ms at the median, 129 ms without the
-cross-encoder and 2.9 s when the cross-encoder reads all forty candidates. On the M2 Max the system is built
-for, the default took 165 ms the last time it was measured there
-([`eval/results/retrieval/benchmark.md`](../eval/results/retrieval/benchmark.md), from before the query
-instruction of point 5; `scripts/mac_refresh.sh` writes it anew).
+Both on the full index of 9,740 products, measured on the M2 Max the system is built for
+([`benchmark.md`](../eval/results/retrieval/benchmark.md) and
+[`paraphrase/benchmark.md`](../eval/results/retrieval/paraphrase/benchmark.md), written by
+`scripts/mac_refresh.sh`). The last column is the median time of one search on that machine.
 
-| 600 requests written from the listings | hit@1 | hit@3 | hit@10 | MRR@10 | in budget@3 | age ok@3 |
-|---|---:|---:|---:|---:|---:|---:|
-| BM25 | 81.2 | 91.0 | 96.2 | 0.866 | 77.9 | 76.5 |
-| dense | 74.8 | 85.3 | 93.3 | 0.810 | 78.1 | 79.8 |
-| hybrid (rank fusion) | 81.5 | 91.5 | 95.7 | 0.869 | 78.1 | 79.5 |
-| BM25 + filters | 84.2 | 92.0 | 96.3 | 0.886 | 100 | 100 |
-| dense + filters | 79.2 | 88.7 | 94.7 | 0.844 | 100 | 100 |
-| hybrid + filters | 84.5 | 93.0 | 96.3 | 0.890 | 100 | 100 |
-| hybrid + filters, re-rank all 40 and take its order (150 requests) | 84.7 | 90.7 | 97.3 | 0.885 | 100 | 100 |
-| **hybrid + filters, re-rank the first 10 and fuse (default)** | **84.7** | **93.0** | **96.3** | **0.891** | 100 | 100 |
+| 600 requests written from the listings | hit@1 | hit@3 | hit@10 | MRR@10 | in budget@3 | age ok@3 | ms |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| BM25 | 81.0 | 91.2 | 96.2 | 0.866 | 77.9 | 76.5 | 0.3 |
+| dense | 74.8 | 85.3 | 93.3 | 0.810 | 78.1 | 79.8 | 13 |
+| hybrid (rank fusion) | 81.7 | 91.5 | 95.7 | 0.870 | 78.1 | 79.5 | 13 |
+| BM25 + filters | 84.2 | 92.2 | 96.3 | 0.886 | 100 | 100 | 0.3 |
+| dense + filters | 79.2 | 88.7 | 94.7 | 0.844 | 100 | 100 | 58 |
+| hybrid + filters | 84.7 | 93.0 | 96.3 | 0.891 | 100 | 100 | 58 |
+| hybrid + filters, re-rank all 40 and take its order | 83.3 | 90.7 | 96.8 | 0.876 | 100 | 100 | 542 |
+| **hybrid + filters, re-rank the first 10 and fuse (default)** | **84.5** | **93.0** | **96.3** | **0.890** | 100 | 100 | **167** |
 
-| 165 paraphrases without a word of the title | hit@1 | hit@3 | hit@10 | MRR@10 | in budget@3 | age ok@3 |
-|---|---:|---:|---:|---:|---:|---:|
-| BM25 | 23.6 | 32.7 | 47.9 | 0.302 | 67.3 | 64.1 |
-| dense | 24.2 | 35.8 | 51.5 | 0.316 | 67.9 | 67.2 |
-| hybrid (rank fusion) | 22.4 | 42.4 | 64.8 | 0.350 | 69.5 | 67.2 |
-| BM25 + filters | 27.9 | 41.2 | 52.1 | 0.355 | 100 | 100 |
-| dense + filters | 28.5 | 40.6 | 61.8 | 0.372 | 100 | 100 |
-| hybrid + filters | 28.5 | 49.1 | 68.5 | 0.414 | 100 | 100 |
-| hybrid + filters, re-rank all 40 and take its order | 27.9 | 38.8 | 53.3 | 0.348 | 100 | 100 |
-| **hybrid + filters, re-rank the first 10 and fuse (default)** | **27.3** | **49.7** | **68.5** | **0.410** | 100 | 100 |
+| 165 paraphrases without a word of the title | hit@1 | hit@3 | hit@10 | MRR@10 | in budget@3 | age ok@3 | ms |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| BM25 | 22.4 | 32.7 | 47.9 | 0.296 | 67.3 | 64.1 | 0.3 |
+| dense | 24.2 | 35.8 | 51.5 | 0.316 | 67.9 | 67.2 | 13 |
+| hybrid (rank fusion) | 21.8 | 41.8 | 64.8 | 0.345 | 69.5 | 67.2 | 14 |
+| BM25 + filters | 27.9 | 41.2 | 52.1 | 0.355 | 100 | 100 | 0.4 |
+| dense + filters | 28.5 | 40.6 | 61.8 | 0.372 | 100 | 100 | 59 |
+| hybrid + filters | 28.5 | 49.1 | 68.5 | 0.414 | 100 | 100 | 59 |
+| hybrid + filters, re-rank all 40 and take its order | 27.9 | 38.8 | 53.3 | 0.348 | 100 | 100 | 576 |
+| **hybrid + filters, re-rank the first 10 and fuse (default)** | **27.3** | **49.7** | **68.5** | **0.410** | 100 | 100 | **169** |
 
 hit@k: the target is among the first k. "In budget@3" and "age ok@3": the share of the first three results that
-respect the stated budget or age, which is what the shopper sees.
+respect the stated budget or age, which is what the shopper sees. The same two benchmarks on the two-CPU build
+machine are in `eval/results/retrieval/linux-2cpu/`: where both ran the same requests no cell differs by more
+than two of them, and a search takes about four times as long (610 ms for the default).
 
 What I read from the two tables, in order of how sure I am:
 
@@ -229,8 +228,8 @@ What I read from the two tables, in order of how sure I am:
    than a third of the first three results break the stated limit, with any retriever. With them none does. This is the one
    result that is not close, and it is the same in both tables.
 2. **When the request shares the listing's words, BM25 with the filters is as good at the top as the whole
-   pipeline** (84.2 against 84.7 at hit@1, 92.0 against 93.0 at hit@3: three and six requests of 600). The first
-   benchmark alone would say the dense index is not worth building.
+   pipeline** (84.2 against 84.5 at hit@1, 92.2 against 93.0 at hit@3: two and five requests of 600), in a
+   third of a millisecond. The first benchmark alone would say the dense index is not worth building.
 3. **When it shares none, neither retriever is enough and fusing them is.** BM25 with filters finds the target
    in the first three for 41.2% of the paraphrases, dense for 40.6%, the two fused for 49.1%; in the first ten,
    52.1%, 61.8% and 68.5%. BM25 still finds some because bullets and descriptions are in its text and the
@@ -238,16 +237,17 @@ What I read from the two tables, in order of how sure I am:
    fusion is for. The absolute numbers are low because the test is hard on purpose and because one product
    counts as the answer when several would do (below).
 4. **The cross-encoder no longer improves the ranking, and it is not there for that.** Fused as one more voter
-   on the first ten, it changes hit@3 by 0.0 on the first benchmark and +0.6 on the second (one request).
-   Taking its order for all forty candidates makes little difference on the first and is bad on the second:
-   49.1 falls to 38.8 at hit@3, at more than four times the latency. Before the query instruction below was added, the same vote
-   was worth +0.5 at hit@1 and +1.5 at hit@3 on the first benchmark: part of what it added was what the dense
-   search had been missing. It stays because its best score is the only number in the pipeline that says whether
-   anything retrieved answers the request (section 6), and for that it reads ten pairs a search.
+   on the first ten, it changes hit@3 by 0.0 on the first benchmark and +0.6 on the second (one request), and
+   hit@1 by -0.2 and -1.2 (one and two requests). Taking its order for all forty candidates is worse on both:
+   93.0 falls to 90.7 at hit@3 on the first and 49.1 to 38.8 on the second, at three times the latency. Before
+   the query instruction below was added, the same vote was worth +0.5 at hit@1 and +1.5 at hit@3 on the first
+   benchmark: part of what it added was what the dense search had been missing. It stays because its best score
+   is the only number in the pipeline that says whether anything retrieved answers the request (section 6). For
+   that it reads ten pairs a search, which is about 110 of the 167 milliseconds.
 5. **A query is embedded with the instruction its model was trained with** (section 2). With the index
    unchanged, on the first benchmark: dense alone 69.0 to 74.8 at hit@1, dense with filters 74.7 to 79.2, the
-   fused pipeline with filters 83.3 to 84.5 (`eval/experiments/query_instruction.py`). On the paraphrases, dense
-   with filters 52.1 to 61.8 at hit@10.
+   fused pipeline with filters 83.3 to 84.5 (`eval/experiments/query_instruction.py`, run on the build machine).
+   On the paraphrases, dense with filters 52.1 to 61.8 at hit@10.
 6. **Ties are decided by a named ranker.** With two rankers of equal weight, two products that swap places tie
    exactly. Ties in the first fusion go to the BM25 order, ties in the second to the retrieval order; both were
    measured on all 600 requests against the alternatives (`tie_break.json`). hit@3 is the same whoever decides.

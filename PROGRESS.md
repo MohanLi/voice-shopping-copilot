@@ -38,18 +38,17 @@ Lint clean (`ruff check src tests scripts eval`).
 
 ## Results so far
 
-Retrieval, two benchmarks on the 9,740 products (`docs/retrieval.md` section 5). Hit rates from the build
-workspace (`eval/results/retrieval/linux-2cpu/`); the Mac's record is rewritten by `scripts/mac_refresh.sh`.
+Retrieval, two benchmarks on the 9,740 products (`docs/retrieval.md` section 5), on the Mac
+(`eval/results/retrieval/benchmark.md`, `paraphrase/benchmark.md`; the same on the build workspace in `linux-2cpu/`).
 
-| hit@3 (hit@1) | 600 requests written from the listings | 165 paraphrases without a word of the title |
-|---|---:|---:|
-| BM25 + filters | 92.0 (84.2) | 41.2 (27.9) |
-| dense + filters | 88.7 (79.2) | 40.6 (28.5) |
-| hybrid + filters | 93.0 (84.5) | 49.1 (28.5) |
-| + re-rank top 10, fused (default) | 93.0 (84.7) | 49.7 (27.3) |
+| hit@3 (hit@1) | 600 requests written from the listings | 165 paraphrases without a word of the title | median |
+|---|---:|---:|---:|
+| BM25 + filters | 92.2 (84.2) | 41.2 (27.9) | 0.3 ms |
+| dense + filters | 88.7 (79.2) | 40.6 (28.5) | 58 ms |
+| hybrid + filters | 93.0 (84.7) | 49.1 (28.5) | 58 ms |
+| + re-rank top 10, fused (default) | 93.0 (84.5) | 49.7 (27.3) | 167 ms |
 
-Budget and age are respected in 100% of the first three results with filters and in 64-80% without. Default
-search: 165 ms at the median on the M2 Max when last measured there, 610 ms on the 2-CPU workspace.
+Budget and age are respected in 100% of the first three results with filters and in 64-80% without.
 
 Live agent turns on the Mac (Claude Haiku 5.5 + Serper): 6.3-13.6 s per turn, $0.002-0.005 per turn.
 Per call: router 1.1-1.5 s, planner 1.5-1.8 s, answerer 1.6-2.1 s, critic 0.6-1.5 s, web search 0.9-1.5 s.
