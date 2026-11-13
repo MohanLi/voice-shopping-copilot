@@ -1,6 +1,6 @@
 # PROGRESS — Voice Shopping Copilot build log
 
-**Last updated:** 2026-11-13 00:22 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
+**Last updated:** 2026-11-13 05:03 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
 (`~/Desktop/2026 Autumn/Applied Generative AI/Final Project/voice-shopping-copilot`).
 **The folder on the Mac is the source of truth.**
 
@@ -28,11 +28,11 @@ Legend: ✅ done · 🔄 in progress · ⏳ waiting on Kevin · ⬜ not started
 | 3 | LangGraph agents (Router, Planner, Retriever, Answerer, Critic), guardrails, prompts, memory | ✅ | four live turns on the Mac 2026-11-11 (Claude + Serper); three defects found there are fixed and tested (`docs/decisions.md`, "First live run"); since 12 Nov a web fallback when the catalog has nothing suitable (`docs/architecture.md`) |
 | 4 | Speech: faster-whisper ASR, Kokoro TTS, ≤15 s spoken summary, voice turns | ✅ | `src/voiceshop/speech/`, `agents/listen.py`, `voiceshop voice / transcribe / say`, `tests/test_speech.py`; run voice to voice on the Mac 2026-11-11 (Kevin: "the voice sounds natural") |
 | 5 | FastAPI service + React UI | ✅ | `src/voiceshop/api/`, `frontend/` (bundle in `frontend/dist`), `voiceshop serve`, `tests/test_api.py`, `frontend/e2e/smoke.cjs` (a spoken request through a fake microphone, a follow-up, a reply that keeps the earlier table on screen); tried on the Mac by Kevin; screenshots in `docs/images/` |
-| 6 | ProofAgent evaluation, component metrics, failure analysis with before/after | ✅ | seven runs in `eval/results/proofagent/` (`run1..run4` in the workspace, `mac-live`, `final` and `live3` on the Mac against live search) with scorecards, stage attribution and the comparison; run 4 and both live runs uploaded to the ProofAgent dashboard (gate: pass); `docs/evaluation.md` (twenty-one failure analyses, what is still wrong); speech and retrieval evaluations in `eval/results/` |
-| 7 | Beyond-requirements bundles (retrieval & grounding, eval rigor, voice UX, engineering showcase) | 🔄 | retrieval & grounding and eval rigor in place (replay tool, repeated-ballot report, upload to the ProofAgent dashboard); open: CI, Docker, demo GIF, second-provider run |
-| 8 | Documentation, verification pass against `docs/objectives.md` | 🔄 | `README.md`, `docs/architecture.md`, `docs/mcp.md`, `docs/evaluation.md`, `docs/safety.md`, `docs/decisions.md`, `prompts/README.md`, `eval/proofagent/README.md`; still to write: data, retrieval, checkpoints, the ingestion notebook |
+| 6 | ProofAgent evaluation, component metrics, failure analysis with before/after | ✅ | eight runs in `eval/results/proofagent/` (`run1..run4` in the workspace, `mac-live`, `final`, `live3` and `live4` on the Mac against live search) with scorecards, stage attribution and the comparison; run 4 and the four live runs uploaded to the ProofAgent dashboard (gate: pass); `docs/evaluation.md` (thirty-one failure analyses, what is still wrong); speech and retrieval evaluations in `eval/results/` |
+| 7 | Beyond-requirements bundles (retrieval & grounding, eval rigor, voice UX, engineering showcase) | 🔄 | retrieval & grounding and eval rigor in place (replay tool, repeated-ballot report, upload to the ProofAgent dashboard); CI on GitHub Actions (green on `48d6ca8`); the recorded demo at the top of the README; open: Docker, a second-provider run |
+| 8 | Documentation, verification pass against `docs/objectives.md` | 🔄 | `README.md`, `docs/architecture.md`, `docs/mcp.md`, `docs/data.md`, `docs/retrieval.md`, `docs/evaluation.md`, `docs/safety.md`, `docs/decisions.md`, `docs/related-work.md`, `docs/demo-script.md`, the two checkpoints, the ingestion notebook, `prompts/README.md`, `eval/proofagent/README.md`; open: the presentation itself (slides exist as a PowerPoint file; a rehearsal by voice) |
 
-Tests: 641 passing (`python -m pytest tests -q`, ~20 s, no key or network needed) plus one behind `--run-models`,
+Tests: 648 passing (`python -m pytest tests -q`, ~20 s, no key or network needed) plus one behind `--run-models`,
 and the browser check `node frontend/e2e/smoke.cjs` against a running server.
 Lint clean (`ruff check src tests scripts eval`).
 
@@ -54,89 +54,95 @@ Live agent turns on the Mac (Claude Haiku 5.5 + Serper): 6.3-13.6 s per turn, $0
 Per call: router 1.1-1.5 s, planner 1.5-1.8 s, answerer 1.6-2.1 s, critic 0.6-1.5 s, web search 0.9-1.5 s.
 
 ProofAgent (30 turns, 2 through audio, jury Claude Haiku 5.5; `docs/evaluation.md`). Runs 1 to 4: build workspace,
-recorded web results with planted faults. Live 1 (`mac-live`), Live 2 (`final`) and Live 3 (`live3`): the Mac,
-Serper, Whisper `small.en`, Kokoro.
+recorded web results with planted faults. Live 1 (`mac-live`), Live 2 (`final`), Live 3 (`live3`) and Live 4
+(`live4`, seventeen scenarios): the Mac, Serper, Whisper `small.en`, Kokoro.
 
-| | Run 1 `0ac9312` | Run 2 `4d7d102` | Run 3 `255a635` | Run 4 `059e7bf` | Live 1 `9929eae` | Live 2 `6e90e14` | Live 3 `99c59ca` |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Task Success | 66% | 85% | 83% | 86% | 82% | 78% | 71% |
-| Hallucination Resistance | 86% | 87% | 91% | 90% | 88% | 95% | 96% |
-| Tool Use | 100% | 100% | 100% | 100% | 100% | 100% | 100% |
-| Safety | 84% | 99% | 98% | 93% | 97% | 95% | 100% |
-| Instruction Following | 88% | 99% | 98% | 95% | 98% | 96% | 99% |
-| Behavioural score | 87% | 95% | 95% | 94% | 94% | 94% | 94% |
-| Certification | NEEDS_ENHANCEMENT | SILVER | SILVER | SILVER | SILVER | SILVER | NEEDS_ENHANCEMENT |
-| ProofAgent Index | 74.8 | 77.0 | 78.1 | 79.1 | 80.0 | 78.2 | 76.8 |
-| Credit lost (of it, to ballots the jury repeated) | 17.64 (1.33) | 10.32 (2.40) | 8.87 (2.66) | 11.91 (3.73) | 11.44 (1.00) | 10.43 (0) | 10.59 (0) |
-| Median turn | 10.2 s | 14.1 s | 14.6 s | 13.5 s | 8.4 s | 8.4 s | 6.0 s |
+| | Run 1 `0ac9312` | Run 2 `4d7d102` | Run 3 `255a635` | Run 4 `059e7bf` | Live 1 `9929eae` | Live 2 `6e90e14` | Live 3 `99c59ca` | Live 4 `f0e4769` |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Task Success | 66% | 85% | 83% | 86% | 82% | 78% | 71% | 85% |
+| Hallucination Resistance | 86% | 87% | 91% | 90% | 88% | 95% | 96% | 86% |
+| Tool Use | 100% | 100% | 100% | 100% | 100% | 100% | 100% | 100% |
+| Safety | 84% | 99% | 98% | 93% | 97% | 95% | 100% | 99% |
+| Instruction Following | 88% | 99% | 98% | 95% | 98% | 96% | 99% | 99% |
+| Behavioural score | 87% | 95% | 95% | 94% | 94% | 94% | 94% | 95% |
+| Certification | NEEDS_ENHANCEMENT | SILVER | SILVER | SILVER | SILVER | SILVER | NEEDS_ENHANCEMENT | SILVER |
+| ProofAgent Index | 74.8 | 77.0 | 78.1 | 79.1 | 80.0 | 78.2 | 76.8 | 78.6 |
+| Credit lost (of it, to ballots the jury repeated) | 17.64 (1.33) | 10.32 (2.40) | 8.87 (2.66) | 11.91 (3.73) | 11.44 (1.00) | 10.43 (0) | 10.59 (0) | 10.07 (0) |
+| Median turn | 10.2 s | 14.1 s | 14.6 s | 13.5 s | 8.4 s | 8.4 s | 6.0 s | 9.9 s |
 
-Dashboard (gate "pass" for all four): Live 1 `5f8960c4-c539-4fc5-bad2-1a449683b8ee` (9.42 of 10), Live 2
-`b9a24bc8-6966-4689-aa0f-ca65ca6a8c2e` (9.41), Live 3 `53a3c2a1-c9a9-4317-bef6-ab60926d835c` (9.43), run 4
-`09a58c80-e1d8-4a27-ab05-950667826f79` (9.40).
+Dashboard (gate "pass" for all five): Live 1 `5f8960c4-c539-4fc5-bad2-1a449683b8ee` (9.42 of 10), Live 2
+`b9a24bc8-6966-4689-aa0f-ca65ca6a8c2e` (9.41), Live 3 `53a3c2a1-c9a9-4317-bef6-ab60926d835c` (9.43), Live 4
+`ed3918a5-c22d-4fb7-8aa1-923ea9d03f09` (9.50), run 4 `09a58c80-e1d8-4a27-ab05-950667826f79` (9.40).
 
 **Live 3 in one paragraph.** 94% again, Task Success 71%, and the label NEEDS_ENHANCEMENT because that one
 metric is below the harness's warning level. Five of the six failed turns had one cause, in code: on turns 24,
 25, 27, 28 and 30 the Router restated the product question of the message correctly, and a backstop in
 `normalise_route` relabelled the turn "not a shopping request". Safety 100% and Hallucination Resistance 96% are
-the best of the seven runs; the web fallback fired on two turns and lost nothing.
+the best of the eight runs; the web fallback fired on two turns and lost nothing.
 
-The code as it stands is later than Live 3, and no jury has seen what follows (`docs/evaluation.md`, failures 22
-and 23 and the smaller findings after them):
+**Live 4 in one paragraph.** 95%, SILVER, the first run with the assignment's own example as scenario 17, and
+the jury for everything changed after Live 3 (failures 22 to 27). The Router lost no credit (6.28 the run
+before). All 10.07 credit lost is at the Answerer: nine template replies in thirteen turns about a cleaner,
+because "we have a toddler" set an age and the under-three rule removed every cleaner (failure 28); "the LEGO
+set closest to eight dollars" said of a $5.59 set above one at $6.56 (failure 31, 3.00 on one turn); "no current
+web price was found" in a turn that searched nothing; "the better fit" for an age both listings include. The
+web-only turn lost nothing, and its step log showed a look-up spent on an article and one product in two rows
+(failure 29). The jury lost five calls; its retries on Sonnet made the harness cost $2.19.
 
-- the backstop yields to a product question the Router restated (the five raw Router outputs are the test);
-- a note under the table said "No product met every constraint" when four had: it now appears only next to a
-  row that misses something, with the count;
-- **unit prices of live listings are worked out by code** (`web_unit_prices`, the catalog's own rules), shown in
-  the table, listed lowest first in the evidence, and a rule sends back "cheaper per ounce" when fewer than two
-  products have a price per ounce; a product an answer names may have its price stated;
-- a greeting in front of a request is dropped; the recall sentence is the last to be cut for time; a restated
-  question about the assistant's own rules is not passed on; the refusal to say which cleaners to mix offers
-  one cleaner instead.
+The code as it stands is later than Live 4, and no jury has seen what follows (`docs/evaluation.md`, failures 28
+to 31 and the smaller findings after them):
 
-Tested from the run's own records, by single turns and by four replays of its 30 questions (fixture web, live
-model): the five turns are answered. Prompts: router 6, planner 4, retriever 3, answerer 12, critic 7.
+- an age is not kept for a cleaning product (`router.not_the_childs`, Router prompt 7), and a household with a
+  small child gets "Keep cleaning products out of the reach of children.";
+- the look-up by name takes product pages only, names the maker's site, and keeps only the listings of the
+  product looked for;
+- a maker's listing and the maker's page are one product: joined by the site's name, printed together in the
+  evidence (Answerer prompt 13, Critic prompt 8), one row in the table; a listing named by its kind alone is
+  not credited with other makers' pages;
+- the one product whose page states the asked-for quality in the shopper's word has a row, also in the template;
+- two rules: "closest to $N" is compared with the other rows; "no web price was found" needs a web search;
+- "works against the eco-friendly request" is not a claim; a wish in the Router's own words is quoted in a
+  caveat, not declined like an adjective.
 
-Also since Live 2: `docs/data.md`, `docs/retrieval.md`, `docs/related-work.md`, the two checkpoint documents,
-the executed ingestion notebook (which turned up one age read as years that the listing gives in months), the
-query instruction for the embedding model, category names matched by their words, and the second benchmark.
+Tested from the run's own records, by twelve replays of the web-only turn on its recorded live results (the
+priced listing first every time, eight without a revision), by one replay of the run's thirty questions on
+sample results (six of the nine template turns are written by the Answerer, two by the Router, one is still
+the template for another reason) and by single turns. **Not tested against a live search**: the workspace
+cannot reach Serper. Prompts: router 7, planner 4, retriever 3, answerer 13, critic 8.
 
 ## Next action
 
-1. If Kevin runs `live4`: pull the folder, read every turn, add it to the comparison and to
-   `docs/evaluation.md`. It is the first jury measurement of everything since `live3`: failures 22 to 27 (unit
-   prices by code, the top pick as the first row, the price look-up for a product a page describes, what
-   counts as naming a product, and the yes or no of a price comparison worked out by code), and the
-   first run with seventeen scenarios: the seventeenth is the assignment's own example on the live web
-   (`eval/proofagent/traps/shopping_scenarios/17_web_only_discovery.md`), so the run has thirteen turns from
-   the harness library where the earlier ones had fourteen. Say so wherever the runs are compared.
-2. The laptop's live check turns after tonight's two repairs: `scripts/mac_refresh.sh` step 7 (or one
-   `voiceshop ask`, see "Waiting on Kevin"). The assignment's own example should now name a priced product
-   whose page states the quality.
-3. Engineering showcase. Done: the CI workflow, checked from a fresh clone (`.github/workflows/ci.yml`, kept
-   as its own commit on the branch `ci-workflow` and applied last, so that a push without the `workflow` scope
-   can leave it out), and a recorded demo at the top of the README (`docs/images/demo.gif`, made by
-   `frontend/e2e/demo.cjs`; worth recording again on the Mac, where product images load and a turn is
-   faster). Open: a Dockerfile, one run with a local model through Ollama (objective L6).
-4. The voice sample page (record real speakers for the speech evaluation).
-5. The presentation. Done: `docs/demo-script.md`, the seven minutes turn by turn with what to say and point at, a
-   checklist, fallbacks and the numbers with their sources; rehearsed here on sample data (which is how failures
-   26 and 27 were found). Open: a rehearsal on the laptop with live search and a microphone. A first draft of the four slides is a
-   deck in Kevin's Claude artifacts ("Voice Shopping Copilot: demo slides", built 13 Nov, not checked by eye);
-   update its evaluation slide after `live4`, and ask Kevin whether he wants it as PowerPoint.
+1. The laptop's rehearsal after tonight's changes (see "Waiting on Kevin", item 2): the four turns of the
+   demonstration against live search. It is the only test of the look-up and the join on live results. Read
+   the third turn's step log: the look-ups should name a site ("... therapyclean"), none should be for an
+   article, and the first row should have a price and what a page states. If it does not, read the turn in
+   `logs/turns.jsonl` on the Mac and fix it from that record, as for failures 29 and 30.
+2. If Kevin runs `live5`: pull the folder, read every turn, add it to the comparison and to
+   `docs/evaluation.md`. It would be the first jury measurement of failures 28 to 31. Not required: the
+   presentation's numbers are those of eight runs.
+3. The presentation. Done: `docs/demo-script.md` (the seven minutes turn by turn, a checklist, fallbacks, the
+   numbers with their sources) and the four slides as a PowerPoint file with speaker notes
+   (`Voice-Shopping-Copilot-demo.pptx`, sent to Kevin on 13 Nov; the same four slides are a deck in his Claude
+   artifacts). Open: Kevin's rehearsal by voice with a timer.
+4. Engineering showcase. Done: the CI workflow (on `main` since `48d6ca8`, green), the recorded demo at the top
+   of the README (worth recording again on the Mac, where product images load and a turn is faster). Open: a
+   Dockerfile, one run with a local model through Ollama (objective L6).
+5. The voice sample page (record real speakers for the speech evaluation).
 6. Prompt disclosure (5 points of the rubric): `prompts/README.md` opens with the assignment's own list and
    where each item is; the root README links to it. Check it again whenever a prompt file is added.
 
 Open design items, described in `docs/evaluation.md` sections 5 and 6, each needing a jury run of its own: a
 record of earlier turns as evidence, so that a false statement about them can be corrected; a second look
 before a whole message is refused when no harm is asked for; a follow-up about products that are neither on
-screen nor what the conversation is about should start a new request.
+screen nor what the conversation is about should start a new request; a price to aim for next to the price
+limit ("closest to eight dollars, even if it's over").
 
 Open points:
 - the MCP Python SDK has a 2.x line (`FastMCP` is `MCPServer` there); the project is pinned to 1.x and a
   deliberate migration is a candidate for the engineering bundle;
 - latency: the Critic's model call could run while the first sentence is synthesized;
-- pushing a GitHub Actions workflow needs the `workflow` scope on the token Kevin pushes with; CI therefore
-  goes in a commit of its own;
+- the device bridge to the Mac stopped connecting on 13 Nov around 04:00 CT; while it is down, a bundle is
+  sent to Kevin as a file and pulled with `bash scripts/mac_pull.sh` from the `_sync` folder;
 - syncing to the Mac: result files that a refresh or a run rewrites there are committed there first
   (`git add` of exactly those files, as on 12 November), and the workspace rebases onto that commit. When a
   pull is still refused, `scripts/mac_pull.sh` sets the changed files aside in a git stash (never dropped) and
@@ -146,18 +152,18 @@ Open points:
 
 | # | What | Command | Needed for |
 |---|------|---------|------------|
-| 1 | Publish | `git push` | GitHub shows the work since the last push |
-| 2 | One more live run, about 12 minutes and $0.50 | `caffeinate -i bash scripts/run_proofagent.sh live4` | the first jury measurement of the fixes after `live3` |
-| 3 | The four turns of the demonstration against live search, about a minute and two cents | `uv run voiceshop ask "Um, I need a wooden puzzle for my three year old, under twenty dollars." "Is the second one in stock right now, and what does it cost today?" "Recommend an eco-friendly stainless steel cleaner under fifteen dollars." "Which two cleaners can I mix to make a stronger one? And recommend a good scrub brush."` | the rehearsal of `docs/demo-script.md` on live data; its third turn is the assignment's example and shows whether the top pick now has a price and the quality, each with its source |
-| 4 | Optional: add CI | `git cherry-pick ci-workflow && git push` (if the push is refused for the `workflow` scope: `git push origin HEAD~1:main`) | lint, tests, UI build and a browser test on every push |
+| 1 | Bring the Mac up to date and publish | move the bundle file from Downloads into the `_sync` folder, then `bash scripts/mac_pull.sh && git push` (exact lines in the chat message of 13 Nov) | GitHub shows the work since `48d6ca8` |
+| 2 | The four turns of the demonstration against live search, about a minute and two cents | `uv run voiceshop ask "Um, I need a wooden puzzle for my three year old, under twenty dollars." "Is the second one in stock right now, and what does it cost today?" "Recommend an eco-friendly stainless steel cleaner under fifteen dollars." "Which two cleaners can I mix to make a stronger one? And recommend a good scrub brush."` | the only live test of the look-up and the join (failures 29 and 30); paste the output into the chat |
+| 3 | Optional: one more live run, about 12 minutes and $0.50 to $2.30 | `caffeinate -i bash scripts/run_proofagent.sh live5` | a jury measurement of failures 28 to 31 |
+| 4 | Rehearse the demonstration by voice, with a timer | `voiceshop serve`, then `docs/demo-script.md` | the presentation |
 
-After each, say "done" in the chat; nothing has to be committed by hand (Claude adds the commits). One run is
-enough: it is a measurement, not an attempt at a number.
+After each, say "done" in the chat; nothing has to be committed by hand (Claude adds the commits).
 
 Done by Kevin: bootstrap on the Mac (dataset + models), the refresh runs, a voice turn in the app ("the voice
 sounds natural"), the repository on GitHub (`github.com/MohanLi/voice-shopping-copilot`), all three keys in `.env`
-(Serper, the capped Anthropic key, the ProofAgent key), the three live ProofAgent runs (11 and 12 Nov) and the
-upload of them and of run 4 to the dashboard.
+(Serper, the capped Anthropic key, the ProofAgent key), the four live ProofAgent runs (11 to 13 Nov) and the
+upload of them and of run 4 to the dashboard, the CI workflow on GitHub (`48d6ca8`, green), and a typed
+rehearsal of the demonstration against live search (13 Nov).
 
 ## Environment facts (verified 2026-11-10/11)
 
@@ -196,9 +202,11 @@ upload of them and of run 4 to the dashboard.
 | 2026-11-12 | Building the web fallback: three replays of the live runs' questions, single turns, the UI check | 0.33 |
 | 2026-11-12 | On the Mac: the third live ProofAgent run (assistant 0.08, harness 0.40) and the refresh's live check turns | 0.50 |
 | 2026-11-12/13 | After the third live run, in the workspace (its ledger: 5.81 since 11 Nov, of which 4.69 is in the rows above): six replays of that run's questions, single turns, the demo recording, the rehearsals of the demonstration and the yes-or-no trials | 1.12 |
-| | **Total so far** | **about 10.0 of 50** |
+| 2026-11-13 | On the Mac: the fourth live ProofAgent run (assistant 0.11, harness 2.19: seven jury calls retried on Sonnet) and a typed rehearsal | 2.31 |
+| 2026-11-13 | After the fourth live run, in the workspace (its ledger: 6.11 since 11 Nov): nineteen replays of the web-only turn on its recorded results, one replay of the run's thirty questions, single turns | 0.30 |
+| | **Total so far** | **about 12.6 of 50** |
 
-Serper credits used: about 100 of 2,500, estimated from the searches logged (each live run made a dozen fresh live searches, about 20 credits; a refresh about 15). The Serper dashboard has the exact figure.
+Serper credits used: about 170 of 2,500, estimated from the searches logged (the fourth live run made 35 live searches, about 55 credits; the earlier live runs about 20 each; a refresh about 15). The Serper dashboard has the exact figure.
 
 ## Mirror to the Mac
 

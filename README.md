@@ -13,13 +13,13 @@ reply as it is spoken. Stretches in which nothing changes on screen are cut shor
 the two-CPU build workspace, which is slower than the laptop the system is built for (a median turn of 13.5 s
 against 8.4 s). Made by [`frontend/e2e/demo.cjs`](frontend/e2e/demo.cjs).*
 
-> **Status (13 November 2026): the system runs end to end and has been evaluated seven times with ProofAgent,
-> the last three times on a laptop against live web search.**
+> **Status (13 November 2026): the system runs end to end and has been evaluated eight times with ProofAgent,
+> the last four times on a laptop against live web search.**
 > Built and tested: data pipeline, hybrid retrieval, the MCP server, the agents, speech in and out, the API, the
-> web UI, and the evaluation with its scorecards and twenty-seven failure analyses
-> ([docs/evaluation.md](docs/evaluation.md)). The last run lost five turns to one line of my own code. A live
-> turn with the assignment's own example then showed two more faults, and rehearsals of the demonstration two
-> more. All of it is fixed and tested, and none of it has been before a jury yet.
+> web UI, and the evaluation with its scorecards and thirty-one failure analyses
+> ([docs/evaluation.md](docs/evaluation.md)). The last run (95%, SILVER) was the first with the assignment's own
+> example as a scenario. What it found is fixed and tested: a rule for toddlers' toys that was applied to a
+> cleaner, and a look-up that had never met live search results. Those last fixes have not been before a jury.
 > Not done yet: a rehearsal of the demonstration on the laptop (it is scripted in
 > [docs/demo-script.md](docs/demo-script.md)), a run with a second model provider, and a container image.
 > [PROGRESS.md](PROGRESS.md) is the build log; [docs/objectives.md](docs/objectives.md) lists every requirement
@@ -102,7 +102,7 @@ voiceshop voice question.m4a         # voice in, voice out; the reply is kept in
 voiceshop mcp tools                  # what the agents discover on the MCP server
 voiceshop eval retrieval             # the retrieval benchmark below
 voiceshop eval proofagent --label my-run --fallback-llm anthropic/claude-sonnet-5-5   # the ProofAgent evaluation below (15 min, $0.50 to $0.90)
-python -m pytest tests -q            # 641 tests, about 20 s, no key or network needed
+python -m pytest tests -q            # 648 tests, about 20 s, no key or network needed
 ```
 
 `LLM_MODEL=fake:rules` runs every agent on rules only (no key, no cost); `LLM_MODEL=ollama:<model>` or any other
@@ -119,23 +119,23 @@ assistant (two turns through real audio), and a jury of model calls votes on 46 
 written for this project come first (discovery, constraints, comparison, live prices, conflicting sources,
 unsupported claims, a child under three, a recalled product, an instruction planted in a tool result, an unsafe
 request), then fourteen attacks the harness chooses itself. A seventeenth scenario, the assignment's own
-example, was added after these runs. Seven runs, each followed by fixes for what it found:
-four in the build workspace against recorded search results, so that they can be compared, and three on the
-laptop against live web search with the real speech models
-([scorecards, stage-by-stage attribution and twenty-seven failure analyses](docs/evaluation.md)):
+example, was added after the seventh run and is part of the eighth. Eight runs, each followed by fixes for
+what it found: four in the build workspace against recorded search results, so that they can be compared, and
+four on the laptop against live web search with the real speech models
+([scorecards, stage-by-stage attribution and thirty-one failure analyses](docs/evaluation.md)):
 
-| | Run 1 | Run 2 | Run 3 | Run 4 | Live 1 | Live 2 | Live 3 |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Task Success | 66% | 85% | 83% | 86% | 82% | 78% | 71% |
-| Hallucination Resistance / Grounding | 86% | 87% | 91% | 90% | 88% | 95% | 96% |
-| Tool-Use Correctness | 100% | 100% | 100% | 100% | 100% | 100% | 100% |
-| Safety and Guardrail Compliance | 84% | 99% | 98% | 93% | 97% | 95% | 100% |
-| Response Quality (Instruction Following) | 88% | 99% | 98% | 95% | 98% | 96% | 99% |
-| **Behavioural score** | **87%** | **95%** | **95%** | **94%** | **94%** | **94%** | **94%** |
-| Certification | NEEDS_ENHANCEMENT | SILVER | SILVER | SILVER | SILVER | SILVER | NEEDS_ENHANCEMENT |
-| ProofAgent Index (0-100) | 74.8 | 77.0 | 78.1 | 79.1 | 80.0 | 78.2 | 76.8 |
-| Spoken replies within 15 s | 100% | 100% | 100% | 100% | 100% | 100% | 100% |
-| Median time per turn | 10.2 s | 14.1 s | 14.6 s | 13.5 s | 8.4 s | 8.4 s | 6.0 s |
+| | Run 1 | Run 2 | Run 3 | Run 4 | Live 1 | Live 2 | Live 3 | Live 4 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Task Success | 66% | 85% | 83% | 86% | 82% | 78% | 71% | 85% |
+| Hallucination Resistance / Grounding | 86% | 87% | 91% | 90% | 88% | 95% | 96% | 86% |
+| Tool-Use Correctness | 100% | 100% | 100% | 100% | 100% | 100% | 100% | 100% |
+| Safety and Guardrail Compliance | 84% | 99% | 98% | 93% | 97% | 95% | 100% | 99% |
+| Response Quality (Instruction Following) | 88% | 99% | 98% | 95% | 98% | 96% | 99% | 99% |
+| **Behavioural score** | **87%** | **95%** | **95%** | **94%** | **94%** | **94%** | **94%** | **95%** |
+| Certification | NEEDS_ENHANCEMENT | SILVER | SILVER | SILVER | SILVER | SILVER | NEEDS_ENHANCEMENT | SILVER |
+| ProofAgent Index (0-100) | 74.8 | 77.0 | 78.1 | 79.1 | 80.0 | 78.2 | 76.8 | 78.6 |
+| Spoken replies within 15 s | 100% | 100% | 100% | 100% | 100% | 100% | 100% | 100% |
+| Median time per turn | 10.2 s | 14.1 s | 14.6 s | 13.5 s | 8.4 s | 8.4 s | 6.0 s | 9.9 s |
 
 What that table does and does not show: the step from run 1 to run 2 is real (in run 1, 17 of 30 replies were
 fixed text or a fallback template, often a refusal of a whole message of which one part had to be declined; since
@@ -151,7 +151,7 @@ said; the scorecards report that part separately. The third live run is the one 
 own: on five turns the Router model understood the message and restated its product question, and a backstop I
 had written for another case relabelled each turn "not a shopping request". Those five turns are the 71%, and
 the grade drops to NEEDS_ENHANCEMENT at an unchanged 94% because one metric fell below the harness's warning
-level. The same run has the best Safety (100%) and grounding (96%) of the seven, and the fallback to the live web
+level. The same run has the best Safety (100%) and grounding (96%) of the eight, and the fallback to the live web
 (when the catalog has nothing suitable) fired on two turns without losing credit. The line is fixed and the five
 recorded Router outputs are its test; replays of the run's questions then showed that a unit-price comparison
 needs its arithmetic done by code, which it now is. After that run, one turn against live search with the
@@ -161,7 +161,20 @@ the second row of the table, and the two plant-based cleaners had no price besid
 (failures 24 and 25) and the request is a scenario of every run from now on. Rehearsing the demonstration then
 showed that one of those repairs could itself replace a correct sentence (failure 26), and that one answer in
 four to "is the first one cheaper than the second?" opened with the wrong word in front of the right prices
-(failure 27); that yes or no is now worked out by code. None of that has been before a jury. The failures still open are named in the evaluation document, not hidden in the average. Run 4 and the three live runs are on the
+(failure 27); that yes or no is now worked out by code.
+
+The fourth live run was the jury for all of that, and the first run with the assignment's example as a scenario:
+95%, SILVER. The Router lost no credit, where it had lost 6.28 the run before. Two things went wrong, and both
+are of the same kind as before: parts that are each right and do not fit. "We have a toddler" was said about a
+cleaner; the Router recorded an age, and the rule that protects children under three from unsuitable toys
+removed every cleaner for thirteen turns, so nine replies came from the fallback template (failure 28). And
+"the LEGO set closest to eight dollars" was said of a set at $5.59, one row above a set at $6.56 (failure 31).
+The assignment's example itself lost no credit, and its step log still showed a look-up spent on an article and
+one product in two rows, a maker's listing with the price and the maker's page with the description
+(failures 29 and 30). All four are fixed and tested on the run's own records; twelve replays of the web-only
+turn through the live model now put the priced listing first with what its maker's page says. These last
+fixes have not been before a jury, and the look-up has not met a live search since. The failures still open
+are named in the evaluation document, not hidden in the average. Run 4 and the four live runs are on the
 ProofAgent dashboard (release gate: pass).
 
 **Retrieval** — two benchmarks on the full index of 9,740 products, one known target per request, on an M2 Max
@@ -236,7 +249,7 @@ notebooks/      01_data_ingestion.ipynb: the data work, executed, every count ch
 | the dataset, what was cleaned, what was refused | [docs/data.md](docs/data.md), [the notebook](notebooks/01_data_ingestion.ipynb) |
 | retrieval: stages, filters, two benchmarks, limits | [docs/retrieval.md](docs/retrieval.md) |
 | the MCP server and its two tool schemas | [docs/mcp.md](docs/mcp.md) |
-| the evaluation: seven runs, twenty-seven failures | [docs/evaluation.md](docs/evaluation.md) |
+| the evaluation: eight runs, thirty-one failures | [docs/evaluation.md](docs/evaluation.md) |
 | every prompt, and the node, agent or tool that uses it | [prompts/README.md](prompts/README.md) |
 | safety: risks, layers, tests, what is not covered | [docs/safety.md](docs/safety.md) |
 | shopping assistants that exist, and what was taken from them | [docs/related-work.md](docs/related-work.md) |

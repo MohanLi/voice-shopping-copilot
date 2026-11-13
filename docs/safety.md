@@ -113,6 +113,13 @@ run for an eighteen-month-old), the reply says so, gives the reason in fixed wor
 product that is labelled for that age. An age under three is read from the message by rule as well as by the
 Router model ("my son's eighteen months", "for my baby").
 
+The rule is about the person a product is for. A small child who lives in the home is not who a cleaning
+product is for: "is the first one safe to use, we have a toddler at home", asked about a stainless steel
+cleaner, sets no age (in code, `agents.router.not_the_childs`, and in the Router's prompt). In the fourth
+live run it did set one, and the rule above removed every cleaner for thirteen turns
+([evaluation.md](evaluation.md), failure 28). The household is answered instead with one more fixed sentence
+next to the one about labels and mixing: "Keep cleaning products out of the reach of children.
+
 ## 5. Privacy and data
 
 - The assistant holds no accounts, orders or payment details, and says so when asked about them.

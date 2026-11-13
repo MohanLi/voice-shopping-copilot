@@ -145,6 +145,25 @@ sent with the look-up, so a product that costs more than the budget is seen to c
 price. A turn that needs it pays one more round of searches, about a second; the calls are marked `price` in the
 tool log.
 
+The first live results it met showed what a page and a listing of one product look like outside the sample
+data ([evaluation.md](evaluation.md), failures 29 and 30), and four rules followed:
+
+- *Which pages.* Only a page about one product is looked up, not an article about ten
+  (`rules.one_product_page`: the address or the title decides); the page that states the shopper's own word
+  goes first.
+- *By what name.* A maker's page leaves the maker out of its title, because the address carries it. The
+  look-up adds the site's name ("Stainless Steel Cleaner & Polish 16 oz. therapyclean"), and of what comes
+  back only the listings of that product are kept as evidence.
+- *What is one product.* A listing and a page are joined when the listing's leading words are the name of the
+  page's site: in full, whoever sells it, or its beginning when the store is that site
+  (`reconcile.makers_words`, `reconcile.page_of`). A listing named by nothing but the kind of product
+  ("Stainless Steel Cleaner") is joined to a page only when the store is the page's own site: the words most
+  results of a turn share are the kind, not a name (`reconcile.kind_words`).
+- *How the join is shown.* The Answerer and the Critic read the page's text under the listing ("this
+  product's own page is W6, the same product ..."), and the page points to the listing. In the table a product
+  has one row: the listing, with its price and with what the page states, cited to the page. A page is not a
+  second row and an article is not a row (`answerer.one_row_per_product`).
+
 ### Replies that are chosen, not written
 
 Everything the assistant says that is not grounded in tool results is one of about twenty fixed sentences

@@ -446,17 +446,25 @@ _STATED_THING = re.compile(r"\b(?:safety|ingredients?|materials?|contents?|count
                            r"badge|label|testing|tests?|rating|ratings|warranty|origin|age\s+range|instructions|information|info|details)$", re.I)
 
 
+# A wish that is a request in the Router's words, not a word for a product ("confirm safety for homes with a toddler").
+_A_REQUEST = re.compile(r"^(?:to\s+)?(?:confirm|check|verify|prove|know|see|ensure|show|tell|find|make\s+sure)\b", re.I)
+
+
 def nothing_stated_about(wishes: list[str]) -> str:
     """The caveat for a live listing none of whose sources backs what the shopper asked for.
 
     "Eco-friendly" is something a product is; "skin safety" and "ingredients" are things a listing states. (A replay of the
-    third live run said "no source states that it is skin safety or ingredients".)
+    third live run said "no source states that it is skin safety or ingredients".) And the Router sometimes records a
+    request in its own words: a replay of the fourth said "no source states that it is confirm safety for homes with a
+    toddler". A wish of more than three words, or one that begins with such a verb, is quoted as what was asked.
     """
-    things = [w for w in wishes if _STATED_THING.search(w.strip())]
-    qualities = [w for w in wishes if w not in things]
+    asked = [w for w in wishes if len(w.split()) > 3 or _A_REQUEST.search(w.strip())]
+    things = [w for w in wishes if w not in asked and _STATED_THING.search(w.strip())]
+    qualities = [w for w in wishes if w not in things and w not in asked]
     parts = [f"no source states that it is {' or '.join(qualities)}"] if qualities else []
     if things:
         parts.append(f"no source states its {' or '.join(things)}")
+    parts.extend(f'no source speaks to "{w.strip()}"' for w in asked)
     return "; ".join(parts)
 
 

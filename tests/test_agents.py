@@ -142,6 +142,11 @@ async def test_an_asked_for_quality_is_looked_up_and_reported_as_what_sources_st
     # What a listing states is worded as that, not as something the product is (a replay: "no source states that it is skin safety or ingredients").
     assert rules.nothing_stated_about(["skin safety", "ingredients information"]) == "no source states its skin safety or ingredients information"
     assert rules.nothing_stated_about(["fragrance-free", "piece count"]) == "no source states that it is fragrance-free; no source states its piece count"
+    # A request recorded in the Router's own words is quoted, not declined like an adjective (a replay of the fourth live run:
+    # "no source states that it is confirm safety for homes with a toddler").
+    assert rules.nothing_stated_about(["confirm safety for homes with a toddler"]) == 'no source speaks to "confirm safety for homes with a toddler"'
+    assert rules.nothing_stated_about(["plant-based", "safe around small children at home"]) == (
+        'no source states that it is plant-based; no source speaks to "safe around small children at home"')
 
     assert "stated to be biodegradable and plant-based" in result.answer.spoken and "eco-friendly" not in result.answer.spoken
     cited = {c.source for c in result.answer.citations}
