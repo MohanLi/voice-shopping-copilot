@@ -16,7 +16,7 @@ the system ever gave you can see exactly which wording produced it.
 | Tool-call instructions | [`retriever.md`](retriever.md), and the descriptions of the two tools that the MCP server publishes and the models read (see "Tool descriptions are prompts too" below) |
 | Answerer/Critic prompts | [`answerer.md`](answerer.md), [`critic.md`](critic.md) |
 | Guardrail instructions | [`safety_policy.md`](safety_policy.md), included word for word in the Router's, the Answerer's and the Critic's prompt. The guardrails that are code and not instructions are listed under "What is deliberately *not* left to a prompt". |
-| Few-shot examples | Inside the files that use them: twenty routing examples in `router.md`, seven worded-as-something-else examples in `second_look.md` (each a message from a recorded evaluation run), seven finding / no-finding examples in `critic.md`. The other prompts have no examples section; a rule that needs an illustration carries it in its own sentence (`"Funko Pop! Star Wars …" → "Funko"` in `catalog_enrichment.md`). |
+| Few-shot examples | Inside the files that use them: twenty routing examples in `router.md`, eight worded-as-something-else examples in `second_look.md` (each a message from a recorded evaluation run), seven finding / no-finding examples in `critic.md`. The other prompts have no examples section; a rule that needs an illustration carries it in its own sentence (`"Funko Pop! Star Wars …" → "Funko"` in `catalog_enrichment.md`). |
 
 The three remaining files are prompts of offline steps (data enrichment and the two sets of benchmark
 requests); they are disclosed for the same reason and no agent uses them at run time.
@@ -43,7 +43,7 @@ operative rules one line each. The document the ProofAgent evaluation is given a
 (`eval/proofagent/context/system_prompt.md`, written by `voiceshop eval proofagent`) states each agent's rule
 once, as part of its stage in the pipeline, next to the rules that code enforces and the safety policy verbatim.
 
-Current versions: router 8, second look 3, planner 5, retriever 3, answerer 19, critic 10, safety policy 4. What changed in each
+Current versions: router 8, second look 4, planner 5, retriever 3, answerer 19, critic 10, safety policy 4. What changed in each
 and why is in [docs/evaluation.md](../docs/evaluation.md) and [docs/decisions.md](../docs/decisions.md).
 
 **Tool descriptions are prompts too.** The models read the descriptions of `rag.search` and `web.search` that the
