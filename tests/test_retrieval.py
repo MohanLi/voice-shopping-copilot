@@ -311,3 +311,21 @@ def test_embedding_text_uses_title_features_description() -> None:
     text = docs.embedding_text(row, review_snippets=["My son loves it"])
     for expected in ("Wooden Train Set", "Type: train set", "Brand: Brio", "Toys & Games > Trains", "40 pieces", "A classic", "My son loves it"):
         assert expected in text
+
+
+def test_a_loosened_search_still_returns_the_products_that_met_every_filter(engine: SearchEngine) -> None:
+    """ "My nephew wants LEGO", up to eight dollars: three LEGO sets met both limits, the search loosened the brand to fill its list
+    of five, the query said "LEGO-compatible bricks", and the five results were five other makers' sets."""
+    brand = SearchFilters(brand="Vallejo")                             # four products in the sample, all paints
+    res = engine.search("wooden building block set", brand, top_k=5)
+    assert res.strict_matches == 4 and res.relaxed == ["brand"]
+    met, missed = [h for h in res.results if not h.constraint_notes], [h for h in res.results if h.constraint_notes]
+    assert len(met) == 3 and all(h.brand == "Vallejo" for h in met)    # the places of a list of five, less two for the closest alternatives
+    assert len(missed) == 2 and all(h.constraint_notes == ["different brand than requested"] for h in missed)
+    assert any("Building Block" in h.title for h in missed)            # what the words asked for is there too
+    # The one product that meets a brand and a budget is in the list, among four that meet neither.
+    one = engine.search("halloween costume for kids", SearchFilters(brand="Vallejo", price_max=3.5), top_k=5)
+    assert one.strict_matches == 1 and [h.brand for h in one.results if not h.constraint_notes] == ["Vallejo"] and len(one.results) == 5
+    # Nothing is loosened when enough products meet the filters: the order is the search's own.
+    plenty = engine.search("wooden building block set", brand, top_k=3)
+    assert not plenty.relaxed and len(plenty.results) == 3 and all(h.brand == "Vallejo" for h in plenty.results)

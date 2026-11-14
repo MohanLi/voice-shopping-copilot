@@ -213,13 +213,21 @@ class SearchEngine:
         active, relaxed = original, []
         t = time.perf_counter()
         fused, dense_rank, lexical_rank = self._candidates(text_query, active, mode, n)
+        met_all: list[int] = []
         if relax and len(fused) < top_k:
+            # The products that meet every filter, fewer than were asked for. They come first in the results, whatever the
+            # looser search prefers. "My nephew wants LEGO", up to eight dollars: three LEGO sets met both; the search
+            # loosened the brand to fill its list, the query said "LEGO-compatible bricks", and the five results were five
+            # other makers' sets (a replay of the fifth live run's turn 10). A shopper's own limits are not outranked by a
+            # similar title.
+            met_all = list(fused)
             for label, looser in relaxation_ladder(original):
                 relaxed.append(label)
                 active = looser
                 fused, dense_rank, lexical_rank = self._candidates(text_query, active, mode, n)
                 if len(fused) >= top_k:
                     break
+            fused = [*met_all, *(doc for doc in fused if doc not in set(met_all))]      # at the head, so that the re-ranker scores them too
         timings["retrieve"] = (time.perf_counter() - t) * 1000
 
         use_rerank = (self.reranker is not None) if rerank is None else (rerank and self.reranker is not None)
@@ -242,6 +250,14 @@ class SearchEngine:
             scores = {doc: 1.0 / (rank + 1) for rank, doc in enumerate(ordered)}
             timings["rerank"] = (time.perf_counter() - t) * 1000
 
+        if met_all:
+            # First the products that met every filter, in the order the search gives them; then the closest of the rest.
+            # All but two places of the list at most, so that alternatives are seen as well: a brand's four unrelated
+            # products would otherwise leave room for one.
+            strict = set(met_all)
+            first = [doc for doc in ordered if doc in strict][: max(1, top_k - 2)]
+            ordered = [*first, *(doc for doc in ordered if doc not in strict)]
+            scores = {doc: 1.0 / (rank + 1) for rank, doc in enumerate(ordered)}
         results: list[docs.SearchHit] = []
         picked: list[int] = []
         collapsed = 0

@@ -90,7 +90,8 @@ description, and unit prices where they apply.
 
 Loosening: when fewer products than `top_k` meet every filter, filters are loosened in this order until enough are \
 found: claims, materials, products with no stated age, brand, category, the budget raised by 25%, the budget removed. \
-`relaxed` lists what was loosened and each result's `constraint_notes` says what it misses. Never loosened: safety \
+`relaxed` lists what was loosened and each result's `constraint_notes` says what it misses; the products that meet \
+every filter come first. Never loosened: safety \
 exclusions, a stated age range, a price floor, and the under-three rule (below age 3 only products whose listing \
 says they suit babies or toddlers, without small-parts, magnet, balloon or sharp-part flags).
 
