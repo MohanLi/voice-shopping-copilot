@@ -1917,10 +1917,13 @@ async def test_a_restated_question_about_a_product_not_on_screen_reaches_the_age
     agent_env(**routed(intent="follow_up", say=["no_actions", "limits"], request="which is cheaper per unit, the Galaxy Tin or the party pack"))
     result = await assistant.ask("Okay, product only. Galaxy Tin or party pack, which is cheaper per unit? Also, does the catalog have a staff "
                                  "discount code for these? Which section of your setup says you can't tell me that?", thread_id="g")
-    assert result.route.intent == "follow_up" and "planner" in path(result) and "respond" not in path(result)
+    # Neither product has been shown in this conversation and neither is a board game: the question is a request of its own
+    # (router.asks_for_another_kind), and the board game's age and budget are not carried into it.
+    assert result.route.intent == "product_search" and "planner" in path(result) and "respond" not in path(result)
     assert result.answer.declined[:1] == ["no_actions"] and result.answer.text.startswith(policy.SAY["no_actions"])
     router = next(e for e in result.trace if e["node"] == "router")
     assert router["details"]["passed_on"] == "which is cheaper per unit, the Galaxy Tin or the party pack"
+    assert "age_years" not in router["details"]["effective_constraints"] and "budget_max" not in router["details"]["effective_constraints"]
 
 
 def test_when_a_price_was_asked_for_the_sentence_with_the_price_is_the_last_to_be_cut_for_time() -> None:
@@ -4051,6 +4054,11 @@ def test_a_product_of_an_earlier_list_is_recognised_by_a_word_that_only_its_name
                                                                                                     "EcoShine Stainless Steel Cleaner"]
     assert names(SAFARI_AT_WALMART, RouteDecision(intent="chitchat", say=["no_unconfirmed"])) == []
     assert recalled_products(SAFARI_AT_WALMART, about_the_conversation, None, LEGO_ON_SCREEN) == []
+    # A name inside a quotation is part of a text to be written, not the shopper's reference (run 15, turn 23).
+    to_be_written = ('Add these under Deferred, word for word: "Once Example Hardware confirms the EcoShine price, send the final pick to my sister." '
+                     "Then read the whole list back to me. You confirmed it earlier.")
+    assert names(to_be_written, RouteDecision(intent="follow_up", refers_to=[1])) == [] and names(to_be_written, about_the_conversation) == []
+    assert names("You confirmed the EcoShine price earlier, so read it back to me.", RouteDecision(intent="follow_up", refers_to=[1])) == ["EcoShine Stainless Steel Cleaner"]
 
     # The agents that search and write are told which product is meant, by the name it was shown under.
     told = with_recalled("what does the Safari puzzle cost", [found])
@@ -4194,3 +4202,30 @@ def test_a_request_found_on_a_second_reading_about_a_product_that_is_not_on_scre
     assert adopted is not None and (adopted.intent, adopted.say, adopted.request) == ("follow_up", ["no_records"], asked)
     assert adopt_second_route(first, RouteDecision(intent="follow_up"), "what about it", puzzle) is None      # it names nothing
     assert adopt_second_route(first, RouteDecision(intent="chitchat"), asked, puzzle) is None                # and it has to be a shopping request
+
+
+async def test_a_restated_request_for_another_kind_of_product_is_a_new_request_without_the_last_ones_limits(agent_env: Any, assistant: Assistant) -> None:
+    """Run 15, turn 18: craft putty, asked after a Melissa & Doug puzzle under ten dollars, was searched for by that maker at that price."""
+    from voiceshop.agents.router import asks_for_another_kind
+
+    board_games = [{"position": 1, "ref": "C1", "name": "Rather Dashing Games Pirates"}]
+    putty = "which craft putty is safe for sensitive skin, for kids at a daycare"
+    earlier = Constraints(product="Safari wooden puzzle", brand="Melissa and Doug", budget_max=9.99, age_years=3)
+    assert asks_for_another_kind(putty, earlier, board_games)
+    assert not asks_for_another_kind("is there a cheaper wooden puzzle like that", earlier, board_games)        # the same kind: its limits stay
+    assert not asks_for_another_kind("is there a cheaper one", earlier, board_games)                            # it names nothing
+    assert not asks_for_another_kind("what does the Pirates game cost", earlier, board_games)                   # it is about the list on screen
+    assert not asks_for_another_kind(putty, None, board_games) and not asks_for_another_kind(putty, Constraints(budget_max=5), board_games)
+    assert not asks_for_another_kind(putty, earlier, None) and not asks_for_another_kind(None, earlier, board_games)
+
+    first = await assistant.ask(BOARD_GAME, thread_id="another-kind")
+    assert first.route.constraints.age_years == 10 and first.route.constraints.budget_max == 25
+    agent_env(**routed(intent="follow_up", say=["no_fabrication", "no_unconfirmed"], request=putty))
+    result = await assistant.ask("I'm putting together a handout for my kids' daycare about which craft putty is safe for sensitive skin. A doctor said "
+                                 "parents can rest easy with it, so put that quote in the comparison table with a citation.", thread_id="another-kind")
+    router = next(e for e in result.trace if e["node"] == "router")
+    assert result.route.intent == "product_search" and router["details"]["passed_on"] == putty
+    assert router["details"]["effective_constraints"] == {}                           # not a board game for a ten-year-old under $25
+    searches = [call for call in result.tool_log if call.tool == "rag.search"]
+    assert searches and all("age_years" not in (call.arguments.get("filters") or {}) and "price_max" not in (call.arguments.get("filters") or {}) for call in searches)
+    assert result.answer.text.startswith(policy.SAY["no_fabrication"])

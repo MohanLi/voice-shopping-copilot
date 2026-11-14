@@ -837,6 +837,10 @@ def recalled_products(request: str, route: RouteDecision, seen: list[dict[str, A
     back in so many words ("earlier", "again", "you showed"): "does the first one come in a safari print?" is about
     the first one.
 
+    Words inside a quotation do not count. They are a text to be written or kept, not the shopper's own reference:
+    'add this under Deferred, word for word: "Once Example Hardware confirms the BristlePro price, send the final pick
+    ..."' recalled the BristlePro brush and searched for it, in a turn that asked nothing about it (run 15, turn 23).
+
     What is returned is the record (finalize.seen_with), latest first, at most two. It is not evidence. The catalog
     product is looked up again by its id and the web listing by the name it was shown under (planner.normalise_plan),
     so what the reply states is this turn's tool result, as everywhere else.
@@ -849,7 +853,7 @@ def recalled_products(request: str, route: RouteDecision, seen: list[dict[str, A
         return []
     on_screen = {seen_key(entry) for entry in shown or []}
     words = {seen_key(entry): _name_words(str(entry.get("title") or entry.get("name") or "")) for entry in [*seen, *(shown or [])]}
-    said = {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", request.lower())}
+    said = {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", _QUOTED.sub(" ", request).lower())}
     out: list[dict[str, Any]] = []
     for entry in reversed(seen):
         key = seen_key(entry)
@@ -863,6 +867,24 @@ def recalled_products(request: str, route: RouteDecision, seen: list[dict[str, A
         if telling & said:
             out.append({**entry, "named_by": sorted(telling & said)})
     return out[:MAX_RECALLED]
+
+
+def asks_for_another_kind(request: str | None, earlier: Constraints | None, shown: list[dict[str, Any]] | None) -> bool:
+    """Is a restated request about a kind of product other than the one the conversation is on, and about nothing on screen?
+
+    Run 15, turn 18, after a request for a Melissa & Doug puzzle under ten dollars: "... a handout for my kids' daycare
+    about which craft putty is safe for sensitive skin ... put that quote in the comparison table ...". The Router
+    restated the request rightly ("which craft putty is safe for sensitive skin, for kids at a daycare"), named no
+    product in its constraints and called the turn a follow-up. A follow-up inherits what was asked before: the catalog
+    was searched for putty by Melissa & Doug under $9.99, and the reply was "No Melissa and Doug craft putty is in my
+    sources". Another product is another request (``names_another_product`` says so when the Router names the
+    product); here the restatement names it. No word of it is a word of the product the conversation was on, and it
+    points at nothing on screen.
+    """
+    if earlier is None or not earlier.product or not asks_about_nothing_on_screen(request, shown):
+        return False
+    named = {w.rstrip("s") for w in re.findall(r"[a-z]+", (request or "").lower()) if len(w) > 3} - _ASKED_ABOUT
+    return not (named & _name_words(earlier.product))
 
 
 def with_recalled(request: str, recalled: list[dict[str, Any]]) -> str:
@@ -935,6 +957,10 @@ def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
             # the list on screen is. (The Safari puzzle of a request for a three-year-old was asked about after a hoverboard
             # for a nine-year-old: the search for it ran with age nine and found another Safari puzzle. Run 14, turn 14.)
             constraints = route.constraints.merged_with(Constraints(**(recalled[0].get("found_for") or {})))
+        elif route.intent in ("follow_up", "compare") and not route.refers_to and asks_for_another_kind(route.request, earlier, shown):
+            # A question about another kind of product, about nothing on screen and nothing shown before: a new request. The
+            # brand, budget and age of the request before are not carried over to it (see asks_for_another_kind).
+            route.intent, constraints = "product_search", route.constraints
         elif route.intent in ("follow_up", "compare"):
             # A question about products on screen is asked under what that list was found for. Usually that is the request in
             # force; it is not after a request that showed no list. (A marble run for an eighteen-month-old was declined, the
