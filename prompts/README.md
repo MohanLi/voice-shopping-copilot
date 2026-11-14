@@ -11,12 +11,12 @@ the system ever gave you can see exactly which wording produced it.
 | The assignment asks for | Where it is |
 |---|---|
 | System prompts | Each agent's file is the system message of its model call: [`router.md`](router.md), [`planner.md`](planner.md), [`retriever.md`](retriever.md), [`answerer.md`](answerer.md), [`critic.md`](critic.md). There is no prompt for the assistant as a whole. |
-| Router prompts | [`router.md`](router.md) |
+| Router prompts | [`router.md`](router.md), and [`second_look.md`](second_look.md): a second reading of a message the Router is about to answer with refusals alone |
 | Planner prompts | [`planner.md`](planner.md) |
 | Tool-call instructions | [`retriever.md`](retriever.md), and the descriptions of the two tools that the MCP server publishes and the models read (see "Tool descriptions are prompts too" below) |
 | Answerer/Critic prompts | [`answerer.md`](answerer.md), [`critic.md`](critic.md) |
 | Guardrail instructions | [`safety_policy.md`](safety_policy.md), included word for word in the Router's, the Answerer's and the Critic's prompt. The guardrails that are code and not instructions are listed under "What is deliberately *not* left to a prompt". |
-| Few-shot examples | Inside the files that use them: twenty routing examples in `router.md`, seven finding / no-finding examples in `critic.md`. The other prompts have no examples section; a rule that needs an illustration carries it in its own sentence (`"Funko Pop! Star Wars …" → "Funko"` in `catalog_enrichment.md`). |
+| Few-shot examples | Inside the files that use them: twenty routing examples in `router.md`, five worded-as-something-else examples in `second_look.md` (each a message from a recorded evaluation run), seven finding / no-finding examples in `critic.md`. The other prompts have no examples section; a rule that needs an illustration carries it in its own sentence (`"Funko Pop! Star Wars …" → "Funko"` in `catalog_enrichment.md`). |
 
 The three remaining files are prompts of offline steps (data enrichment and the two sets of benchmark
 requests); they are disclosed for the same reason and no agent uses them at run time.
@@ -26,6 +26,7 @@ requests); they are disclosed for the same reason and no agent uses them at run 
 | File | LangGraph node / component | What the model is asked to produce | Output schema (pydantic) |
 |---|---|---|---|
 | [`router.md`](router.md) | `router` — `voiceshop/agents/router.py` | intent, the constraints the shopper stated, a safety level, the ids of the fixed sentences to say for anything that is not a product request, and the product request alone when part of the message is declined | `RouteDecision` |
+| [`second_look.md`](second_look.md) | `router`, second reading — `voiceshop/agents/router.py` (`second_look`). Called only when the reply would be fixed sentences alone and the message is long enough to hold something else | whether the message holds a product request after all, and that request alone; what it returns is screened and routed like a message, never said | `SecondLook` |
 | [`planner.md`](planner.md) | `planner` — `voiceshop/agents/planner.py` | which sources to use and in what order, the first tool calls, retrieval fields, comparison criteria | `Plan` |
 | [`retriever.md`](retriever.md) | `retriever` — `voiceshop/agents/retriever.py` | **tool-call instructions**: after the planned searches, which further `rag_search` / `web_search` calls to make (function calling) | tool calls |
 | [`answerer.md`](answerer.md) | `answerer` — `voiceshop/agents/answerer.py` | up to three recommendations by evidence handle, one grounded reason each, the spoken lead, a follow-up question | `AnswerDraft` |
@@ -42,7 +43,7 @@ operative rules one line each. The document the ProofAgent evaluation is given a
 (`eval/proofagent/context/system_prompt.md`, written by `voiceshop eval proofagent`) states each agent's rule
 once, as part of its stage in the pipeline, next to the rules that code enforces and the safety policy verbatim.
 
-Current versions: router 8, planner 5, retriever 3, answerer 15, critic 10, safety policy 4. What changed in each
+Current versions: router 8, second look 1, planner 5, retriever 3, answerer 16, critic 10, safety policy 4. What changed in each
 and why is in [docs/evaluation.md](../docs/evaluation.md) and [docs/decisions.md](../docs/decisions.md).
 
 **Tool descriptions are prompts too.** The models read the descriptions of `rag.search` and `web.search` that the
@@ -56,6 +57,7 @@ input schemas, is [`eval/proofagent/context/tools.json`](../eval/proofagent/cont
 | Node | Placeholders filled at run time | User message |
 |---|---|---|
 | `router` | `$safety_policy`, `$history` (earlier turns), `$shown` (products on screen) | the transcript, after the input screen has removed declined clauses and personal details |
+| `router`, second reading | `$shown` | the same transcript; if a request is found, the Router's prompt is run once more with that request alone as the user message |
 | `planner` | `$tools` (from MCP discovery), `$web_policy` (from `WEB_PRICE_CHECK`), `$history`, `$shown` | JSON: the product request, intent, constraints, on-screen positions referred to, safety level, and what was already declined |
 | `retriever` | `$rounds_left`, `$max_calls`, `$verify_n`, `$request`, `$declined`, `$constraints`, `$plan`, `$verify` | the results of the planned searches, fenced as data |
 | `answerer` | `$max_words` (spoken budget), `$safety_policy` | the product request, constraints, comparison criteria, which on-screen product is "the second one", for a yes-or-no question about the prices of two products on screen the answer worked out by code, then the **evidence** fenced as data (and, on a revision, the Critic's findings) |

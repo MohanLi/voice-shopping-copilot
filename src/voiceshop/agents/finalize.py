@@ -191,7 +191,29 @@ def brief_name(item: CatalogItem | WebItem, max_words: int = 5) -> str:
 # What a pressed claim is about, when it is about a price or an age. (Qualities, ratings and stock have their patterns in the rule checks.)
 _PRICE_CLAIM = re.compile(r"\$\s?\d|\b\d+(?:\.\d+)?\s*(?:dollars?|bucks?)\b|\b(?:dollars?|bucks?|priced?|prices|cost(?:s|ing)?|sales?|discount\w*|deals?|clearance|"
                           r"marked\s+down|half\s+(?:price|off)|cheap(?:er)?|on\s+offer|coupons?)\b|\d\s?%\s+off", re.I)
-_AGE_CLAIM = re.compile(r"\bages?\b|\byears?[\s-]old\b|\bmonths?[\s-]old\b|\b(?:toddlers?|bab(?:y|ies)|infants?)\b", re.I)
+_AGE_CLAIM = re.compile(r"\bages?\b|\byears?[\s-]olds?\b|\bmonths?[\s-]olds?\b|\b(?:toddlers?|bab(?:y|ies)|infants?)\b", re.I)
+# An amount with no unit, said of the product: "You said Barnyard was six, right?" (run 6), "the Barnyard's five now" (run 5).
+# Narrow on purpose, because a number in a toy shop is as often an age or a count: only after a form of "to be", only where
+# the clause ends with the number, only when the word before the verb is the product, and never in a sentence about an age.
+_BARE_AMOUNT = re.compile(
+    r"(?:\b(?:was|is|were|are)|'s)\s+(?:only\s+|just\s+|about\s+|around\s+|like\s+|maybe\s+)?"
+    r"(?:\d+(?:\.\d+)?|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty)"
+    r"(?![-\w])(?=\s*(?:[,.;:!?]|$|(?:now|today|yesterday|earlier|before|last\s+\w+|each|flat|tops|max|or\s+so|and\s+change|something|right|so|but|though|then)\b))", re.I)
+_AGE_TALK = re.compile(r"\bages?\b|\byears?\b|\bmonths?\b|\bolds?\b|\band\s+up\b|\d\s?\+|\b(?:toddlers?|bab(?:y|ies)|infants?|kids?|child(?:ren)?|boys?|girls?|sons?"
+                       r"|daughters?|nephews?|nieces?|grand\w+|twins?)\b", re.I)
+_STANDS_FOR_A_PRODUCT = {"one", "it", "that", "this", "set", "puzzle", "kit", "toy", "game", "thing", "item", "product", "pack", "box", "price"}
+
+
+def states_an_amount(pressing: str, item: CatalogItem | WebItem) -> bool:
+    """Does a sentence state a bare amount of this product ("Barnyard was six", "the Safari one's five now")?"""
+    if _AGE_TALK.search(pressing):
+        return False
+    names = {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", item.title.lower()) if len(w) > 2} | _STANDS_FOR_A_PRODUCT
+    for match in _BARE_AMOUNT.finditer(pressing):
+        before = re.findall(r"[a-z0-9]+", pressing[:match.start()].lower())[-1:]
+        if before and before[0].rstrip("s") in names:
+            return True
+    return False
 
 
 def claim_statement(item: CatalogItem | WebItem, pressing: str, evidence: Evidence | None = None) -> tuple[str, str] | None:
@@ -241,7 +263,8 @@ def claim_statement(item: CatalogItem | WebItem, pressing: str, evidence: Eviden
                     f"My sources do not state whether the {brief} is in stock.")
         listed = f"listed as {stock.replace('_', ' ')} at {store}"
         return f"The {name}, shown earlier, is {listed}. [{cite}]", f"The {brief} is {listed}."
-    if not _PRICE_CLAIM.search(pressing):
+    amount_only = not _PRICE_CLAIM.search(pressing) and states_an_amount(pressing, item)
+    if not _PRICE_CLAIM.search(pressing) and not amount_only:
         if not _AGE_CLAIM.search(pressing):
             return None
         age = item.age_label if isinstance(item, CatalogItem) else None
@@ -257,9 +280,12 @@ def claim_statement(item: CatalogItem | WebItem, pressing: str, evidence: Eviden
         texts = [item.title, item.description or "", (item.live.note or "") if item.live is not None else ""]
     else:
         where, texts = f"at {item.source}", [item.title, item.snippet or "", item.price_text or ""]
+    offer = "" if _has_live_price(item) else " Ask for its current price and I will check the live web."
     if _SALE_WORDS.search(" ".join(texts)):                   # a source that speaks of a sale itself: the price is stated and nothing is said about sales
         return f"The {name}, shown earlier: {row.price}. That is the price my sources state. [{cite}]", f"The {brief} is ${price:.2f} {where}."
-    offer = "" if _has_live_price(item) else " Ask for its current price and I will check the live web."
+    if amount_only:                                           # the claim named an amount and no sale: the price, and that it is the one stated
+        return (f"The {name}, shown earlier: {row.price}. That is the price my sources state.{offer} [{cite}]",
+                f"My sources state ${price:.2f} for the {brief}.")
     return (f"The {name}, shown earlier: {row.price}. My sources state no sale or discount for it.{offer} [{cite}]",
             f"The {brief} is ${price:.2f} {where}, with no sale stated.")
 
@@ -460,6 +486,23 @@ def screen_rows(picked: list[tuple[CatalogItem | WebItem, str, str | None]], evi
     return rows, positions
 
 
+# "Just show me the best one, even if it's over": an invitation to go past the limit the same message states.
+_OVER_IS_FINE = re.compile(
+    r"\beven\s+if\s+(?:it|that|they|the\s+price)(?:'s|'re|\s+is|\s+are|\s+goes|\s+costs?)?\s+(?:a\s+(?:bit|little|tad)\s+|slightly\s+|somewhat\s+)?"
+    r"(?:over|more|above|higher|pricier)\b|\bwhatever\s+it\s+costs\b|\b(?:don'?t|do\s+not)\s+worry\s+about\s+(?:the\s+|my\s+)?(?:budget|price|cost|limit)\b"
+    r"|\b(?:a\s+(?:bit|little)\s+)?over\s+(?:is|would\s+be)\s+(?:fine|ok|okay)\b|\bmoney\s+is\s+no\s+object\b|\bprice\s+(?:doesn'?t|does\s+not)\s+matter\b", re.I)
+
+
+def within_an_invitation_to_go_over(items: list[CatalogItem | WebItem], asked: str | None, constraints: Constraints) -> bool:
+    """Did the shopper state a limit, say that going over it would be fine, and get products that are all within it?"""
+    from voiceshop.guardrails.output import best_price
+
+    limit = constraints.budget_max
+    if limit is None or not _OVER_IS_FINE.search(asked or ""):
+        return False
+    return all((price := best_price(item)) is not None and price <= limit + 0.005 for item in items)
+
+
 def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraints, route: RouteDecision | None, *,
                  max_words: int, grounded_by: str | None, revisions: int, max_seconds: float = 15.0, preface: list[str] | None = None,
                  shown: list[dict[str, Any]] | None = None, on_screen: Evidence | None = None, weak_score: float | None = None,
@@ -516,6 +559,8 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
         lead = ("Too few products met every constraint" if met is None else "No product met every constraint" if met == 0
                 else f"Only {met} product{'s' if met != 1 else ''} met every constraint")
         notes.append(f"{lead}, so the search loosened: " + ", ".join(evidence.relaxed).replace("_", " ") + ".")
+    if items and not abstained and within_an_invitation_to_go_over(items, asked, constraints):
+        notes.insert(0, policy.kept_to_budget(constraints.budget_max))                                 # type: ignore[arg-type]
     for key, value in evidence.unmatched_filters.items():
         notes.append(policy.not_in_catalog(key, value))
     notes.extend(policy.TOOL_FAILED_SCREEN[tool] for tool in evidence.failed_tools if tool in policy.TOOL_FAILED_SCREEN)

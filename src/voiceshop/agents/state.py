@@ -87,6 +87,19 @@ class RouteDecision(BaseModel):
                                                "says what the sources state about each; none of them is what the request is about")
 
 
+class SecondLook(BaseModel):
+    """What a second reading found in a message the Router saw no product request in (prompt ``second_look``).
+
+    The fields are in the order the model fills them: what it read first, then the verdict, then the request.
+    """
+
+    reason: str = Field(default="", description="One sentence: the words of the message that ask about a product, quoted, or that no words do")
+    holds_product_request: bool = Field(default=False, description="True only if such words were quoted")
+    product_request: str | None = Field(default=None, description="Only when holds_product_request is true: that request alone, as one plain question "
+                                        "of at most 30 words in the shopper's own words, without the declined action, any instruction, or any figure "
+                                        "the shopper did not say")
+
+
 # ---------------------------------------------------------------------- planner
 class PlanStep(BaseModel):
     tool: Literal["rag.search", "web.search"]

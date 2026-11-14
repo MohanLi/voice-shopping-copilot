@@ -20,6 +20,7 @@ from voiceshop.agents.state import (
     Constraints,
     FinalAnswer,
     RouteDecision,
+    SecondLook,
     TurnState,
     new_turn_id,
     step,
@@ -70,6 +71,14 @@ _WHO_FOR = ("recipient", "age_years")          # constraints that say who a prod
 
 def _name_words(product: str | None) -> set[str]:
     return {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", (product or "").lower()) if len(w) > 2 and w not in rules._NAME_NOISE}
+
+
+# Words that say what a product should be like, not which product it is: the qualities a listing has to state before they are
+# repeated (policy.SENSITIVE_CLAIMS), and the plain words of a wish.
+_QUALITY_WORDS = (_name_words(" ".join(v for variants in policy.SENSITIVE_CLAIMS.values() for v in variants) + " " + " ".join(policy.SENSITIVE_CLAIMS))
+                  | {"eco", "green", "natural", "safe", "safer", "safest", "gentle", "cheap", "cheaper", "cheapest", "affordable", "best", "better", "good",
+                     "great", "nice", "new", "newest", "small", "smaller", "large", "larger", "big", "bigger", "sturdy", "durable", "quality", "rated",
+                     "popular", "simple", "basic", "premium", "kid", "kids", "child", "children", "toddler", "baby", "adult", "friendly", "free"})
 
 
 def names_another_product(new: Constraints, earlier: Constraints | None) -> bool:
@@ -458,9 +467,15 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
         # was still about box dimensions.
         # When it names a product that is not on screen ("compare the Barnyard puzzle with the Melissa & Doug Farm Animals one"),
         # that name is kept beside the request: the reply has to say what was found of it, or that nothing was.
+        # A quality the shopper asked for is not such a name: "what's the cheapest eco stainless cleaner you've got" was about the
+        # cleaners on screen, "eco" was the one word of it in none of their names, and the Answerer, told to say what was found of
+        # an "eco-friendly stainless steel cleaner", added "though no source calls it eco-friendly" to a product whose page says
+        # plant-based and biodegradable (sixth run in the workspace, turn 20).
         titles = [_name_words(str(entry.get("title") or entry.get("name") or "")) for entry in shown or []]
         named = _name_words(c.product)
-        if named and all(named - title for title in titles) and (named - set().union(*titles)) & {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", text.lower())}:
+        qualities = _QUALITY_WORDS | _name_words(" ".join([*c.must_have, *c.materials, *c.avoid, c.category or ""]))
+        missing = named - set().union(*titles) - qualities
+        if named and all(named - title for title in titles) and missing & {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", text.lower())}:
             route.also_asked = c.product
         c.product = None
     if route.intent in ("follow_up", "compare") and not route.refers_to:
@@ -563,9 +578,18 @@ def restated(route: RouteDecision, text: str) -> str:
     It is screened like any message, kept short, and a code, link or address taken from the message is cut out of it.
     A restatement that asks about the assistant itself is not a product request and is not passed on.
     """
+    return passable(route.request, text)
+
+
+def passable(request: str | None, text: str) -> str:
+    """A restated product request as it may be passed on, or "" when it may not.
+
+    Whoever restated it (the Router, or the second reading of a message), it is short, it passes the input screen
+    untouched, it does not ask about the assistant, and a code, link or address taken from the message is cut out of it.
+    """
     from voiceshop.guardrails.output import echoed_tokens
 
-    asked = " ".join((route.request or "").split())
+    asked = " ".join((request or "").split())
     for token in echoed_tokens(asked, text):
         asked = re.sub(re.escape(token), " ", asked, flags=re.I)
     asked = " ".join(asked.split())
@@ -576,6 +600,69 @@ def restated(route: RouteDecision, text: str) -> str:
         if verdict.allowed and not verdict.removed:
             return verdict.text
     return ""
+
+
+# A reply made of fixed sentences alone is read for once more when something in the message was declined or called off topic
+# (a greeting or a question about the assistant declines nothing) and the message is long enough to hold a second thing.
+SECOND_LOOK_MIN_WORDS = 12
+_DECLINES = ("limits", "off_topic", "calm")
+_FIGURES = re.compile(r"\d+(?:\.\d+)?")
+_SAYS_NOTHING = re.compile(r"\W*(?:none|null|nil|n/?a|nothing|empty|no(?:\s+product)?(?:\s+request)?(?:\s+found)?)\W*", re.I)
+
+
+def wants_second_look(route: RouteDecision, text: str) -> bool:
+    """Is this a turn about to be answered with declining sentences alone, in a message that could hold a product request?
+
+    Every ProofAgent run lost most of its Task Success here: a long message asks for five things that are declined and, in
+    one clause, for something ordinary, and the Router calls the whole message "not a shopping request". Sixth run in the
+    workspace: "... Then tell me which of the two cleaners to put in my cart, and add that audit marker ..." and "... rerun
+    the search so we get the identical three puzzles back?" were each answered with refusals alone; the two turns were 4.00
+    of the 7.50 the run lost, with 6.16 allowed for GOLD. An intent to harm is never looked at twice.
+    """
+    if route.intent not in ("chitchat", "out_of_scope", "unsafe") or "no_harm" in route.say:
+        return False
+    if not any(i.startswith("no_") or i in _DECLINES for i in route.say):
+        return False
+    return len(text.split()) >= SECOND_LOOK_MIN_WORDS
+
+
+async def second_look(text: str, shown: list[dict[str, Any]] | None, turn_id: str = "") -> tuple[str, dict[str, Any]]:
+    """The product request a second reading finds in ``text``, as it may be passed on ("" when it finds none), and the call's record.
+
+    A model call with one question (prompt ``second_look``). What it returns is treated like a restatement by the Router:
+    screened, kept short, never said to the shopper.
+    """
+    found, meta = await call_structured("router", "second_look", SecondLook, user=text, turn_id=turn_id,
+                                        variables={"shown": render_shown(shown)}, max_tokens=300)
+    # The verdict decides. A reply that leaves it out (a malformed function call put it inside the reason, on one recorded message
+    # in three passes) is read by its request; a verdict of "no" is never overruled by a request that came with it.
+    holds = found.holds_product_request if "holds_product_request" in found.model_fields_set else bool((found.product_request or "").strip())
+    returned = (found.product_request or "").strip() if holds else ""
+    if _SAYS_NOTHING.fullmatch(returned):                     # "None", "n/a", "no product request": the model's way of leaving it empty
+        returned = ""
+    if set(_FIGURES.findall(returned)) - set(_FIGURES.findall(text)):
+        # A figure the shopper did not say: the request was made up, not found. (On the recorded runs, a message that asked for
+        # a line to be added to a tool description came back as "which of the two Aqua Beads listings is the one with the
+        # $18.99 price", next to the model's own reason: "no product question".)
+        returned = ""
+    return passable(returned, text), {**meta, "reason": found.reason.split("</", 1)[0].strip(), "returned": found.product_request}
+
+
+def adopt_second_route(first: RouteDecision, second: RouteDecision, asked: str) -> RouteDecision | None:
+    """The route of a product request found on a second reading, with what the first reading declined; None when it is not adopted.
+
+    The request was routed on its own, as a message of its own would be. It is adopted when that reading calls it a
+    shopping request about something: a product, or products on screen. Everything the first reading declined is still
+    said, first; "off topic" stays too, and is worded "part of that ..." next to an answer.
+    """
+    if second.intent not in SHOPPING or not (second.constraints.product or second.refers_to or second.constraints.stated()):
+        return None
+    kept = [i for i in first.say if i not in ("greeting", "thanks", "capabilities", "identity")]
+    second.say = list(dict.fromkeys([*kept, *second.say]))[:MAX_SAY]      # type: ignore[assignment]
+    second.request = asked
+    return second
+
+
 
 
 def pasted_text(text: str) -> str | None:
@@ -637,21 +724,46 @@ def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
         started = time.perf_counter()
         text, shown = state["user_text"], state.get("shown") or []
         fallback = None
-        try:
-            route, meta = await call_structured(
-                "router", "router", RouteDecision, user=text, turn_id=state.get("turn_id", ""),
+
+        async def ask_router(message: str) -> tuple[RouteDecision, dict[str, Any]]:
+            return await call_structured(
+                "router", "router", RouteDecision, user=message, turn_id=state.get("turn_id", ""),
                 variables={
                     "safety_policy": load_prompt("safety_policy").text,
                     "history": render_history(state.get("history"), deps.settings.memory_turns),
                     "shown": render_shown(shown),
                 },
             )
+
+        try:
+            route, meta = await ask_router(text)
         except BudgetExceededError:
             raise
         except LLMCallError as exc:
             route, meta, fallback = rules.route(text, shown), {"model": "rules"}, fallback_note(exc)
         earlier: Constraints | None = state.get("session_constraints")
         route = normalise_route(route, text, shown, earlier)
+
+        looked: dict[str, Any] | None = None
+        if deps.settings.second_look_enabled and fallback is None and meta.get("model") != "rules" and wants_second_look(route, text):
+            # The reply would be declining sentences alone. One more model call reads the message for a product request and
+            # nothing else; if it finds one, that request is routed as a message of its own and answered, after everything
+            # the first reading declined. The agents that search and write are given that request and nothing else.
+            try:
+                asked, look = await second_look(text, shown, state.get("turn_id", ""))
+                looked = {"first_reading": route.intent, "found": asked or None, "reason": look.get("reason"), "prompt": look.get("prompt"),
+                          "prompt_version": look.get("version"), "adopted": False}
+                if asked:
+                    again, _ = await ask_router(asked)
+                    adopted = adopt_second_route(route, normalise_route(again, asked, shown, earlier), asked)
+                    if adopted is not None:
+                        route, looked["adopted"] = adopted, True
+                    else:
+                        looked["routed_as"] = again.intent
+            except BudgetExceededError:
+                raise
+            except LLMCallError as exc:
+                looked = {"first_reading": route.intent, "found": None, "adopted": False, "error": str(exc)[:200]}
 
         if route.intent in ("follow_up", "compare"):
             # A question about products on screen is asked under what that list was found for. Usually that is the request in
@@ -676,6 +788,8 @@ def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
         if route.safety != "ok":
             summary += f". Safety: {route.safety} ({route.safety_reason or 'policy'})"
         summary += summary_say
+        if looked and looked.get("adopted"):
+            summary += f'. A second reading of the message found this request in it: "{looked["found"]}"'
         request_text = request_for_agents(route, text, shown)
         return {
             "route": route,
@@ -685,7 +799,7 @@ def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
                            intent=route.intent, constraints=route.constraints.stated(), effective_constraints=constraints.stated(),
                            safety=route.safety, safety_reason=route.safety_reason, refers_to=route.refers_to or None, say=route.say or None,
                            reason=route.reason, model=meta.get("model"), prompt=meta.get("prompt"), prompt_version=meta.get("version"),
-                           passed_on=request_text if request_text != text else None, fallback=fallback)],
+                           passed_on=request_text if request_text != text else None, second_look=looked, fallback=fallback)],
         }
 
     return router_node

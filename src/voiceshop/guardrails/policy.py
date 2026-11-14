@@ -227,6 +227,15 @@ TOOL_FAILED_SCREEN: dict[str, str] = {
     "rag.search": "The catalog search did not work just now. Please try again in a moment.",
 }
 NO_RATING_NOTE = "The catalog has no customer ratings, so none are shown."
+
+
+def kept_to_budget(budget: float) -> str:
+    """Said on screen when the shopper invited going over a limit ("even if it's over") and everything shown is within it.
+
+    The limit stays a limit until the shopper changes it; the reply names the way to change it. (The budget scenario lost credit
+    in every run so far, eleven of eleven; in the sixth run in the workspace three jurors of three found no permitted route named.)
+    """
+    return f"Everything shown is within your ${budget:g} limit. Name a higher limit and I will show what costs more."
 _VOCABULARY = {"brand": "brands", "category": "categories", "material": "materials", "claim": "listing claims"}
 
 

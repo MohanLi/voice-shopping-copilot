@@ -123,6 +123,8 @@ class Settings(BaseSettings):
     # How many times the Answerer may revise after the Critic objects before the grounded template is used.
     critic_max_revisions: int = Field(default=1, ge=0, le=2)
     critic_llm_enabled: bool = True
+    # A message the Router is about to answer with fixed sentences alone is read once more for a buried product request.
+    second_look_enabled: bool = True
     # Re-ranker score below which the best catalog match is treated as "the catalog has nothing relevant".
     weak_match_score: float = -4.0
     # Spoken summary budget in words (lead + "N more options ..." + question); the audio is also held to TTS_MAX_SECONDS.

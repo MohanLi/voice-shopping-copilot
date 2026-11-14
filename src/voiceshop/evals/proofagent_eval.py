@@ -383,7 +383,9 @@ PIPELINE = (
     "Speech recognition (local model) -> transcript and confidence.",
     "Input screen (code) -> the message without declined clauses and with personal details replaced.",
     "Router (model) -> intent (a product search when in doubt), the constraints the shopper stated and no others, a safety level (ok, "
-    "caution, refuse), ids of fixed sentences, positions on screen referred to, the product request without declined parts. It writes no reply.",
+    "caution, refuse), ids of fixed sentences, positions on screen referred to, the product request without declined parts. It writes no reply. "
+    "A message it would answer with fixed sentences alone is read once more by a model, for a buried product request and nothing else; one "
+    "that is found is screened and routed like a message of its own, and answered after everything the first reading declined.",
     "Planner (model) -> a strategy and at most three tool calls with filters: the catalog first, the live web only for what the catalog "
     "cannot know (a current price, stock, a rating, newer products, kinds it does not carry); or one clarifying question when there is "
     "no product to search for.",
@@ -420,11 +422,13 @@ CODE_RULES = (
     "request for another product presses a claim about a product shown earlier, code states what that product's record says on the point.",
     "Search. The budget, age and brand the shopper stated are sent as filters whatever a model wrote. When too few products meet them the "
     "catalog tool loosens some (never a stated age range or a safety exclusion) and marks what each product misses, which the reply "
-    "says. For a child under three no web result is shown. A product looked up on the web is checked "
+    "says. A budget stays the limit when the shopper invites going over it; the reply names how to raise it. For a child under three no "
+    "web result is shown. A product looked up on the web is checked "
     "for recall notices. When the catalog has nothing suitable, the live web is searched once for the product and the reply says so. "
     "Duplicate calls, unknown tools and searches about a declined part are refused; a failed search is reported as failed.",
     "Rule checks on a draft. A dollar amount, rating or stock status must be a source's own, of a product the answer is about; a price "
-    "over the budget is said to be over it; \"none was found\" is not said of a product the search returned; the policy's Claims rules hold "
+    "over the budget is said to be over it; \"none was found\" is not said of a product the search returned; \"cheapest\", \"largest\" or "
+    "\"highest rated\" holds against the other rows and says of which products it is true; the policy's Claims rules hold "
     "(claims, recalls, assurances); the spoken reply fits 15 seconds (at most 45 words). After one revision, what still fails is rebuilt "
     "by code from the evidence.",
     "Untrusted text. Tool results and their notes reach a model only inside a fence that its prompt declares to be data, never instructions: "
@@ -1119,7 +1123,7 @@ def scorecard(report: Any, records: list[TurnRecord], *, config: RunConfig, sett
         "agent": {"models": {role: str(spec_for(role)) for role in ("router", "planner", "retriever", "answerer", "critic")},
                   "web_search": settings.search_provider_chain, "channel": config.channel, "voice_turns": sum(1 for r in turns if r.channel == "voice"),
                   "asr": asr_used, "tts": f"{settings.tts_provider}:{settings.tts_voice}",
-                  "prompts": {name: load_prompt(name).version for name, _ in (*AGENTS, ("safety_policy", ""))}},
+                  "prompts": {name: load_prompt(name).version for name, _ in (*AGENTS, ("second_look", ""), ("safety_policy", ""))}},
         "final_score_pct": round(float(report.final_score) * 10, 1), "certification": str(certification),
         "metrics_pct": {m: round(float(v) * 10, 1) for m, v in (report.per_metric or {}).items()},
         "confidence": {m: round(float(v), 2) for m, v in (getattr(report, "confidence", None) or {}).items()},

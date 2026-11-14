@@ -44,6 +44,17 @@ _BUDGET_WORDS = re.compile(r"\b(?:budget|over|above|more\s+than|exceeds?|higher|
 # A superlative is a statement about the other products too, and the table next to it shows whether it holds.
 _CHEAPEST = re.compile(r"\b(?:cheapest|lowest[-\s]priced?|lowest\s+(?:price|cost)|least\s+expensive|most\s+affordable)\b", re.I)
 _TOP_RATED = re.compile(r"\b(?:highest|best|top)[-\s]rated\b|\bhighest\s+(?:star\s+)?rating\b", re.I)
+# A search returns a few products, never every one. "The highest-rated eco option under $15" and "the largest LEGO piece count
+# within your budget" were each true of the rows beside them and read as statements about everything there is: four jurors of six
+# and three of six, "certainty overstated" (sixth run in the workspace, turns 17 and 10). A superlative says what it is true of.
+_SUPERLATIVE = re.compile(
+    r"\b(?:cheapest|least\s+expensive|most\s+affordable|lowest|highest|largest|biggest|smallest|fewest|longest|shortest|lightest|heaviest"
+    r"|(?:top|best)[-\s](?:rated|selling|reviewed)|most\s+(?:pieces|reviews|ratings|popular|reviewed))\b", re.I)
+_SCOPED = re.compile(
+    r"\b(?:I|we)\s+(?:found|could\s+find)\b|\bfound\b|\bshown\b|\bon\s+screen\b|\bhere\b|\b(?:listed|returned|compared)\b(?!\s+(?:at|for|as|by|on|in|to)\b)"
+    r"|\bof\s+(?:the\s+)?(?:two|three|four|five|both|these|those|them)\b|\bamong\s+(?:the|these|those|them)\b|\bbetween\s+the\s+two\b"
+    r"|\bin\s+(?:my|the|these|this)\s+(?:results|sources|list|listings|answer|comparison|table)\b"
+    r"|\bof\s+(?:the|my)\s+(?:options|ones|results|listings|picks|recommendations|products|rows)\b", re.I)
 
 
 # "Closest to eight dollars" is a statement about every price on the screen, like "cheapest".
@@ -84,6 +95,32 @@ def all_asserted(pattern: re.Pattern[str], text: str) -> list[re.Match[str]]:
         if not _HEDGE.search(sentence):
             found.append(m)
     return found
+
+
+_MOST_PIECES = re.compile(r"\b(?:largest|biggest)\b|\bmost\s+pieces\b|\bhighest\s+piece\s+count\b|\bpieces,?\s+the\s+most\s+(?:of|among|within|under)\b", re.I)
+
+
+def pieces_of(item: CatalogItem | WebItem) -> int | None:
+    """How many pieces a product has, when its record or its title says."""
+    from voiceshop.data.units import parse_piece_count
+
+    return (item.piece_count if isinstance(item, CatalogItem) else None) or parse_piece_count(item.title)
+
+
+def superlative_without_scope(text: str) -> str | None:
+    """A finding when a sentence calls something the cheapest, the largest or the highest rated and does not say of what.
+
+    "The lowest catalog price of the puzzles shown" and "the cheapest of the three" say it. "The highest-rated eco option
+    under $15" does not: it reads as a statement about every product there is, and a search returned five.
+    """
+    from voiceshop.speech.text import split_sentences
+
+    for sentence in split_sentences(" ".join((text or "").split())):
+        said = asserted(_SUPERLATIVE, sentence)
+        if said and not _SCOPED.search(sentence):
+            return (f"'{said.group(0)}' is said without saying of what. A search returns a few products, not every one there is: write "
+                    f"'{said.group(0)} of the ones I found' or 'of the three', or leave the word out.")
+    return None
 
 
 def asserted(pattern: re.Pattern[str], text: str) -> re.Match[str] | None:
@@ -671,12 +708,41 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
         nearer = closer_to_the_amount(rec.why, rec.ref, draft, evidence, constraints)
         if nearer:
             issues.append(Issue(code="superlative_not_true", severity="revise", where=rec.ref, message=nearer))
+        # Asked for a "big" set, the top pick of 95 pieces was called "the largest LEGO set shown" one row above a set of 151 (three
+        # replays of the sixth run's turn 10 in three). A count of pieces is compared with every row, caveat or not: the words are
+        # about the rows, whatever the reason the larger one came second.
+        pieces = pieces_of(item)
+        if pieces is not None and asserted(_MOST_PIECES, rec.why) and re.search(r"\bpieces?\b|\bpcs?\b|\bcount\b|\bsets?\b|\bkits?\b", rec.why, re.I):
+            more = [(other.ref, n) for other in draft.recommendations
+                    if other.ref != rec.ref and (o := evidence.get(other.ref)) is not None and (n := pieces_of(o)) is not None and n > pieces]
+            if more:
+                issues.append(Issue(code="superlative_not_true", severity="revise", where=rec.ref,
+                                    message=f"{rec.ref} is called the largest with {pieces} pieces, but {more[0][0]} in the same answer has {more[0][1]}. "
+                                            "Say plainly which has more pieces and why this one is still the pick, or leave the word out."))
+        unscoped = superlative_without_scope(rec.why)
+        if unscoped:
+            issues.append(Issue(code="superlative_unscoped", severity="revise", where=rec.ref, message=unscoped))
 
     # ---- the sentence is about the first row: "the set closest to eight dollars is ..." has to hold against the rows below it
     if draft.recommendations and not draft.abstain:
         nearer = closer_to_the_amount(draft.spoken, draft.recommendations[0].ref, draft, evidence, constraints)
         if nearer:
             issues.append(Issue(code="superlative_not_true", severity="revise", where="spoken", message=nearer))
+        unscoped = superlative_without_scope(draft.spoken)
+        if unscoped:
+            issues.append(Issue(code="superlative_unscoped", severity="revise", where="spoken", message=unscoped))
+        # "The cheapest listing is the EcoShine cleaner at $9.49" was said aloud one row above wipes at $4.99 (sixth run in the
+        # workspace, turn 20). The reasons were checked against the other rows; the sentence that is spoken was not.
+        said = dollars_in(draft.spoken)
+        if said and asserted(_CHEAPEST, draft.spoken):
+            priced = [(rec.ref, p) for rec in draft.recommendations
+                      if not rec.caveat and (o := evidence.get(rec.ref)) is not None and not (isinstance(o, CatalogItem) and o.constraint_notes)
+                      and (p := best_price(o)) is not None]
+            lowest = min(priced, key=lambda ref_price: ref_price[1], default=None)
+            if lowest is not None and all(amount > lowest[1] + 0.005 for amount in said):
+                issues.append(Issue(code="superlative_not_true", severity="revise", where="spoken",
+                                    message=f"The spoken sentence calls a product the cheapest at ${min(said):.2f}, but {lowest[0]} in the same answer costs "
+                                            f"${lowest[1]:.2f}. Give the word to the right product, say how the two differ, or leave it out."))
 
     # ---- nothing is reported from a search that was not made
     if evidence.searched is not None and "web.search" not in evidence.searched and "web.search" not in evidence.failed_tools and not evidence.web:

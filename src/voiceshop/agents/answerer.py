@@ -59,7 +59,7 @@ from voiceshop.speech.text import WORDS_PER_SECOND, estimate_seconds
 # (a replay of the fifth live run's turn 14: the page's only "material" was the tin the putty came in).
 # A second is "the product you also asked about is not mentioned": the reply is incomplete, not untrue.
 ADVISORY_AFTER_REVISION = ("critic_unsupported", "critic_constraint", "critic_unfit", "critic_safety", "critic_unanswered", "materials_overlooked",
-                           "asked_product_unmentioned")
+                           "asked_product_unmentioned", "superlative_unscoped")
 TAIL_WORDS = 9                   # "Two more options and the sources are on screen."
 QUESTION_WORDS = 12              # room for the follow-up question (or the safety sentence that replaces it)
 LEAD_SECONDS = 9.5               # how long the Answerer's own sentence may take to say; the pointer to the screen follows it
