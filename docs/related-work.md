@@ -58,7 +58,7 @@ combined. Here: Router, Planner, Retriever, Answerer, Critic, each with its own 
   declines everything else with a fixed sentence. An agent that spends money needs consent, payment and
   recovery from mistakes, which is a different project.
 - **Reviews and ratings of their own.** Rufus and Sparky answer from customer reviews. The dataset here has
-  none; a rating appears only when a live listing states one, and the table says "not available" otherwise.
+  none; a rating appears only when a live listing states one, and the table says "no rating" otherwise.
 - **Personalisation.** Purchase history, saved family details, a year of price history. Nothing here outlives
   the conversation.
 - **Fresh data at scale.** Two billion listings updated per hour against a snapshot of 9,740 products from

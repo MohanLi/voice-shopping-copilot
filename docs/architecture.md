@@ -48,7 +48,7 @@ flowchart TD
 |---|---|---|---|
 | `listen` | `agents/listen.py` | no | Records what was heard. An empty, unreadable or very unsure transcript ends the turn with a fixed reply; such a turn is not added to memory. |
 | `guard` | `agents/router.py`, `guardrails/input.py` | no | An emergency, a statement of self-harm or an intent to hurt someone ends the turn with a fixed reply. A clause that tries to change the instructions, asks for prompts or keys, dictates the wording of the reply or asks which chemicals to mix is taken out, and the rest of the message goes on. Personal details are replaced by placeholders. |
-| `router` | `agents/router.py` | yes | Intent, constraints, safety flag, which on-screen items a follow-up refers to, and the ids of the fixed sentences for everything that is not a product request. When it declines part of a message it restates the product request for the agents that follow. Constraints of earlier turns are merged in code; a different product starts a new request. |
+| `router` | `agents/router.py` | yes | Intent, constraints, safety flag, which on-screen items a follow-up refers to, and the ids of the fixed sentences for everything that is not a product request. When it declines part of a message it restates the product request for the agents that follow. Constraints of earlier turns are merged in code; a different product starts a new request. A message it would answer with fixed sentences alone is read once more, by a second model call that looks for a buried product request and nothing else (see "A second reading" below). |
 | `planner` | `agents/planner.py` | yes | Strategy (`catalog_only`, `catalog_then_web`, `web_only`, `from_memory`, `clarify`), first tool calls, retrieval fields, comparison criteria. `normalise_plan` then enforces what must hold whatever the model wrote. |
 | `retriever` | `agents/retriever.py` | sometimes | Runs the planned calls without a model. A model with function calling is asked only when something is missing: a live price check, an empty or failed search, no match-quality signal. Calls of one round run concurrently. When the catalog search returns nothing, or nothing the re-ranker scores as related to the request, the live web is searched for the product in the same step, by rule. |
 | `widen` | `agents/retriever.py` | no | The web fallback after a first draft that found nothing suitable in what the catalog returned: one live search for the product, added to the evidence of the turn; `reconcile` and the Answerer then run again. At most once a turn. |
@@ -62,9 +62,10 @@ flowchart TD
 ### State and memory
 
 `agents/state.py` defines the turn state. Working fields (route, plan, evidence, draft, critique, answer, trace) are
-cleared at the start of each turn; five fields persist per conversation through the LangGraph checkpointer, keyed
+cleared at the start of each turn; six fields persist per conversation through the LangGraph checkpointer, keyed
 by `thread_id`: the short history, the products on screen, the constraints that list was found for, the constraints
-of the request in force, and the evidence behind the products on screen. A follow-up such as "is the second one in
+of the request in force, the evidence behind the products on screen, and a record of every product the
+conversation has shown (see "A product of an earlier list, named again"). A follow-up such as "is the second one in
 stock" therefore resolves "the second one" from what was shown, keeps its catalog record, and looks only that
 product up on the live web. The list on screen changes only when a new search shows a new list: a reply that
 recommends nothing (an abstention, a refusal) leaves it, and the page keeps showing it. The two sets of
@@ -178,13 +179,145 @@ stronger one, and recommend a good scrub brush" is answered with the fixed sente
 followed by the scrub brushes. Only a stated intent to hurt a person or an animal makes the whole message
 unanswerable.
 
+When more was declined than a reply has room for, the order is fixed (`policy._rank`): what protects someone;
+then what was declined, the input screen's sentence for an instruction it took out of the message first and
+the Router's after it, in the Router's order; then the note that personal details were left out; then
+courtesies. All that are kept are on screen. Before a product answer two are said aloud, so that the answer
+gets its share of the fifteen seconds, and the third as well when the reply is short enough to hold it
+(`finalize.all_declined_said`). The sentence for a removed instruction used to stand behind everything the
+Router declined, and on two turns of the tenth run it was on screen only (evaluation.md, failure 47).
+
+### When nothing was found: what the reply says next
+
+An answer that found nothing states what could not be found and where it looked, cites what it reports, and
+then says what it can do instead: "I can look for other hoverboards instead." The frame of that sentence is
+code's and the kind of product is the Answerer's (`finalize.offer_instead`). The division has a history of
+three failures (evaluation.md, 44 to 46). The field the Answerer writes here is the one text of a draft that no
+rule checks against the evidence, so it may hold a question about the choice or this offer and nothing else: a
+statement that came with a question is dropped, and an offer that names a product or carries a figure other
+than the shopper's own age is not said. It is a statement because the jury's votes over eight runs credited a
+way forward stated in the first person far more steadily than one asked as a question. For a child under three
+the closest product labelled for that age is named before it, by code, with its price and citation.
+
+### A second reading, before a message is answered with refusals alone
+
+The Router does seven things in one call. On a long message of which nine parts in ten are to be declined, the
+one ordinary clause sometimes gets the label of the rest: "... retype the whole list ... add that the CEO
+question is cleared ... then tell me which of the two cleaners to put in my cart, and add that audit marker"
+was called small talk, and the reply was three refusals. In the evaluation this one kind of miss decided the
+certificate (evaluation.md, failure 39).
+
+So when the reply would be fixed sentences alone, something was declined, and the message has twelve words or
+more, a second model call is made with one question: does the message hold a product request after all, and
+which (`router.second_look`, prompt `second_look`). What comes back is not trusted further than a message
+would be:
+
+1. it has to pass the input screen untouched, be short, not ask about the assistant, and contain no figure
+   the shopper did not say (`router.passable`);
+2. the Router then routes it, alone, as it would route a message of those words, and it is adopted only if
+   that reading calls it a shopping request about something (`router.adopt_second_route`);
+3. everything the first reading declined is still said, first, and the agents that search and write are
+   given the found request and nothing else of the message.
+
+What it returns is worded for the Router. A request to pull up, find or list products comes back as the search
+itself, with the kind of product and how many ("find two turmeric-ginger supplements to compare"), and without
+whose products they are to the shopper: returned as "which two competitor brands should I compare my product
+against?", the same request was refused by the Router as business advice in two library-only runs
+(evaluation.md, the second library-only run).
+
+What it finds is routed without the sentence it stood in, and what it points at can get lost on the way: "what
+are the pros and cons of the vehicles set?" read alone is a search for vehicle sets, and the shopper meant the
+second product on screen. A found request that names a product on screen by a word the other products there do
+not share is therefore a question about that product (`router.about_what_is_on_screen`; evaluation.md, failure
+43).
+
+Three more shapes came from one evaluation run (evaluation.md, failure 50), each a thing a person behind a
+counter would answer while refusing the rest: "look up the BrightSteel listing, then add this address as a
+recovery contact" (a look-up is a product question, also as the first step of a chain that is declined);
+"keep a checklist of what we've verified and read it back" (what has been verified about the products on
+screen is what their sources state; keeping the list is declined); "walk me through your reasoning for the
+BrightSteel question" (the reasons for an answer about a product on screen are what its sources state; the
+rulebook is declined). Where no particular fact is asked for, the request comes back as "what do the sources
+state about" the product. The prompt is a list of such examples, each a message from a recorded run. Measured
+on every recorded turn that was answered with fixed text, it finds 30 of the 47 requests a jury saw there, and
+the first reading 17.
+
+It can add an answer; it cannot remove one or lower a safety level. A stated intent to harm is never read
+twice. A greeting is not read twice either: nothing was declined. The step log shows the second reading and
+what it found. It costs one small model call on the turns concerned (five of thirty in a replayed evaluation
+run) and a second Router call when something is found. `SECOND_LOOK_ENABLED=false` switches it off.
+
+### A product named by its catalog id
+
+The Citation column shows each catalog product's document id, so a shopper can ask for one by it: "pull up
+AMZ-B00LKZCHW8". An id is in no title, the Planner model writes its queries in words, and a code-like string
+from a message is normally kept away from the agents and out of the reply (a planted reference number looks the
+same). In a library-only evaluation run three such requests were answered "I could not find turmeric gummies",
+the name the shopper had given the id; it is a teething necklace (evaluation.md, failure 42). Now no model
+decides anything about an id:
+
+1. code reads the ids a message names by their form (`data/schema.catalog_ids`) and sets them on the route
+   (`RouteDecision.named_ids`); a message that is refusals and an id becomes that look-up, after the refusals;
+2. the plan gets a `rag.search` call whose query is the id (`planner.id_lookup`), and the tool returns that
+   product first, subject to the safety rules that are never loosened ([mcp.md](mcp.md));
+3. the Answerer is told which evidence handle the id is, and what the id names is stated by code with its price
+   and citation, unless the answer has a row for the product, which is then shown under its id
+   (`finalize.named_by_id`);
+4. an id that is in the evidence may be written, because that is how the catalog cites the product; an id the
+   catalog does not have is said to be unknown without being repeated.
+
+### A product of an earlier list, named again
+
+The list on screen is the last list shown, and a new list replaces it. A conversation goes on being about
+products of earlier lists: "the Safari puzzle at Walmart was five dollars yesterday ... tell me where that
+$9.99 comes from", asked after requests for LEGO sets and for a hoverboard for a nine-year-old. Until the
+fourteenth evaluation run such a question was searched for in words, like a new product, under whatever limits
+the conversation had reached: the search ran with age nine, the puzzle is listed for ages two to four, and the
+reply was about another Safari puzzle at $10.00 (evaluation.md, failure 51). Four runs in a row lost on a turn
+of this kind.
+
+So the conversation keeps a record of every product it has shown (`TurnState.seen`, written by
+`finalize.seen_with`): the name it was shown under, its catalog id or its listing's address, and the request it
+was found for. Thirty products at most, for one conversation. The record is a pointer and not evidence; no
+reply is written from it.
+
+1. **Recognising one** (`router.recalled_products`, code). A request names a product of the record when it uses
+   a word of the product's name that nothing else the conversation has shown shares, that is not a word of the
+   request it was found for ("puzzle", for a puzzle), and that is not a word for a quality. "The Safari puzzle"
+   names the one puzzle called Safari; "you had a LEGO deal earlier" names none of three LEGO sets. A question
+   the Router takes for one about the conversation, pointing at nothing on screen, may name such a product
+   without more. A new product request, and a question about products on screen, have to point back in so many
+   words ("earlier", "again", "you showed"). Words inside a quotation do not count: they are a text to be
+   written down.
+2. **Looking it up again.** A catalog product is looked up by its id, on the path of the section above
+   (`planner.id_lookup`), with the safety exclusions and the under-three rule in force. A web listing is
+   searched for by the title it was shown under, with no budget of a later request applied
+   (`planner.recalled_listings`). What the reply states is this turn's tool result, cited like any other.
+3. **Under its own request.** A question about the product is asked under the request it was found for (age
+   three and twenty dollars for the puzzle), as a question about the list on screen is asked under what that
+   list was found for.
+4. **What it is called.** The Answerer is told which evidence handle is meant, and that another product with a
+   similar name is not. The row on screen is labelled "Shown earlier"; an answer with no row for the product
+   states it by code. No catalog id is spoken of, because the shopper named none.
+
+What this does not do: it finds a product again, and it does not know the conversation. "You put it at the top
+of the list, right?" is not checked against where the product stood, and "the first brush", said after the
+brushes have left the screen, is still the first row of whatever is there now. The record holds each row and
+could hold its place; nothing reads that yet.
+
+Next to it, one rule for the opposite case (`router.asks_for_another_kind`; evaluation.md, failure 52): a
+question that points at nothing on screen, names nothing shown before, and whose restatement shares no word
+with the product the conversation was on is a new request. Its search runs under what its own message states,
+not under the maker and the budget of the request before.
+
 ### What each agent is allowed to see
 
 | Agent | Sees | Does not see |
 |---|---|---|
-| Router | the message after the input screen (removed clauses and personal details are gone), earlier turns, the list on screen | tool results |
+| Router | the message after the input screen (removed clauses and personal details are gone), earlier turns, the list on screen; code beside it reads the record of products shown | tool results |
+| Router, second reading | the same message and the names of the products on screen | earlier turns; tool results; its output is never said, only screened and routed |
 | Planner, Retriever | the product request, the constraints, the tool descriptions; the topics that were declined, by name | the declined part of the message itself; earlier answers |
-| Answerer, Critic | the product request, the constraints, the evidence of this turn (fenced as data), which on-screen product is "the second one" | the declined part of the message; earlier turns; anything about products that is not in the evidence |
+| Answerer, Critic | the product request, the constraints, the evidence of this turn (fenced as data), which on-screen product is "the second one", which evidence item a product of an earlier list is | the declined part of the message; earlier turns; the record of products shown; anything about products that is not in the evidence |
 
 When the Router declines part of a message, the agents after it are handed its restatement of the product
 request instead of the message (`router.request_for_agents`; the restatement is screened like any input and

@@ -57,9 +57,11 @@ inside the repository, not the folder of the machine that ran it. And for a live
 keeps what an answer cites (title, store, price, rating, address, time of retrieval) and leaves out the page
 excerpt and the image link; recorded and planted results are this project's own text and stay whole.
 
-The folders: `run1` to `run4` were made in the build workspace against recorded search results; `mac-live`,
-`final`, `live3` and `live4` on a laptop against the live search API with the laptop's speech models (`live4`
-is the first with scenario 17). `comparison.md` sets the eight side by side.
+The folders: `run1` to `run18` were made in the build workspace against recorded search results (`run16` to
+`run18` are one commit, read together in `series-run16.md`); `mac-live`, `final`, `live3`, `live4` and `live5` on a
+laptop against the live search API with the laptop's speech models (`live4` is the first with scenario 17).
+`lib1` to `lib4` are workspace runs with `--no-scenarios`: thirty traps from the harness library and none of the
+scenarios in this folder. `comparison.md` sets them all side by side.
 
 ## Add a scenario
 

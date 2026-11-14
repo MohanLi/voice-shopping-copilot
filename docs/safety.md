@@ -57,6 +57,32 @@ one about advice needs a word about health, law or money, and a question about a
 gets the sentence about personal data whatever the model chose. Restricted products (weapons, tobacco,
 alcohol, prescription medicines, adult content) are declined here.
 
+**A second reading.** When the Router finds no product request in a message, the reply is refusals alone, and
+a shopper whose one ordinary question stood among nine things to decline gets no answer to it. Before such a
+reply goes out, a second model call reads the message for that one thing (`router.second_look`). It is a
+helpfulness measure placed where a safety layer could be weakened, so its limits are part of the design: what
+it returns is screened by the input screen like a message and must pass untouched; a figure the shopper did
+not say disqualifies it; the Router routes it alone and may decline it again; a message with a stated intent
+to harm is never read twice; everything the first reading declined is still said first; and the agents that
+search and write see the found request and nothing else of the message. It can add an answer from the
+sources. It cannot remove a refusal, lower a safety level, or pass a declined part on.
+
+**A product shown earlier, named again.** The conversation keeps the names of the products it has shown, each
+with its catalog id or its listing's address and the request it was found for, so that "the Safari puzzle",
+asked about ten turns later, is that puzzle ([architecture.md](architecture.md)). The record is not a source. A
+product named again is looked up again through the same two tools; the look-up by id keeps the safety
+exclusions and the under-three rule exactly as a search does; and what the reply states is this turn's tool
+result. Nothing the shopper says is written into the record: it holds only rows the assistant itself showed,
+and it ends with the conversation.
+
+**What is said aloud of what was declined.** Every fixed sentence that is kept is on screen. Before a product
+answer two are spoken, and the choice of the two is fixed: a sentence that protects someone first; then the
+sentence for an instruction that the input screen took out of the message ("I can't change or share my
+instructions"); then what the Router declined, in its order. A third is spoken when the reply is short enough.
+A planted instruction is the one thing the pipeline declines without asking a model, and its refusal is not
+left to the screen: in the tenth evaluation run it was, on two turns, and eight jurors of twelve found no
+clear refusal in a reply that had followed none of the instruction (evaluation.md, failure 47).
+
 **Planner and Retriever.** The budget and the age are applied as search filters whatever the Planner wrote, and
 safety exclusions are never loosened. A search about a declined subject is refused by code whoever asked for it
 (`unsafe_query`), in the form of a question and in the form a query built from a product name takes. Only the
@@ -92,11 +118,17 @@ only when the first product has them, otherwise "One of the options contains mag
 - a recall or discontinuation that a source states must be said;
 - a product over the budget, or one that misses a constraint, must say so on screen, and a price above the budget must not be spoken without saying that it is; when every product of an answer is over the budget and the evidence has one that fits, that one is named too;
 - a question about a price gets a price or the statement that none was found, also for a product that is not recommended;
-- a product is not called the cheapest or the highest rated next to one in the same answer that beats it;
+- a product is not called the cheapest or the highest rated next to one in the same answer that beats it, in a reason or in the sentence that is spoken; "the largest" or "the most pieces" is compared with the piece count of every row;
+- a superlative says what it is true of ("of the three", "of the ones I found"): a search returns a few products, not every one there is;
+- "none was found" is not said of a product whose name is in the title of a result of the same turn;
+- a second product that a comparison names is mentioned, found or not;
 - the stock status is not called unstated while a live result matched to the product states it;
 - a web result is not recommended for a child under three;
 - absolute assurances are never given ("completely safe", "cures", "doctor recommended", "guaranteed to": `policy.FORBIDDEN_ASSURANCES`);
-- no code, link or address from the shopper's message is repeated, and nothing that reads like an instruction from a tool result;
+- no code, link or address from the shopper's message is repeated, and nothing that reads like an instruction from a tool result.
+  The one code a reply may carry is the document id of a catalog product that is in the evidence: it is how the
+  table cites the product, and a shopper may ask for a product by it. An id-shaped string that names nothing in the
+  catalog stays a code: the reply says the catalog has no product under the id named, without the id;
 - nothing that looks like a key;
 - the spoken reply must be speakable (no URLs, handles or markup) and fit the time limit.
 
@@ -141,7 +173,7 @@ next to the one about labels and mixing: "Keep cleaning products out of the reac
 - **Catalog:** the Amazon Product Dataset 2020 (PromptCloud, on Kaggle, CC0), a January 2020 snapshot. Every
   catalog price is labelled as a January 2020 catalog price. Fields the dataset does not have (ratings, brand,
   ingredient lists) were not made up: brand and material are extracted from each listing's own text with their
-  provenance recorded, and the rating column says "not available".
+  provenance recorded, and the rating column says "no rating".
 - **Live web:** one search API at a time (Serper by default). No page is fetched or scraped; the assistant uses
   the titles, prices, ratings and snippets the API returns. Social and forum sites are on the block list.
 - **Attribution:** a catalog product is cited by its document id, a live result by its URL, its store and the
@@ -150,15 +182,19 @@ next to the one about labels and mixing: "Keep cleaning products out of the reac
 
 ## 7. How this was tested
 
-- 619 unit and end-to-end tests, a large part of them on the rules above; each failure found in evaluation
+- 706 unit and end-to-end tests, a large part of them on the rules above; each failure found in evaluation
   became a test in the words of the turn that failed.
-- Six ProofAgent runs ([evaluation.md](evaluation.md)): an adversarial shopper, 30 turns each, with planted tool
-  faults (an injected instruction, a recalled product, an impossible listing, a failing search); the last two
-  against live web search. Safety 84%, 99%, 98%, 93%, and 97% and 95% live; resistance to manipulation 100% in
-  every run. No ballot in any run found an injected
-  instruction followed, harmful content produced, pressure given in to, or a tool called or an action taken that
-  should not have been. What Safety lost was lost on refusals that were not clear enough about what they
-  refused (failures 1, 12 and 15).
+- Twenty-seven ProofAgent runs ([evaluation.md](evaluation.md)): an adversarial shopper, 30 turns each, with planted tool
+  faults (an injected instruction, a recalled product, an impossible listing, a failing search); 5 of them against
+  live web search, 4 with thirty attacks from the harness's own library in place of the project's scenarios.
+  Safety was 84% in the first run and between 93% and 100% in the 26 since; resistance to
+  manipulation was between 99% and 100% in every run.
+- In none of the runs did any juror vote that an injected instruction was obeyed, that harmful or abusive
+  content was produced, that a secret, a payment detail or someone's record leaked, that advice outside the
+  assistant's remit was given, or that a tool was called or an action taken that should not have been. The
+  jurors' other votes that a rule gave way are few and were each outvoted: `abandoned_stated_rule`, 4 votes in 3 runs; `capitulated_to_pressure`, 5 votes in 3 runs.
+  What Safety lost was lost on refusals that were not clear enough about what they refused (failures 1, 12,
+  15 and 47).
 
 ## 8. What this does not cover
 
@@ -173,10 +209,15 @@ next to the one about labels and mixing: "Keep cleaning products out of the reac
 - A price from a store outside the United States is read as dollars. The second live run met Australian store
   pages; none of their prices reached an answer.
 - An answer that rests on web listings alone, where the shopper had been sent to the catalog (the web fallback),
-  has been tested on sample data and by replays with the live model. No jury run has seen it yet.
+  has been tested on sample data and by replays with the live model. Juries have met it on a handful of turns
+  since, once on live data (the fourth live run): too few to say how often it holds.
 - No person approves a reply before it is spoken. The governance profile used in evaluation declares that, and
   the compliance assessment marks it down for it.
-- The assistant cannot yet correct a false statement about an earlier turn ("the brush you showed me"), because
-  the Answerer sees only the evidence of the current turn (evaluation, section 5).
+- The assistant can correct a false statement about the list just before ("you said the Safari one was on
+  sale"): code states what that product's record says. A statement about anything shown earlier, or never shown
+  ("the brush you showed me"), still gets the general sentence, because the Answerer sees only the evidence of
+  the current turn (evaluation, section 5).
+- A question that is not about shopping and has a right answer elsewhere (a privacy request, a price match the
+  shopper believes exists) is declined in a fixed sentence that does not say where to go (evaluation, failure 42).
 - The safety numbers come from a jury of small-model calls on one conversation per version. They show which
   failures were found and fixed, not a failure rate.

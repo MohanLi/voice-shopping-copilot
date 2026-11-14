@@ -217,7 +217,7 @@ price as a comparison criterion and the table shows it.
 ## 8. What is not there
 
 - **Ratings and reviews.** The file has none. `rating` is empty for every catalog product, the comparison table
-  says "not available", and a rating appears in an answer only when a live web listing states one, cited to that
+  says "no rating", and a rating appears in an answer only when a live web listing states one, cited to that
   listing. Joining real ratings from the public Amazon Reviews 2023 dataset by ASIN is a stretch goal and was not
   done; `reviews.parquet`, which the assignment marks optional, does not exist.
 - **Stock.** The catalog says nothing about availability. Only a live web result can.
