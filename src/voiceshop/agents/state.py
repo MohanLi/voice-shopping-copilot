@@ -88,6 +88,14 @@ class RouteDecision(BaseModel):
     named_ids: SkipJsonSchema[list[str]] = Field(default_factory=list, description="Catalog document ids the message names ('pull up "
                                                  "AMZ-B00HEZ0APE'). Each is looked up by its id, whatever the Planner searches for, "
                                                  "and the reply says what it is")
+    recalled: SkipJsonSchema[list[dict[str, Any]]] = Field(default_factory=list, description="Products shown earlier in this conversation and no "
+                                                           "longer on screen that the request names ('back to the Safari puzzle'), as they were "
+                                                           "remembered (TurnState.seen). Each is looked up again: a catalog product by its id, "
+                                                           "which is then also in named_ids, a web listing by the name it was shown under")
+
+    def recalled_ids(self) -> set[str]:
+        """The catalog ids in ``named_ids`` that the shopper did not type: they are from the record of what the conversation has shown."""
+        return {str(entry.get("doc_id")).upper() for entry in self.recalled if entry.get("doc_id")}
 
 
 class SecondLook(BaseModel):
@@ -385,6 +393,7 @@ class TurnState(TypedDict, total=False):
     shown: list[dict[str, Any]]
     session_constraints: Constraints | None
     shown_constraints: Constraints | None   # what the list on screen was found for; a later request that shows no list leaves both as they are
+    seen: list[dict[str, Any]]              # every product the conversation has shown, the latest last, each with what it was found for (finalize.seen_with)
     last_evidence: Evidence | None
     # ---- per-turn working state
     guard: dict[str, Any] | None

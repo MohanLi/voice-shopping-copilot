@@ -130,7 +130,7 @@ def _request_block(state: TurnState, constraints: Constraints, plan: Plan | None
                      "asked for; if it does not, say in \"spoken\" that it was not found, and name an evidence item that carries part of its "
                      "name if there is one (a set that includes it, another size).")
     if route and route.named_ids:
-        lines.extend(named_id_lines(route.named_ids, state.get("evidence") or Evidence()))
+        lines.extend(named_id_lines(route.named_ids, state.get("evidence") or Evidence(), route.recalled_ids()))
     if "Text the shopper pasted and asks about" in asked or pasted_text(asked):
         # Said here as well as in the prompt's rule 10d: with the question about the product in front of it, the Answerer
         # answered that and left the pasted review unmentioned in three replays of four.
@@ -142,17 +142,31 @@ def _request_block(state: TurnState, constraints: Constraints, plan: Plan | None
     return "\n".join(lines)
 
 
-def named_id_lines(ids: list[str], evidence: Evidence) -> list[str]:
+def named_id_lines(ids: list[str], evidence: Evidence, remembered: set[str] | frozenset[str] = frozenset()) -> list[str]:
     """What the Answerer is told about the catalog ids the shopper named: which evidence item each one is, or that there is none.
 
     A shopper who names an id may be wrong about what it is ("the turmeric gummies are back under AMZ-B00LKZCHW8": a
     teething necklace). The product is called by its own name, and the request for another kind of product is answered
     as it would be without the id.
+
+    An id in ``remembered`` was not named by the shopper: the request names a product of an earlier list by a word of
+    its name, and the Router took the id from the record of the conversation (router.recalled_products). The Answerer is
+    told which evidence item is meant, and no id is spoken of.
     """
     found = {c.doc_id.upper(): c for c in evidence.catalog}
     lines = []
     for doc_id in ids[:2]:
         item = found.get(doc_id)
+        if doc_id in remembered:
+            if item is not None:
+                lines.append(f'The shopper means a product that was shown earlier in this conversation. It was looked up again, and in the '
+                             f'evidence it is {item.ref}: "{item.title}". Answer about that product: recommend it as the one product and say in '
+                             '"spoken" what was asked about it, from this evidence. Another product with a similar name is not the one that is '
+                             "meant. Do not mention a catalog id.")
+            else:
+                lines.append("The shopper means a product that was shown earlier in this conversation, and a safety rule holds it back for "
+                             'this request (see the notes). Say in "spoken" that you do not suggest that product here and why.')
+            continue
         if item is not None:
             lines.append(f'The shopper named the catalog id {doc_id}. In the evidence that is {item.ref}: "{item.title}". If the shopper asked '
                          "what that id is, or about its price or details, recommend it as the one product and say in \"spoken\" what it is and "
@@ -344,8 +358,10 @@ def template_answer(state: TurnState, evidence: Evidence, constraints: Constrain
     route: RouteDecision | None = state.get("route")
     first = evidence.get(draft.recommendations[0].ref) if draft.recommendations else None
     if route is not None and isinstance(first, CatalogItem) and first.doc_id.upper() in route.named_ids and draft.spoken.startswith("My top pick is "):
-        # The product the shopper named by its id was looked up, not picked: the sentence says so.
-        draft = draft.model_copy(update={"spoken": "The id you named is the " + draft.spoken[len("My top pick is "):]})
+        # The product the shopper named by its id was looked up, not picked: the sentence says so. Likewise a product of an
+        # earlier list that the request names (router.recalled_products).
+        opening = "Earlier I showed you the " if first.doc_id.upper() in route.recalled_ids() else "The id you named is the "
+        draft = draft.model_copy(update={"spoken": opening + draft.spoken[len("My top pick is "):]})
     return with_what_was_asked_for(draft, evidence, constraints)[0] if a_search(state) else draft
 
 

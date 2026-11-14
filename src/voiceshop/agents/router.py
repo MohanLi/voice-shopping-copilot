@@ -736,14 +736,20 @@ def about_what_is_on_screen(second: RouteDecision, asked: str, shown: list[dict[
     return second
 
 
-def adopt_second_route(first: RouteDecision, second: RouteDecision, asked: str) -> RouteDecision | None:
+def adopt_second_route(first: RouteDecision, second: RouteDecision, asked: str, shown: list[dict[str, Any]] | None = None) -> RouteDecision | None:
     """The route of a product request found on a second reading, with what the first reading declined; None when it is not adopted.
 
     The request was routed on its own, as a message of its own would be. It is adopted when that reading calls it a
     shopping request about something: a product, or products on screen. Everything the first reading declined is still
     said, first; "off topic" stays too, and is worded "part of that ..." next to an answer.
+
+    A request that names a product which is not on screen is about something too, also when the Router called it a
+    follow-up and named no product: "what does the EcoShine 16 oz cost, and is it EPA-certified?", found in a message
+    that asked for a note to be kept, with a puzzle on screen (run 11, turn 23). Routed alone it was a search for that
+    cleaner in one pass and a follow-up about nothing in the next, and the second was dropped.
     """
-    if second.intent not in SHOPPING or not (second.constraints.product or second.refers_to or second.constraints.stated()):
+    about_something = second.constraints.product or second.refers_to or second.constraints.stated() or asks_about_nothing_on_screen(asked, shown)
+    if second.intent not in SHOPPING or not about_something:
         return None
     kept = [i for i in first.say if i not in ("greeting", "thanks", "capabilities", "identity")]
     second.say = list(dict.fromkeys([*kept, *second.say]))[:MAX_SAY]      # type: ignore[assignment]
@@ -811,6 +817,63 @@ def request_for_agents(route: RouteDecision, text: str, shown: list[dict[str, An
     return question
 
 
+# Words that point back at the conversation. A new product request that uses none of them is a new request, whatever
+# earlier product shares a word with it ("a safari costume", after a Safari puzzle).
+_POINTS_BACK = re.compile(
+    r"\b(?:earlier|before|previous(?:ly)?|again|back\s+to|last\s+time|from\s+(?:before|earlier)|a\s+(?:minute|moment|while)\s+ago"
+    r"|you\s+(?:just\s+|already\s+|first\s+)?(?:said|showed|told|recommended|suggested|listed|had|put|gave|mentioned|quoted|found|picked))\b", re.I)
+MAX_RECALLED = 2
+
+
+def recalled_products(request: str, route: RouteDecision, seen: list[dict[str, Any]] | None, shown: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """The products shown earlier in this conversation, and no longer on screen, that a shopping request names.
+
+    A product counts as named when the request uses a word of its name that tells it from everything else the
+    conversation has shown: not a word of the request it was found for ("puzzle" for a puzzle; every puzzle shown shares
+    it), not a word another product shown or on screen has, not a word for a quality. "The Safari puzzle" names the one
+    puzzle called Safari; "the LEGO deal" names none of three LEGO sets, and the search goes on as it would have.
+    A question that the Router took for one about the conversation and that points at nothing on screen may name such
+    a product without more. A new product request, and a question about products that are on screen, have to point
+    back in so many words ("earlier", "again", "you showed"): "does the first one come in a safari print?" is about
+    the first one.
+
+    What is returned is the record (finalize.seen_with), latest first, at most two. It is not evidence. The catalog
+    product is looked up again by its id and the web listing by the name it was shown under (planner.normalise_plan),
+    so what the reply states is this turn's tool result, as everywhere else.
+    """
+    from voiceshop.agents.finalize import seen_key
+
+    if not seen or route.intent not in SHOPPING:
+        return []
+    if (route.intent == "product_search" or route.refers_to) and not _POINTS_BACK.search(request):
+        return []
+    on_screen = {seen_key(entry) for entry in shown or []}
+    words = {seen_key(entry): _name_words(str(entry.get("title") or entry.get("name") or "")) for entry in [*seen, *(shown or [])]}
+    said = {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", request.lower())}
+    out: list[dict[str, Any]] = []
+    for entry in reversed(seen):
+        key = seen_key(entry)
+        if not key or key in on_screen:
+            continue
+        found_for = entry.get("found_for") or {}
+        kind = _name_words(" ".join(str(v) for k in ("product", "category") if (v := found_for.get(k))))
+        kind |= _name_words(" ".join(str(v) for k in ("materials", "must_have") for v in found_for.get(k) or []))
+        others = set().union(*(w for k, w in words.items() if k != key)) if len(words) > 1 else set()
+        telling = {w for w in words[key] - others - kind - _QUALITY_WORDS if len(w) > 3}
+        if telling & said:
+            out.append({**entry, "named_by": sorted(telling & said)})
+    return out[:MAX_RECALLED]
+
+
+def with_recalled(request: str, recalled: list[dict[str, Any]]) -> str:
+    """``request`` followed by which earlier products it means, for the agents that search and write."""
+    if not recalled:
+        return request
+    names = " and ".join(f'"{str(entry.get("title") or entry.get("name"))[:120]}"' for entry in recalled)
+    return (f"{request} [The shopper means {'a product' if len(recalled) == 1 else 'products'} shown earlier in this conversation: {names}. "
+            "It is looked up again; answer about it from this turn's evidence.]")
+
+
 def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
     async def router_node(state: TurnState) -> dict[str, Any]:
         started = time.perf_counter()
@@ -848,7 +911,7 @@ def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
                 if asked:
                     again, _ = await ask_router(asked)
                     again = about_what_is_on_screen(again, asked, shown)
-                    adopted = adopt_second_route(route, normalise_route(again, asked, shown, earlier), asked)
+                    adopted = adopt_second_route(route, normalise_route(again, asked, shown, earlier), asked, shown)
                     if adopted is not None:
                         route, looked["adopted"] = adopted, True
                     else:
@@ -858,7 +921,21 @@ def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
             except LLMCallError as exc:
                 looked = {"first_reading": route.intent, "found": None, "adopted": False, "error": str(exc)[:200]}
 
-        if route.intent in ("follow_up", "compare"):
+        request_text = request_for_agents(route, text, shown)
+        recalled = recalled_products(request_text, route, state.get("seen"), shown)
+        if recalled:
+            # The request names a product of an earlier list. It is looked up again: by its catalog id (as a product named by
+            # its id is, planner.id_lookup), or on the web by the name it was shown under.
+            route.recalled = recalled
+            route.named_ids = list(dict.fromkeys([*route.named_ids, *(str(e["doc_id"]).upper() for e in recalled if e.get("doc_id"))]))
+            request_text = with_recalled(request_text, recalled)
+
+        if route.intent in ("follow_up", "compare") and recalled and not route.refers_to:
+            # A question about a product of an earlier list is asked under what that list was found for, as a question about
+            # the list on screen is. (The Safari puzzle of a request for a three-year-old was asked about after a hoverboard
+            # for a nine-year-old: the search for it ran with age nine and found another Safari puzzle. Run 14, turn 14.)
+            constraints = route.constraints.merged_with(Constraints(**(recalled[0].get("found_for") or {})))
+        elif route.intent in ("follow_up", "compare"):
             # A question about products on screen is asked under what that list was found for. Usually that is the request in
             # force; it is not after a request that showed no list. (A marble run for an eighteen-month-old was declined, the
             # puzzles for a four-year-old stayed on screen, and "rank all three" was answered about the puzzles with "for a
@@ -883,7 +960,8 @@ def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
         summary += summary_say
         if looked and looked.get("adopted"):
             summary += f'. A second reading of the message found this request in it: "{looked["found"]}"'
-        request_text = request_for_agents(route, text, shown)
+        if recalled:
+            summary += ". Shown earlier in this conversation, and looked up again: " + ", ".join(f'"{e.get("name")}"' for e in recalled)
         return {
             "route": route,
             "request_text": request_text,
@@ -892,7 +970,8 @@ def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
                            intent=route.intent, constraints=route.constraints.stated(), effective_constraints=constraints.stated(),
                            safety=route.safety, safety_reason=route.safety_reason, refers_to=route.refers_to or None, say=route.say or None,
                            reason=route.reason, model=meta.get("model"), prompt=meta.get("prompt"), prompt_version=meta.get("version"),
-                           passed_on=request_text if request_text != text else None, second_look=looked, fallback=fallback)],
+                           passed_on=request_text if request_text != text else None, second_look=looked,
+                           recalled=[{k: e.get(k) for k in ("name", "kind", "doc_id", "url")} for e in recalled] or None, fallback=fallback)],
         }
 
     return router_node

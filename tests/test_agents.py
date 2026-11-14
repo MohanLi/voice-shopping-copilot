@@ -3996,3 +3996,201 @@ def test_an_answer_that_found_nothing_says_the_recall_and_a_shorter_offer_when_t
     assert "similar product" not in build_answer(detail, Evidence(), on_screen.constraints, on_screen, max_words=42, grounded_by="llm+critic", revisions=0).text
     asks = none_found.model_copy(update={"follow_up_question": "Do you have a link to the listing?"})
     assert build_answer(asks, Evidence(), hover.constraints, hover, max_words=42, grounded_by="llm+critic", revisions=0).spoken.endswith("Do you have a link to the listing?")
+
+
+# ============================================================ a product of an earlier list, named again (run 14, turn 14; runs 11 to 13)
+def seen_entry(name: str, found_for: dict[str, Any], *, doc_id: str | None = None, url: str | None = None, title: str | None = None, price: float = 9.99) -> dict[str, Any]:
+    return {"name": name, "title": title or name, "kind": "catalog" if doc_id else "web", "doc_id": doc_id, "url": url, "price": price, "brand": None,
+            "found_for": found_for}
+
+
+PUZZLE_REQUEST = {"product": "wooden puzzle", "budget_max": 20.0, "age_years": 3.0, "materials": ["wood"]}
+CLEANER_REQUEST = {"product": "stainless steel cleaner", "budget_max": 15.0, "must_have": ["eco-friendly"]}
+SEEN = [
+    seen_entry("Melissa & Doug Safari Wooden Chunky Puzzle", PUZZLE_REQUEST, doc_id="AMZ-B000B9RHYC",
+               title="Melissa & Doug Safari Wooden Chunky Puzzle (Preschool, Chunky Wooden Pieces, Full-Color Pictures, 8 Pieces)"),
+    seen_entry("Crayola Farm Animals Wooden Puzzle & Stamps", PUZZLE_REQUEST, doc_id="AMZ-B07PL1C15D", price=19.99),
+    seen_entry("EcoShine Stainless Steel Cleaner", CLEANER_REQUEST, url="https://shop.example.com/offer/ecoshine-stainless-16oz",
+               title="EcoShine Stainless Steel Cleaner, 16 fl oz", price=9.49),
+    seen_entry("BrightSteel Stainless Steel Cleaner & Polish", CLEANER_REQUEST, url="https://shop.example.com/offer/brightsteel-cleaner-polish", price=6.99),
+    seen_entry("LEGO Friends Stephanie's Summer Heart Box 41386 Building Kit", {"product": "LEGO set", "budget_max": 8.0, "brand": "LEGO"}, doc_id="AMZ-B07PX3X1PR", price=5.59),
+    seen_entry("LEGO BrickHeadz Halloween Witch 40272 Building Kit", {"product": "LEGO set", "budget_max": 8.0, "brand": "LEGO"}, doc_id="AMZ-B07H7SBTHZ", price=6.56),
+]
+LEGO_ON_SCREEN = [{"position": n, "ref": f"C{n}", **{k: e[k] for k in ("name", "title", "kind", "doc_id", "url", "price")}} for n, e in enumerate(SEEN[4:], 1)]
+SAFARI_AT_WALMART = ("Okay, the Safari puzzle at Walmart was five dollars yesterday, so your catalog number is off. Just confirm it's five dollars and "
+                     "tell me where that $9.99 comes from.")
+
+
+def test_a_product_of_an_earlier_list_is_recognised_by_a_word_that_only_its_name_has() -> None:
+    from voiceshop.agents.router import recalled_products, with_recalled
+
+    def names(request: str, route: RouteDecision, shown: list[dict[str, Any]] | None = LEGO_ON_SCREEN) -> list[str]:
+        return [e["name"] for e in recalled_products(request, route, SEEN, shown)]
+
+    about_the_conversation = RouteDecision(intent="follow_up")                    # the Router's reading of run 14, turn 14: it points at nothing on screen
+    assert names(SAFARI_AT_WALMART, about_the_conversation) == ["Melissa & Doug Safari Wooden Chunky Puzzle"]
+    found = recalled_products(SAFARI_AT_WALMART, about_the_conversation, SEEN, LEGO_ON_SCREEN)[0]
+    assert found["doc_id"] == "AMZ-B000B9RHYC" and found["found_for"] == PUZZLE_REQUEST and found["named_by"] == ["safari"]
+    # A word of the request a product was found for names nothing ("puzzle": both puzzles have it), nor does a word two products share.
+    assert names("what did that wooden puzzle cost?", about_the_conversation) == []
+    assert names("what about the Melissa one, or the stainless steel cleaner?", about_the_conversation) == ["Melissa & Doug Safari Wooden Chunky Puzzle"]
+    assert names("you had a LEGO deal earlier, right?", RouteDecision(intent="product_search")) == []            # two sets, and "LEGO" is the request
+    assert names("is the eco-friendly one safe?", about_the_conversation) == []                                  # a quality is not a name
+    # A product that is on screen is not recalled: the list answers for it.
+    assert names("what does the BrickHeadz witch cost?", about_the_conversation) == []
+    assert names("what does the BrickHeadz witch cost?", about_the_conversation, shown=None) == ["LEGO BrickHeadz Halloween Witch 40272 Building Kit"]
+    # A new request, and a question about products on screen, have to point back in so many words.
+    costume = RouteDecision(intent="product_search", constraints=Constraints(product="safari animal costume"))
+    assert names("Now find me a safari animal costume for a five year old.", costume) == []
+    assert names("Back to the puzzle from earlier: the Safari one, what did it cost?", costume) == ["Melissa & Doug Safari Wooden Chunky Puzzle"]
+    on_screen = RouteDecision(intent="compare", refers_to=[1])
+    assert names("does the first one come in a safari print?", on_screen) == []
+    assert names("you said the EcoShine is $9.49 earlier, right? Put it next to the first one's price.", on_screen) == ["EcoShine Stainless Steel Cleaner"]
+    # The latest first, two at most; and never for a turn that is not a shopping request.
+    assert names("the EcoShine, the BrightSteel and the Safari puzzle again", about_the_conversation) == ["BrightSteel Stainless Steel Cleaner & Polish",
+                                                                                                    "EcoShine Stainless Steel Cleaner"]
+    assert names(SAFARI_AT_WALMART, RouteDecision(intent="chitchat", say=["no_unconfirmed"])) == []
+    assert recalled_products(SAFARI_AT_WALMART, about_the_conversation, None, LEGO_ON_SCREEN) == []
+
+    # The agents that search and write are told which product is meant, by the name it was shown under.
+    told = with_recalled("what does the Safari puzzle cost", [found])
+    assert told.startswith("what does the Safari puzzle cost [The shopper means a product shown earlier in this conversation: \"Melissa & Doug Safari Wooden")
+    assert "AMZ-" not in told and with_recalled("x", []) == "x"
+
+
+def test_every_product_shown_is_remembered_with_the_request_it_was_found_for() -> None:
+    from voiceshop.agents.finalize import MAX_SEEN, seen_with
+    from voiceshop.agents.state import FinalAnswer, TableRow
+
+    def answer(*rows: tuple[str, str | None, str | None]) -> FinalAnswer:
+        return FinalAnswer(spoken="x", text="x", kind="recommendation", table=[
+            TableRow(rank=n, ref=f"C{n}", product=title, price="$1.00", rating="no rating", ingredients="not stated", source="Private catalog",
+                     citation=doc_id or url or "", doc_id=doc_id, url=url, price_catalog=1.0 if doc_id else None, price_live=None if doc_id else 1.0)
+            for n, (title, doc_id, url) in enumerate(rows, 1)])
+
+    puzzles = Constraints(product="wooden puzzle", age_years=3, budget_max=20, wants_current_info=True)
+    first = seen_with(None, answer(("Safari Wooden Chunky Puzzle (8 Pieces)", "AMZ-1", None), ("Farm Animals Puzzle", "AMZ-2", None)), puzzles)
+    assert [(e["name"], e["doc_id"], e["kind"]) for e in first] == [("Safari Wooden Chunky Puzzle", "AMZ-1", "catalog"), ("Farm Animals Puzzle", "AMZ-2", "catalog")]
+    assert first[0]["found_for"] == {"product": "wooden puzzle", "budget_max": 20.0, "age_years": 3.0}       # what was asked for; not "right now"
+    # A web listing is remembered by its address; a product shown again moves to the end, under the request it is shown for now.
+    cleaners = Constraints(product="stainless steel cleaner")
+    then = seen_with(first, answer(("EcoShine Stainless Steel Cleaner, 16 fl oz", None, "https://shop.example.com/e"), ("Safari Wooden Chunky Puzzle (8 Pieces)", "AMZ-1", None)), cleaners)
+    assert [e["doc_id"] or e["url"] for e in then] == ["AMZ-2", "https://shop.example.com/e", "AMZ-1"]
+    assert then[1]["kind"] == "web" and then[2]["found_for"] == {"product": "stainless steel cleaner"} and then[0]["found_for"]["age_years"] == 3.0
+    # The record is bounded: the oldest give way.
+    many = seen_with(then, answer(*[(f"Product {n}", f"AMZ-9{n:02d}", None) for n in range(MAX_SEEN)]), cleaners)
+    assert len(many) == MAX_SEEN and many[-1]["doc_id"] == f"AMZ-9{MAX_SEEN - 1:02d}" and "AMZ-2" not in [e["doc_id"] for e in many]
+
+
+def test_a_recalled_listing_is_searched_for_by_the_name_it_was_shown_under() -> None:
+    """Run 11, turn 26: the plan searched for "EcoShine 16 oz cleaner", the search found nothing, and the product was "not among my sources"."""
+    from voiceshop.agents.planner import RECALLED_BY_ID, RECALLED_BY_NAME, normalise_plan
+
+    ecoshine = {**SEEN[2], "named_by": ["ecoshine"]}
+    route = RouteDecision(intent="compare", refers_to=[1], recalled=[ecoshine])
+    on_screen = [{"position": 1, "ref": "C1", "name": "Melissa & Doug Safari Wooden Chunky Puzzle", "doc_id": "AMZ-B000B9RHYC"}]
+    written = Plan(strategy="catalog_then_web", reason="x", steps=[PlanStep(tool="web.search", purpose="p", query="EcoShine 16 oz cleaner", price_max=8),
+                                                                    PlanStep(tool="rag.search", purpose="p", query="Melissa & Doug Safari wooden chunky puzzle")])
+    plan, notes = normalise_plan(written, route, Constraints(product="LEGO set", budget_max=8), "…", on_screen, deps_stub())
+    # The planned search for the same product in other words is replaced, and no budget of a later request is applied to it.
+    assert [(s.tool, s.query, s.price_max) for s in plan.steps] == [("web.search", "EcoShine Stainless Steel Cleaner, 16 fl oz", None),
+                                                                    ("rag.search", "Melissa & Doug Safari wooden chunky puzzle", None)]
+    assert plan.steps[0].purpose == RECALLED_BY_NAME and plan.steps[0].kind == "shopping"
+    assert "a listing shown earlier in this conversation is searched for by the name it was shown under" in notes
+    # A plan that would ask the web nothing becomes one that does; a plan that already searches for the title is left alone.
+    for strategy in ("from_memory", "clarify", "catalog_only"):
+        became, _ = normalise_plan(Plan(strategy=strategy, reason="x", clarifying_question="Which one?"), route, Constraints(), "…", on_screen, deps_stub())
+        assert ("web.search", "EcoShine Stainless Steel Cleaner, 16 fl oz") in [(s.tool, s.query) for s in became.steps], strategy
+    same = Plan(strategy="web_only", reason="x", steps=[PlanStep(tool="web.search", purpose="p", query="EcoShine Stainless Steel Cleaner, 16 fl oz")])
+    assert [s.query for s in normalise_plan(same, route, Constraints(budget_max=8), "…", on_screen, deps_stub())[0].steps if s.kind == "shopping"] \
+        == ["EcoShine Stainless Steel Cleaner, 16 fl oz"]
+    # Without the live web nothing is added. A catalog product has an id, and is looked up by it under a purpose of its own.
+    offline, _ = normalise_plan(written, route, Constraints(), "…", on_screen, deps_stub(web=False))
+    assert all(s.tool == "rag.search" for s in offline.steps)
+    safari = RouteDecision(intent="follow_up", named_ids=["AMZ-B000B9RHYC"], recalled=[{**SEEN[0], "named_by": ["safari"]}])
+    by_id, _ = normalise_plan(Plan(strategy="catalog_only", reason="x", steps=[PlanStep(tool="rag.search", purpose="p", query="Safari jigsaw puzzle")]),
+                              safari, Constraints(**PUZZLE_REQUEST), "…", LEGO_ON_SCREEN, deps_stub())
+    assert (by_id.steps[0].query, by_id.steps[0].purpose) == ("AMZ-B000B9RHYC", RECALLED_BY_ID)
+    assert by_id.steps[0].filters.model_dump(exclude_defaults=True) == {"price_max": 20.0, "age_years": 3.0}       # the puzzle's own request
+
+
+def test_a_recalled_product_is_called_shown_earlier_and_never_an_id_the_shopper_named() -> None:
+    from voiceshop.agents.answerer import named_id_lines
+    from voiceshop.agents.finalize import named_by_id
+
+    safari = catalog_item("B000B9RHYC", "Melissa & Doug Safari Wooden Chunky Puzzle (8 Pieces)", 9.99)
+    evidence = Evidence(catalog=[safari])
+    recalled = RouteDecision(intent="follow_up", named_ids=["AMZ-B000B9RHYC"], recalled=[{**SEEN[0], "named_by": ["safari"]}])
+    typed = RouteDecision(intent="product_search", named_ids=["AMZ-B000B9RHYC"])
+    assert recalled.recalled_ids() == {"AMZ-B000B9RHYC"} and typed.recalled_ids() == set()
+
+    # What the Answerer is told: which evidence item is meant, and that no id is to be mentioned.
+    line = named_id_lines(recalled.named_ids, evidence, recalled.recalled_ids())[0]
+    assert line.startswith("The shopper means a product that was shown earlier in this conversation.") and f"it is {safari.ref}" in line
+    assert "Do not mention a catalog id" in line and "AMZ-" not in line
+    assert named_id_lines(typed.named_ids, evidence)[0].startswith("The shopper named the catalog id AMZ-B000B9RHYC.")
+    held_back = named_id_lines(recalled.named_ids, Evidence(), recalled.recalled_ids())[0]
+    assert "a safety rule holds it back" in held_back and "AMZ-" not in held_back
+
+    # An answer that has no row for it states it by code, as shown earlier; a typed id is stated as that id.
+    (_, on_screen, aloud), = named_by_id(recalled, evidence, [])
+    assert on_screen.startswith("Shown earlier in this conversation: the Melissa & Doug Safari Wooden Chunky Puzzle, $9.99") and "[AMZ-B000B9RHYC]" in on_screen
+    assert aloud.startswith("Earlier I showed you the ") and "$9.99 in the catalog" in aloud and "id" not in aloud.split()
+    (_, as_id, said), = named_by_id(typed, evidence, [])
+    assert as_id.startswith("AMZ-B000B9RHYC in the catalog is the ") and said.startswith("The id you named is the ")
+    assert named_by_id(recalled, evidence, [safari]) == []                                 # the answer has a row for it: nothing is stated twice
+
+
+async def test_a_question_about_a_product_of_an_earlier_list_looks_that_product_up_under_its_own_request(agent_env: Any, assistant: Assistant) -> None:
+    """Run 14, turn 14: the puzzle of a request for a three-year-old, asked about after two other requests, was searched for by its
+    words under the age of the request in between; the reply named another puzzle, and "$9.99 does not appear in any source"."""
+    from voiceshop.agents.planner import RECALLED_BY_ID
+
+    games = await assistant.ask(BOARD_GAME, thread_id="earlier")
+    pirates = games.answer.table[0]
+    assert "Pirates" in pirates.product and pirates.doc_id
+    puzzles = await assistant.ask("um i need a wooden puzzle for my three year old under twenty dollars", thread_id="earlier")
+    assert pirates.doc_id not in {row.doc_id for row in puzzles.answer.table}             # the list on screen is another list now
+    state = await assistant.graph.aget_state({"configurable": {"thread_id": "earlier"}})
+    assert pirates.doc_id in [e["doc_id"] for e in state.values["seen"]] and len(state.values["seen"]) == len(games.answer.table) + len(puzzles.answer.table)
+
+    asked = "Okay, the Pirates game was ten dollars at the store yesterday, so your number is off. Just confirm it's ten dollars and tell me where that $19.95 comes from."
+    script("about-an-earlier-list", {RouteDecision: [RouteDecision(intent="follow_up", say=["no_unconfirmed"],
+                                                                 request="what does the Pirates game cost and where does the $19.95 come from")]})
+    agent_env(LLM_MODEL_ROUTER="fake:about-an-earlier-list")
+    result = await assistant.ask(asked, thread_id="earlier")
+
+    router = next(e for e in result.trace if e["node"] == "router")
+    assert [e["doc_id"] for e in result.route.recalled] == [pirates.doc_id] and result.route.named_ids == [pirates.doc_id]
+    assert "Shown earlier in this conversation, and looked up again" in router["summary"] and router["details"]["recalled"][0]["doc_id"] == pirates.doc_id
+    assert "[The shopper means a product shown earlier in this conversation:" in router["details"]["passed_on"]
+    # The question is asked under the request the game was found for: a ten-year-old and $25, not the puzzle's three-year-old and $20.
+    assert router["details"]["effective_constraints"] == {"product": "board game", "budget_max": 25.0, "age_years": 10.0}
+    plan = next(e for e in result.trace if e["node"] == "planner")["details"]["steps"]
+    assert (plan[0]["tool"], plan[0]["query"], plan[0]["purpose"]) == ("rag.search", pirates.doc_id, RECALLED_BY_ID)
+    assert plan[0]["filters"]["age_years"] == 10.0 and plan[0]["filters"]["price_max"] == 25.0
+    # The reply is about that game, with its catalog price, and says where it was seen; no id is spoken.
+    assert result.answer.table[0].doc_id == pirates.doc_id and "$19.95" in result.answer.spoken
+    assert "Earlier I showed you the " in result.answer.spoken and "**Shown earlier: " in result.answer.text and "AMZ-" not in result.answer.spoken
+    assert result.answer.text.startswith(policy.SAY["no_unconfirmed"])
+
+    # A new request that shares a word with it and does not point back is a new request.
+    script("a-new-request", {RouteDecision: [RouteDecision(intent="product_search", constraints=Constraints(product="pirate costume", age_years=10))]})
+    agent_env(LLM_MODEL_ROUTER="fake:a-new-request")
+    costume = await assistant.ask("now a pirates costume for a ten year old", thread_id="earlier")
+    assert costume.route.recalled == [] and costume.route.named_ids == []
+    assert "recalled" not in next(e for e in costume.trace if e["node"] == "router")["details"]
+
+
+def test_a_request_found_on_a_second_reading_about_a_product_that_is_not_on_screen_is_adopted() -> None:
+    """Run 11, turn 23, measured on the record: "what does the EcoShine 16 oz cost?" was a search in one pass and a follow-up about nothing in the next."""
+    from voiceshop.agents.router import adopt_second_route
+
+    first = RouteDecision(intent="chitchat", say=["no_records"])
+    puzzle = [{"position": 1, "ref": "C1", "name": "Melissa & Doug Safari Wooden Chunky Puzzle", "doc_id": "AMZ-B000B9RHYC"}]
+    asked = "What does the EcoShine 16 oz cost, and is it EPA-certified for food-contact surfaces?"
+    assert adopt_second_route(first, RouteDecision(intent="follow_up"), asked) is None                       # as before, without the list
+    adopted = adopt_second_route(first, RouteDecision(intent="follow_up"), asked, puzzle)
+    assert adopted is not None and (adopted.intent, adopted.say, adopted.request) == ("follow_up", ["no_records"], asked)
+    assert adopt_second_route(first, RouteDecision(intent="follow_up"), "what about it", puzzle) is None      # it names nothing
+    assert adopt_second_route(first, RouteDecision(intent="chitchat"), asked, puzzle) is None                # and it has to be a shopping request

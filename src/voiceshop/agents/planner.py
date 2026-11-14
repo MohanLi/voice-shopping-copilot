@@ -117,8 +117,42 @@ def id_lookup(route: RouteDecision, constraints: Constraints, shown: list[dict[s
     wanted = [doc_id for doc_id in route.named_ids if doc_id not in on_screen]
     if not wanted or set(wanted) <= {doc_id for s in steps if s.tool == "rag.search" for doc_id in catalog_ids(s.query)}:
         return None
-    lookup = PlanStep(tool="rag.search", purpose="the product the shopper named by its catalog id", query=" ".join(wanted))
+    purpose = RECALLED_BY_ID if set(wanted) <= route.recalled_ids() else "the product the shopper named by its catalog id"
+    lookup = PlanStep(tool="rag.search", purpose=purpose, query=" ".join(wanted))
     return enforce_constraints(lookup, constraints.model_copy(update={"brand": None, "category": None, "materials": []}))
+
+
+RECALLED_BY_ID = "the product shown earlier in this conversation, by its catalog id"
+RECALLED_BY_NAME = "the listing shown earlier in this conversation, by the name it was shown under"
+
+
+def recalled_listings(route: RouteDecision, steps: list[PlanStep]) -> tuple[list[PlanStep], list[str]]:
+    """``steps`` with a search for each web listing of an earlier list that the request names, by the name it was shown under.
+
+    A catalog product has an id, and the look-up by id finds it whatever the search words are. A web listing has a title.
+    "You said the EcoShine is $9.49 earlier, right? Can you put it next to the Safari puzzle's price?" was planned as a
+    search for "EcoShine 16 oz cleaner", the search found nothing under those words, and the reply was "the EcoShine 16
+    oz product is not among my sources", nine turns after recommending it (run 11, turn 26). The words that found the
+    listing are the words it was shown under, and the record of the conversation has them. A planned search for the same
+    product in other words is replaced; otherwise the search is put first. No budget is applied to it: the listing is asked
+    for by name, and what it costs now is part of the answer.
+    """
+    from voiceshop.agents.router import _name_words
+
+    notes: list[str] = []
+    for entry in (e for e in route.recalled if not e.get("doc_id")):
+        title = " ".join(str(entry.get("title") or entry.get("name") or "").split())[:200]
+        if not title or any(s.tool == "web.search" and s.query == title for s in steps):
+            continue
+        again = PlanStep(tool="web.search", purpose=RECALLED_BY_NAME, query=title, kind="shopping", top_k=5)
+        named_by = set(entry.get("named_by") or [])
+        same = [n for n, s in enumerate(steps) if s.tool == "web.search" and s.kind == "shopping" and named_by & _name_words(s.query)]
+        if same:
+            steps = [again if n == same[0] else s for n, s in enumerate(steps) if n == same[0] or n not in same]
+        else:
+            steps = [again, *steps]
+        notes.append("a listing shown earlier in this conversation is searched for by the name it was shown under")
+    return steps, notes
 
 
 def names_only_ids(route: RouteDecision, constraints: Constraints) -> bool:
@@ -157,6 +191,12 @@ def normalise_plan(plan: Plan, route: RouteDecision, constraints: Constraints, u
         notes.append("added the look-up of the product the shopper named by its catalog id")
         if strategy in ("from_memory", "clarify"):            # a plan that searches nothing would not make the look-up
             strategy = "catalog_only"
+
+    if web_ok and any(not e.get("doc_id") for e in route.recalled):
+        steps, added = recalled_listings(route, steps)
+        steps, notes = steps[:MAX_STEPS], [*notes, *added]
+        if added and strategy in ("from_memory", "clarify", "catalog_only"):       # a plan that asks the web nothing would not make the search
+            strategy = "catalog_then_web"
 
     if strategy == "from_memory" and not shown:
         strategy, notes = "catalog_only", [*notes, "nothing on screen to answer from; searching the catalog instead"]
@@ -204,7 +244,7 @@ def normalise_plan(plan: Plan, route: RouteDecision, constraints: Constraints, u
             notes.append("added the search for current listings the plan was missing")
         # The budget is a hard constraint: it is applied by the tool, whatever the query words say.
         steps = [s.model_copy(update={"price_max": constraints.budget_max}) if s.tool == "web.search" and s.kind == "shopping"
-                 and constraints.budget_max and not s.price_max else s for s in steps]
+                 and constraints.budget_max and not s.price_max and s.purpose != RECALLED_BY_NAME else s for s in steps]
         pages = rules.web_steps(constraints, query)[1:]                  # listings carry no description: look for pages that state the quality
         if pages and not any(s.tool == "web.search" and s.kind == "web" for s in steps):
             steps.extend(pages)

@@ -136,7 +136,7 @@ async def second_reading(case: dict[str, Any], first: dict[str, Any]) -> dict[st
         again, _ = await call_structured("router", "router", RouteDecision, user=asked, variables=router_variables(case))
         routed_as = again.intent                              # what the Router made of the request, read alone
         again = router.normalise_route(router.about_what_is_on_screen(again, asked, case["shown"]), asked, case["shown"], earlier)
-        adopted = router.adopt_second_route(RouteDecision.model_validate(first["route"]), again, asked)
+        adopted = router.adopt_second_route(RouteDecision.model_validate(first["route"]), again, asked, case["shown"])
         out.update(adopted=adopted is not None, routed_as=routed_as, answered_as=again.intent, refers_to=list(again.refers_to))
     return out
 

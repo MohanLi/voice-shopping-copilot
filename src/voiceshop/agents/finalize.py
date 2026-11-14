@@ -780,7 +780,9 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
                 label = position_word(positions[item.ref]).capitalize() + ": "
             else:
                 label = "" if about_screen else ("Top pick: " if row.rank == 1 else f"Option {row.rank}: ")
-                if route is not None and isinstance(item, CatalogItem) and item.doc_id.upper() in route.named_ids:
+                if route is not None and isinstance(item, CatalogItem) and item.doc_id.upper() in route.recalled_ids():
+                    label = "Shown earlier: "                 # a product of an earlier list, named again and looked up again
+                elif route is not None and isinstance(item, CatalogItem) and item.doc_id.upper() in route.named_ids:
                     label = f"{item.doc_id}: "                # the product the shopper named by its id is shown under that id
             lines.append(f"**{label}{short_name(item)}** - {row.price}. {why}" + (f" _Caveat: {caveat}_" if caveat else "") + f" [{row.citation}]")
     if notes:
@@ -826,13 +828,20 @@ def named_by_id(route: RouteDecision | None, evidence: Evidence, rows: list[Cata
         return []
     by_id = {c.doc_id.upper(): c for c in evidence.catalog}
     shown_ids = {i.doc_id.upper() for i in rows if isinstance(i, CatalogItem)}
+    # An id the shopper did not type: the Router took it from the record of what this conversation has shown (router.recalled_products).
+    remembered = route.recalled_ids()
     out: list[tuple[CatalogItem | WebItem, str, str]] = []
     for doc_id in route.named_ids[:2]:
         item = by_id.get(doc_id)
         if item is None or doc_id in shown_ids:
             continue
         row = table_row(0, item, "", None, evidence)
-        aloud = "" if brief_name(item).lower() in said.lower() else f"The id you named is the {brief_name(item)}, ${item.price:.2f} in the catalog."
+        named = brief_name(item).lower() in said.lower()
+        if doc_id in remembered:
+            aloud = "" if named else f"Earlier I showed you the {brief_name(item)}, ${item.price:.2f} in the catalog."
+            out.append((item, f"Shown earlier in this conversation: the {short_name(item)}, {row.price}. [{row.citation}]", aloud))
+            continue
+        aloud = "" if named else f"The id you named is the {brief_name(item)}, ${item.price:.2f} in the catalog."
         out.append((item, f"{item.doc_id} in the catalog is the {short_name(item)}: {row.price}. [{row.citation}]", aloud))
     return out
 
@@ -876,6 +885,33 @@ def shown_from(answer: FinalAnswer) -> list[dict[str, Any]]:
     return out
 
 
+MAX_SEEN = 30
+
+
+def seen_key(entry: dict[str, Any]) -> str:
+    """What makes two remembered rows the same product: the catalog id, else the listing's address, else the title."""
+    return str(entry.get("doc_id") or entry.get("url") or entry.get("title") or entry.get("name") or "").strip().lower()
+
+
+def seen_with(seen: list[dict[str, Any]] | None, answer: FinalAnswer, constraints: Constraints | None) -> list[dict[str, Any]]:
+    """Every product this conversation has shown, the latest last: ``seen`` with the rows of ``answer``.
+
+    The list on screen is the last list shown, and a new list replaces it. The conversation goes on being about
+    products of earlier lists: "the Safari puzzle at Walmart was five dollars yesterday ... tell me where that $9.99 comes
+    from", four turns and two requests after the puzzle had left the screen, was searched for by its words under the age of
+    the request in between, and the reply was about another Safari puzzle at $10.00 (run 14, turn 14; runs 11 to 13 each
+    lost on a turn of this kind). What is kept of a row is what finds it again: its name as shown, its catalog id or its
+    listing's address, and the request it was found for, which is the request a question about it is asked under.
+    Nothing here is evidence: a product named again is looked up again (router.recalled_products).
+    """
+    found_for = {k: v for k, v in (constraints.stated() if constraints is not None else {}).items() if k != "wants_current_info"}
+    known = {seen_key(entry): entry for entry in seen or []}
+    for row in shown_from(answer):
+        known.pop(seen_key(row), None)                        # shown again: it is the latest, under what it was shown for now
+        known[seen_key(row)] = {**{k: row.get(k) for k in ("name", "title", "kind", "doc_id", "url", "price", "brand")}, "found_for": found_for}
+    return list(known.values())[-MAX_SEEN:]
+
+
 def behind_the_rows(answer: FinalAnswer, current: Evidence | None, earlier: Evidence | None) -> Evidence | None:
     """The evidence to remember with a list: this turn's, plus the earlier evidence of every row that this turn did not fetch.
 
@@ -914,6 +950,7 @@ def remember(state: TurnState, answer: FinalAnswer) -> dict[str, Any]:
     new_catalog_search = any(r.tool == "rag.search" and r.ok for r in state.get("tool_log") or [])
     is_new_request = route is not None and route.intent == "product_search"
     if answer.kind == "recommendation" and answer.table:
+        update["seen"] = seen_with(state.get("seen"), answer, constraints)
         current: Evidence | None = state.get("evidence")
         earlier: Evidence | None = state.get("last_evidence")
         if is_new_request or new_catalog_search or not state.get("shown") or earlier is None or current is None:
