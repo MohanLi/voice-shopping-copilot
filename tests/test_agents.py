@@ -3855,3 +3855,39 @@ def test_an_answer_that_found_nothing_says_its_way_forward_aloud_when_there_is_t
     crowded = build_answer(none_found, Evidence(), route.constraints, route, max_words=42, grounded_by="llm+critic", revisions=0,
                            preface=["no_actions", "no_personal_data", "no_instructions"])
     assert "Would you like suggestions" not in crowded.spoken and "Would you like suggestions" in crowded.text
+    # With one fixed sentence in front it is still said, at the fastest rate that is used if need be (run 9, turn 13).
+    one = none_found.model_copy(update={"spoken": "I could not find the Zentrix Hoverboard Pro 9000 in my sources, so I have no current price or stock status for it.",
+                                        "follow_up_question": "Would you like to see other hoverboards instead, such as the Hover-1 Chrome?"})
+    said = build_answer(one, Evidence(), route.constraints, route, max_words=42, grounded_by="llm+critic", revisions=0, preface=["no_unconfirmed"]).spoken
+    assert said.startswith("I can only confirm what my sources state.") and said.endswith("such as the Hover-1 Chrome?") and estimate_seconds(said) / 1.2 <= 15.0
+
+
+# ============================================================ run 9: a question is a question, and a live search that was not made
+def test_a_follow_up_question_carries_no_statement_and_live_results_are_not_reported_without_a_live_search() -> None:
+    """Run 9, turns 14 and 19: "How old is your daughter? One page says it is not suitable under three." (five jurors of six: certainty
+    overstated), and "The Holzpuzzle Safari listing isn't in my catalog or live results" after two catalog searches and no web search."""
+    from voiceshop.guardrails.output import _WEB_HAD_NOTHING, check_draft
+
+    item = catalog_item("C1", "Glimmer Putty Galaxy Tin, 3.2 oz", 7.99)
+    route = RouteDecision(intent="product_search", constraints=Constraints(product="Glimmer Putty"))
+    draft = AnswerDraft(recommendations=[Recommendation(ref="C1", why="The tin, at a catalog price of $7.99.")], spoken="The Galaxy Tin is $7.99 in the catalog.",
+                        follow_up_question="How old is your daughter? One page says it is not suitable under three.")
+    answer = build_answer(draft, Evidence(catalog=[item]), route.constraints, route, max_words=42, grounded_by="llm+critic", revisions=0)
+    assert answer.follow_up_question == "How old is your daughter?" and "not suitable under three" not in answer.text + answer.spoken
+    statement = draft.model_copy(update={"follow_up_question": "Tell me her age and I will narrow it down."})
+    assert build_answer(statement, Evidence(catalog=[item]), route.constraints, route, max_words=42, grounded_by="llm+critic", revisions=0).follow_up_question is None
+    two = draft.model_copy(update={"follow_up_question": "How old is she? Would a tin or a pack suit her better?"})
+    assert build_answer(two, Evidence(catalog=[item]), route.constraints, route, max_words=42, grounded_by="llm+critic", revisions=0).follow_up_question \
+        == "How old is she? Would a tin or a pack suit her better?"
+
+    for said in ("The Holzpuzzle Safari listing isn't in my catalog or live results, so I can't confirm it matches.", "It is not among the web results.",
+                 "Nothing turned up on the live web.", "It was not in my live listings."):
+        assert _WEB_HAD_NOTHING.search(said), said
+    for said in ("It isn't in my catalog.", "The listing does not state a live price.", "It is not in stock at Example Home.", "I did not check the live web."):
+        assert not _WEB_HAD_NOTHING.search(said), said
+    not_searched = Evidence(catalog=[item], searched=["rag.search"])
+    reported = AnswerDraft(recommendations=[Recommendation(ref="C1", why="The tin, at a catalog price of $7.99.")],
+                           spoken="The Holzpuzzle listing isn't in my catalog or live results; the tin is $7.99 in the catalog.")
+    assert "search_not_made" in {i.code for i in check_draft(reported, not_searched, Constraints())}
+    searched = Evidence(catalog=[item], searched=["rag.search", "web.search"])
+    assert "search_not_made" not in {i.code for i in check_draft(reported, searched, Constraints())}

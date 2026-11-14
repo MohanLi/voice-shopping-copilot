@@ -67,7 +67,11 @@ _WEB_HAD_NOTHING = re.compile(
     r"\b(?:found|turned\s+up|came\s+up|returned)\b"
     r"|\b(?:found|find|returned|turned\s+up)\s+no\s+(?:current|live|web|online)\s+(?:web\s+|online\s+|live\s+)?(?:price|listing|offer|result)s?\b"
     r"|\b(?:web|live|online)\s+search\s+(?:found|returned|turned\s+up|showed|came\s+back\s+with)\s+(?:nothing|no\b)"
-    r"|\bthe\s+(?:live\s+)?web\s+(?:had|has|returned|shows?|showed)\s+(?:nothing|no\b)", re.I)
+    r"|\bthe\s+(?:live\s+)?web\s+(?:had|has|returned|shows?|showed)\s+(?:nothing|no\b)"
+    # "The Holzpuzzle Safari listing isn't in my catalog or live results": two catalog searches and no web search (run 9, turn 19).
+    r"|\b(?:isn't|is\s+not|aren't|are\s+not|wasn't|was\s+not|not)\s+(?:in|among|on)\s+(?:my|the)\s+(?:catalog\s+(?:or|nor|and)\s+(?:(?:my|the)\s+)?)?"
+    r"(?:live|web|online)\s+(?:results?|listings?|search(?:es)?)\b"
+    r"|\bnothing\b[^.;!?]{0,24}\b(?:on|from)\s+the\s+(?:live\s+)?web\b", re.I)
 
 
 # "Cheaper per ounce" sets two prices per ounce against each other. With only one in the answer it compares nothing, and

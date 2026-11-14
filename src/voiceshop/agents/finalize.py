@@ -606,7 +606,11 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
 
     # ---- spoken, most important first: the model's lead, a safety sentence, the pointer to the screen (the count is
     #      written by code), the question. Speech is held to ``max_seconds``; whatever has to give way is at the end.
-    question = (draft.follow_up_question or "").strip() or None
+    # The question is a question. A statement that came with it is left out: it is the one text of a draft that no rule
+    # checks against the evidence, and it carries no citation. ("How old is your daughter? One page says it is not suitable
+    # under three." Five jurors of six, certainty overstated; the page was in the evidence and not among the citations.
+    # Run 9, turn 14.) What a source states belongs in a reason or a caveat, where it is checked and cited.
+    question = " ".join(s for s in split_sentences((draft.follow_up_question or "").strip()) if s.rstrip().endswith("?")) or None
     if question and abstained and draft.spoken.strip().endswith("?"):
         question = None                                      # the statement already ends by asking; a second question would only repeat it
     before = said_before(preface, draft.spoken, max_seconds)                              # what was declined is said first
@@ -636,11 +640,13 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
         if extra:
             first = whole_sentences(draft.spoken, [*before, *extra], max_seconds, max_words, keep_prices=constraints.wants_current_info)
             spoken = " ".join([*first, *extra])
-    if abstained and question and question.lower() not in spoken.lower() and fits(" ".join([*before, spoken, question]), max_seconds, COMFORT_SPEED):
+    if abstained and question and question.lower() not in spoken.lower() and fits(" ".join([*before, spoken, question]), max_seconds, MAX_SPEED):
         # An answer that found nothing ends with the way forward its question offers, aloud as on screen. ("The Zentrix
         # Hoverboard Pro nine thousand isn't in my catalog, and no brand called Zentrix is carried. My live web search found
         # nothing either." The offer of a scooter or a ride-on toy for a seven-year-old was on screen only, and three jurors
-        # of four found no alternative named: run 8, turn 13.) It gives way when the reply would run over its time.
+        # of four found no alternative named: run 8, turn 13.) It gives way only when the reply would run over its time at
+        # the fastest rate that is used: in run 9 a fixed sentence stood in front, the question was left out at the
+        # unhurried rate, and what was said ended on "I have no current price or stock status for it".
         spoken = f"{spoken} {question}".strip()
     if rows and not abstained:
         first = split_sentences(draft.spoken)[:1]
