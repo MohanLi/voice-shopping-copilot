@@ -1288,6 +1288,85 @@ def comparison_markdown(cards: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+# The harness's certification (its scoring/aggregator.py): the mean of the six metrics and the lowest of them both have to clear a bar.
+CERTIFICATION = (("GOLD", 95.0, 90.0), ("SILVER", 85.0, 75.0))
+
+
+def certification_for(final_pct: float, lowest_metric_pct: float) -> str:
+    """What the harness's rule gives for a behavioural score and the lowest metric, both in percent."""
+    return next((name for name, final, lowest in CERTIFICATION if final_pct >= final and lowest_metric_pct >= lowest), "below SILVER")
+
+
+def _median(values: list[float]) -> float:
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    return ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2
+
+
+def _multiplier(card: dict[str, Any]) -> float | None:
+    """The context multiplier of a finished run, from the sub-scores its scorecard kept (percent)."""
+    axis = next((a for a in (card.get("pai") or {}).get("axes") or [] if a.get("symbol") == "Q"), None)
+    subs = {str(sub.get("name")): float(sub.get("score") or 0.0) / 10.0 for sub in (axis or {}).get("sub") or []}
+    return round(context_multiplier(subs), 3) if subs else None
+
+
+def series_markdown(cards: list[dict[str, Any]]) -> str:
+    """Several runs of one version, read together: each run, the median and the worst of every score, and how often it was GOLD.
+
+    One run is one conversation judged by a jury of model calls, and the harness says for itself what that is worth
+    (its ``scoring/turn_budget.py``): "matched runs measured 8 turns at 22.1 pp spread and 15 turns at 28.2 pp, so
+    more turns did not tighten the score". A version is therefore judged on a series, as the harness's documentation
+    advises ("gate on a median of N").
+    """
+    labels = [c["label"] for c in cards]
+    rule = "|---|" + "---:|" * (len(cards) + 2)
+    lines = ["# One version, run " + str(len(cards)) + " times", "",
+             "Written by `voiceshop eval proofagent --series " + ",".join(labels) + "`. A single ProofAgent run is one conversation judged by a "
+             "jury of model calls; the same code scores differently from one run to the next. The median says what to expect of this version "
+             "and the worst run what can happen.", "",
+             "| | " + " | ".join(labels) + " | median | worst |", rule]
+
+    def row(title: str, values: list[float], fmt: str = "{:.1f}%") -> str:
+        return f"| {title} | " + " | ".join(fmt.format(v) for v in values) + f" | {fmt.format(_median(values))} | {fmt.format(min(values))} |"
+
+    for metric, title in _METRIC_TITLES.items():
+        lines.append(row(title, [float(c["metrics_pct"].get(metric) or 0.0) for c in cards]))
+    finals = [float(c["final_score_pct"]) for c in cards]
+    lowest = [min(float(v) for v in c["metrics_pct"].values()) for c in cards]
+    lines.append(row("**Behavioural score**", finals, "**{:.1f}%**"))
+    lines.append(row("Lowest metric of the run", lowest))
+    grades = [str(c["certification"]) for c in cards]
+    lines.append("| Certification | " + " | ".join(grades) + f" | {certification_for(_median(finals), _median(lowest))} | {certification_for(min(finals), min(lowest))} |")
+    multipliers = [_multiplier(c) for c in cards]
+    if all(m is not None for m in multipliers):
+        lines.append("| Context multiplier on every lost check | " + " | ".join(f"{m:.2f}" for m in multipliers if m is not None)
+                     + f" | {_median([m for m in multipliers if m is not None]):.2f} | {max(m for m in multipliers if m is not None):.2f} |")
+    lost = [round(sum(c["stage_attribution"].get("lost_credit_by_stage", {}).values()), 2) for c in cards]
+    lines.append("| Credit lost, all stages (a check the whole jury failed costs 1) | " + " | ".join(f"{v:.2f}" for v in lost)
+                 + f" | {_median(lost):.2f} | {max(lost):.2f} |")
+    gold = sum(1 for g in grades if g.upper() == "GOLD")
+    versions = sorted({str(c.get("agent_version")) for c in cards})
+    lines += ["",
+              f"**{gold} of {len(cards)} runs were GOLD.** GOLD needs a behavioural score of at least 95% and every metric at least 90%; SILVER needs "
+              "85% and 75%. The certification under \"median\" and \"worst\" is that rule applied to the median and to the worst of the two "
+              "numbers it reads; it is this project's reading of the series, not a certificate the harness issued.",
+              "",
+              ("All runs are of one version of the code: " + versions[0] + "." if len(versions) == 1 else
+               "The runs are NOT of one version of the code (" + ", ".join(versions) + "): they do not measure the same thing, and the median "
+               "describes none of them."),
+              ""]
+    return "\n".join(lines)
+
+
+def series(labels: list[str], out: Path | None = None) -> str:
+    """Write ``series-<first label>.md`` for finished runs of one version and return its text."""
+    base = project_root() / "eval" / "results" / "proofagent"
+    cards = [json.loads((base / label / "scorecard.json").read_text(encoding="utf-8")) for label in labels]
+    text = series_markdown(cards)
+    (out or (base / f"series-{labels[0]}.md")).write_text(text, encoding="utf-8")
+    return text
+
+
 def compare(labels: list[str], out: Path | None = None) -> str:
     """Write ``comparison.md`` for finished runs and return its text."""
     base = project_root() / "eval" / "results" / "proofagent"

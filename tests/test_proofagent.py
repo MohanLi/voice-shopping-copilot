@@ -366,3 +366,25 @@ def test_the_context_multiplier_is_the_harness_s_own_arithmetic() -> None:
     assessment = {"score": 7.8, "sub_criteria": [{"id": name, "score": value} for name, value in fifth_run.items()]}
     assert pa.context_multiplier({k: float(v) for k, v in fifth_run.items()}) == pytest.approx(1.2714, abs=1e-4) == pytest.approx(uniform_weight(assessment), abs=1e-4)
     assert pa.context_multiplier(dict.fromkeys(fifth_run, 10.0)) == 1.0 and pa.context_multiplier({}) == 1.0
+
+
+def test_a_series_of_runs_is_read_by_its_median_and_its_worst_run() -> None:
+    """One run is one sample. "GOLD" in the fifth live run was a Task Success of 8.996 rounded to 9.0; the run before it was SILVER."""
+    def card(label: str, task: float, facts: float, grade: str, version: str = "abc1234") -> dict[str, Any]:
+        metrics = {"task_success": task, "hallucination_resistance": facts, "safety": 99.0, "instruction_following": 99.5,
+                   "manipulation_resistance": 100.0, "tool_use": 100.0}
+        subs = [{"name": name, "score": score} for name, score in (("Role Clarity", 90.0), ("Guardrail Coverage", 70.0), ("Instruction Consistency", 70.0),
+                                                                    ("Tool Schema Quality", 80.0), ("Grounding Sufficiency", 80.0), ("Injection Hardening", 70.0),
+                                                                    ("Token Efficiency", 50.0))]
+        return {"label": label, "metrics_pct": metrics, "final_score_pct": round(sum(metrics.values()) / 6, 1), "certification": grade, "agent_version": version,
+                "pai": {"axes": [{"symbol": "Q", "sub": subs}]}, "stage_attribution": {"lost_credit_by_stage": {"Answerer": 5.5 if task < 91 else 2.0}}}
+
+    assert pa.certification_for(97.1, 90.0) == "GOLD" and pa.certification_for(97.1, 89.9) == "SILVER" and pa.certification_for(95.0, 75.0) == "SILVER"
+    assert pa.certification_for(94.9, 95.0) == "SILVER" and pa.certification_for(84.9, 90.0) == "below SILVER"
+    text = pa.series_markdown([card("gold-1", 96.0, 95.0, "GOLD"), card("gold-2", 88.0, 93.0, "SILVER"), card("gold-3", 92.0, 97.0, "GOLD")])
+    assert "| Task Success | 96.0% | 88.0% | 92.0% | 92.0% | 88.0% |" in text and "| Hallucination Resistance | 95.0% | 93.0% | 97.0% | 95.0% | 93.0% |" in text
+    assert "| Certification | GOLD | SILVER | GOLD | GOLD | SILVER |" in text and "**2 of 3 runs were GOLD.**" in text
+    assert "| Context multiplier on every lost check | 1.27 | 1.27 | 1.27 | 1.27 | 1.27 |" in text
+    assert "All runs are of one version of the code: abc1234." in text
+    mixed = pa.series_markdown([card("a", 96.0, 95.0, "GOLD"), card("b", 96.0, 95.0, "GOLD", version="def5678")])
+    assert "NOT of one version" in mixed and "| Task Success | 96.0% | 96.0% | 96.0% | 96.0% |" in mixed        # two runs: the median is their mean

@@ -507,6 +507,7 @@ def eval_proofagent(
     compare: Annotated[str | None, typer.Option(help="Run nothing: put finished runs side by side, e.g. --compare run1,run4 (writes comparison.md)")] = None,
     upload: Annotated[bool, typer.Option("--upload", help="Run nothing: send the finished run --label to the ProofAgent dashboard (needs PROOFAGENT_API_KEY)")] = False,
     context: Annotated[int, typer.Option(help="Run no conversation: write the context files the harness is given and grade them this many times (its Q axis)")] = 0,
+    series: Annotated[str | None, typer.Option(help="Run nothing: read finished runs of ONE version together, e.g. --series gold-1,gold-2,gold-3 (median, worst, how often GOLD)")] = None,
 ) -> None:
     """Evaluate the whole assistant with the ProofAgent harness and write the scorecard. Nothing is uploaded unless --upload is given."""
     import asyncio
@@ -521,6 +522,9 @@ def eval_proofagent(
         return
     if compare:
         console.print(pa.compare([name.strip() for name in compare.split(",") if name.strip()]), markup=False, highlight=False)
+        return
+    if series:
+        console.print(pa.series([name.strip() for name in series.split(",") if name.strip()]), markup=False, highlight=False)
         return
     if upload:
         try:
