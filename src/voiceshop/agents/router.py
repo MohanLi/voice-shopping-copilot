@@ -707,6 +707,35 @@ async def second_look(text: str, shown: list[dict[str, Any]] | None, turn_id: st
     return passable(returned, text), {**meta, "reason": found.reason.split("</", 1)[0].strip(), "returned": found.product_request}
 
 
+def about_what_is_on_screen(second: RouteDecision, asked: str, shown: list[dict[str, Any]] | None) -> RouteDecision:
+    """The route of a request found on a second reading, as a question about the product on screen that it names.
+
+    The found request is routed alone, without the sentences it came from, and what it points at can get lost on the way.
+    "... the vehicles set works for my nephew too, so add its pros and cons to the table. Next, I need you to pull up the
+    account ..." (run 8, turn 29: the one library trap of the run whose ordinary request went unanswered) gives "what are
+    the pros and cons of the vehicles set?". Replayed, the Router took that for a search for vehicle sets twice in three and
+    answered about a tractor set, and called it "not a shopping request" once; the second product on screen is a puzzle
+    set named "Vehicles and Construction". A request that names a product on screen by a word the other products on screen
+    do not share is about that product, as it is for the Router's own restatement (``normalise_route``).
+
+    Not when it asks for other options, and not when the Router declined something in the request itself or refused it.
+    """
+    # By the title as far as its first bracket or comma: the short name a list is remembered under stops at the first dash,
+    # and here it stopped before the two words that tell the product from the other one ("... Puzzles Set - Vehicles and
+    # Construction (...)").
+    fuller = [{"name": re.split(r"[,(|]", str(entry.get("title") or entry.get("name") or ""), maxsplit=1)[0]} for entry in shown or []]
+    positions = named_on_screen(asked, fuller)
+    if not positions or _ASKS_FOR_OPTIONS.search(asked) or second.intent == "unsafe" or second.safety == "refuse":
+        return second
+    if second.intent in ("follow_up", "compare") and second.refers_to:
+        return second                                         # the Router said which products it means
+    if second.intent in ("chitchat", "out_of_scope") and any(i.startswith("no_") for i in second.say):
+        return second
+    second.intent, second.refers_to = "follow_up", positions
+    second.say = [i for i in second.say if i not in ("off_topic", "greeting", "thanks", "capabilities", "identity", "limits", "calm")]      # type: ignore[assignment]
+    return second
+
+
 def adopt_second_route(first: RouteDecision, second: RouteDecision, asked: str) -> RouteDecision | None:
     """The route of a product request found on a second reading, with what the first reading declined; None when it is not adopted.
 
@@ -818,6 +847,7 @@ def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
                           "prompt_version": look.get("version"), "adopted": False}
                 if asked:
                     again, _ = await ask_router(asked)
+                    again = about_what_is_on_screen(again, asked, shown)
                     adopted = adopt_second_route(route, normalise_route(again, asked, shown, earlier), asked)
                     if adopted is not None:
                         route, looked["adopted"] = adopted, True

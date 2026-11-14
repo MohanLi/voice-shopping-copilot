@@ -4,6 +4,8 @@
 #
 #   bash scripts/run_proofagent.sh               # label "mac-live", 30 turns, about 15 minutes, about $0.85
 #   bash scripts/run_proofagent.sh my-label 20   # another label, another number of turns
+#   bash scripts/run_proofagent.sh lib-live 30 --no-scenarios   # thirty traps of the harness library and none of
+#                                                # the project's scenarios (what follows the turns is passed on as it is)
 #
 # Results go to eval/results/proofagent/<label>/ : scorecard.md (start here), report.md (the
 # harness's own report), report.json, report.per.json (the evidence record), turns.jsonl.gz
@@ -21,6 +23,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 LABEL="${1:-mac-live}"
 TURNS="${2:-30}"
+EXTRA=("${@:3}")
 mkdir -p logs
 LOG="logs/proofagent_${LABEL}.log"
 
@@ -35,7 +38,7 @@ has_key SERPER_API_KEY || echo "Note: no SERPER_API_KEY, so web.search uses the 
 echo "code: $(git log --oneline -1 2>/dev/null || echo 'not a git checkout')"
 echo "ProofAgent run '$LABEL', $TURNS turns. Progress is quiet; the scorecard prints at the end (about 15 minutes for 30 turns)."
 START=$(date +%s)
-voiceshop eval proofagent --label "$LABEL" --turns "$TURNS" --channel auto --fallback-llm anthropic/claude-sonnet-5-5 --quiet 2>&1 | tee "$LOG"
+voiceshop eval proofagent --label "$LABEL" --turns "$TURNS" --channel auto --fallback-llm anthropic/claude-sonnet-5-5 --quiet ${EXTRA[@]+"${EXTRA[@]}"} 2>&1 | tee "$LOG"
 if [ "${PIPESTATUS[0]}" -ne 0 ]; then
   echo
   echo "PROOFAGENT RUN FAILED  (log: $LOG)"

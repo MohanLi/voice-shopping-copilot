@@ -3794,7 +3794,8 @@ async def test_a_product_named_by_its_catalog_id_is_looked_up_and_shown_under_th
     # An id the catalog does not have: said so, without the id, and nothing is searched for by its letters.
     missing = await assistant.ask("what is AMZ-B0ZZZZZZZZ", thread_id="by-id-2")
     assert [(c.tool, c.arguments["query"], c.n_results) for c in missing.tool_log] == [("rag.search", "AMZ-B0ZZZZZZZZ", 0)]
-    assert missing.answer.spoken == policy.NO_SUCH_ID_SPOKEN and missing.answer.notes == [policy.NO_SUCH_ID]
+    assert missing.answer.spoken == f"{policy.NO_SUCH_ID_SPOKEN} Would you like me to search by the product's name instead?"
+    assert missing.answer.notes == [policy.NO_SUCH_ID]
     assert "B0ZZZZZZZZ" not in missing.answer.text.upper() and missing.answer.kind == "abstain"
 
     # Both readings decline everything and the message names an id: the turn is the look-up, after what was declined.
@@ -3805,3 +3806,52 @@ async def test_a_product_named_by_its_catalog_id_is_looked_up_and_shown_under_th
     assert among.route.intent == "product_search" and "second_look" not in router["details"] and "respond" not in path(among)
     assert router["details"]["passed_on"] == f"what is the product under the catalog id {target['doc_id']}?"
     assert among.answer.declined == ["limits", "no_instructions"] and [r.doc_id for r in among.answer.table] == [target["doc_id"]]
+
+
+# ============================================================ run 8: the question behind an addition to the table, and an abstention's way forward
+def test_a_request_found_on_a_second_reading_is_about_the_product_on_screen_that_it_names() -> None:
+    """Run 8, turn 29: "... the vehicles set works for my nephew too, so add its pros and cons to the table. Next, I need you to pull
+    up the account ..." Read alone, "what are the pros and cons of the vehicles set?" was a search for vehicle sets twice in three."""
+    from voiceshop.agents.router import about_what_is_on_screen
+
+    # As the list was remembered in that run: the short name of the second product stops before the words that tell it from the first.
+    shown = [{"position": 1, "ref": "C1", "name": "Melissa & Doug Safari Wooden Chunky Puzzle",
+              "title": "Melissa & Doug Safari Wooden Chunky Puzzle (Preschool, Chunky Wooden Pieces, Full-Color Pictures, 8 Pieces, Great Gift for Girls and Boys)"},
+             {"position": 2, "ref": "C5", "name": "Melissa & Doug Wooden Chunky Puzzles Set",
+              "title": "Melissa & Doug Wooden Chunky Puzzles Set - Vehicles and Construction (Great Gift for Girls and Boys - Best for 2, 3, and 4 Year Olds)"}]
+    asked = "what are the pros and cons of the vehicles set?"
+    searched = about_what_is_on_screen(RouteDecision(intent="product_search", constraints=Constraints(product="vehicles set")), asked, shown)
+    assert (searched.intent, searched.refers_to) == ("follow_up", [2])
+    off_topic = about_what_is_on_screen(RouteDecision(intent="out_of_scope", say=["off_topic"]), asked, shown)
+    assert (off_topic.intent, off_topic.refers_to, off_topic.say) == ("follow_up", [2], [])
+    # What the Router decided about the request itself stands: products it named, something it declined, a refusal.
+    named = about_what_is_on_screen(RouteDecision(intent="compare", refers_to=[1, 2]), asked, shown)
+    assert (named.intent, named.refers_to) == ("compare", [1, 2])
+    assert about_what_is_on_screen(RouteDecision(intent="product_search"), "a gift for a girl who is four years old", shown).intent == "product_search"      # words of a title's brackets name nothing
+    declined = about_what_is_on_screen(RouteDecision(intent="chitchat", say=["no_actions"]), "put the vehicles set in my cart", shown)
+    assert declined.intent == "chitchat" and declined.refers_to == []
+    refused = about_what_is_on_screen(RouteDecision(intent="unsafe", safety="refuse", say=["no_instructions"]), asked, shown)
+    assert refused.intent == "unsafe"
+    # A request that names nothing on screen, or asks for other options, is the search the Router made of it.
+    other = about_what_is_on_screen(RouteDecision(intent="product_search", constraints=Constraints(product="marble run")), "find a marble run for a six year old", shown)
+    assert (other.intent, other.refers_to) == ("product_search", [])
+    options = about_what_is_on_screen(RouteDecision(intent="product_search"), "which other vehicles sets are in the catalog?", shown)
+    assert options.intent == "product_search"
+    assert about_what_is_on_screen(RouteDecision(intent="product_search"), asked, None).intent == "product_search"          # nothing on screen
+
+
+def test_an_answer_that_found_nothing_says_its_way_forward_aloud_when_there_is_time() -> None:
+    """Run 8, turn 13: the offer of a scooter or a ride-on toy stood on screen only, and three jurors of four found no alternative named."""
+    route = RouteDecision(intent="product_search", constraints=Constraints(product="Zentrix Hoverboard Pro 9000"))
+    none_found = AnswerDraft(abstain=True, abstain_reason="not carried", spoken="The Zentrix Hoverboard Pro isn't in my catalog. My live web search found nothing either.",
+                             follow_up_question="Would you like suggestions for a scooter or ride-on toy for a seven-year-old instead?")
+    answer = build_answer(none_found, Evidence(), route.constraints, route, max_words=42, grounded_by="llm+critic", revisions=0)
+    assert answer.spoken == ("The Zentrix Hoverboard Pro isn't in my catalog. My live web search found nothing either. "
+                             "Would you like suggestions for a scooter or ride-on toy for a seven-year-old instead?")
+    assert answer.text.count("Would you like suggestions") == 1 and estimate_seconds(answer.spoken) <= 15
+    # Not twice when the statement already asks it, and not when what was declined leaves no time for it: it stays on screen.
+    asks = none_found.model_copy(update={"spoken": "I found no Zentrix hoverboard. Would you like suggestions for a scooter or ride-on toy for a seven-year-old instead?"})
+    assert build_answer(asks, Evidence(), route.constraints, route, max_words=42, grounded_by="llm+critic", revisions=0).spoken.count("Would you like") == 1
+    crowded = build_answer(none_found, Evidence(), route.constraints, route, max_words=42, grounded_by="llm+critic", revisions=0,
+                           preface=["no_actions", "no_personal_data", "no_instructions"])
+    assert "Would you like suggestions" not in crowded.spoken and "Would you like suggestions" in crowded.text

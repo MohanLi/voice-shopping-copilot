@@ -636,6 +636,12 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
         if extra:
             first = whole_sentences(draft.spoken, [*before, *extra], max_seconds, max_words, keep_prices=constraints.wants_current_info)
             spoken = " ".join([*first, *extra])
+    if abstained and question and question.lower() not in spoken.lower() and fits(" ".join([*before, spoken, question]), max_seconds, COMFORT_SPEED):
+        # An answer that found nothing ends with the way forward its question offers, aloud as on screen. ("The Zentrix
+        # Hoverboard Pro nine thousand isn't in my catalog, and no brand called Zentrix is carried. My live web search found
+        # nothing either." The offer of a scooter or a ride-on toy for a seven-year-old was on screen only, and three jurors
+        # of four found no alternative named: run 8, turn 13.) It gives way when the reply would run over its time.
+        spoken = f"{spoken} {question}".strip()
     if rows and not abstained:
         first = split_sentences(draft.spoken)[:1]
         *safety, tail = _after_lead(first, spoken_notes, len(rows), about_screen, draft.spoken)

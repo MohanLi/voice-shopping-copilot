@@ -43,7 +43,7 @@ operative rules one line each. The document the ProofAgent evaluation is given a
 (`eval/proofagent/context/system_prompt.md`, written by `voiceshop eval proofagent`) states each agent's rule
 once, as part of its stage in the pipeline, next to the rules that code enforces and the safety policy verbatim.
 
-Current versions: router 8, second look 1, planner 5, retriever 3, answerer 17, critic 10, safety policy 4. What changed in each
+Current versions: router 8, second look 2, planner 5, retriever 3, answerer 17, critic 10, safety policy 4. What changed in each
 and why is in [docs/evaluation.md](../docs/evaluation.md) and [docs/decisions.md](../docs/decisions.md).
 
 **Tool descriptions are prompts too.** The models read the descriptions of `rag.search` and `web.search` that the
