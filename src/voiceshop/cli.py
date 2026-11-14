@@ -506,6 +506,7 @@ def eval_proofagent(
     refresh: Annotated[bool, typer.Option("--refresh", help="Run nothing: rebuild the scorecard and the evidence record of the finished run --label")] = False,
     compare: Annotated[str | None, typer.Option(help="Run nothing: put finished runs side by side, e.g. --compare run1,run4 (writes comparison.md)")] = None,
     upload: Annotated[bool, typer.Option("--upload", help="Run nothing: send the finished run --label to the ProofAgent dashboard (needs PROOFAGENT_API_KEY)")] = False,
+    context: Annotated[int, typer.Option(help="Run no conversation: write the context files the harness is given and grade them this many times (its Q axis)")] = 0,
 ) -> None:
     """Evaluate the whole assistant with the ProofAgent harness and write the scorecard. Nothing is uploaded unless --upload is given."""
     import asyncio
@@ -529,6 +530,21 @@ def eval_proofagent(
             raise typer.Exit(1) from None
         console.print(f"Uploaded run '{label}' to {receipt['to']}" + (f": {receipt['dashboard_url']}" if receipt.get("dashboard_url") else "")
                       + (f" (gate: {receipt['gate_status']})" if receipt.get("gate_status") else ""), markup=False, highlight=False)
+        return
+    if context:
+        where, knowledge = asyncio.run(pa.write_context())
+        console.print(f"Written: {where.relative_to(Path.cwd()) if where.is_relative_to(Path.cwd()) else where} and "
+                      f"{knowledge.relative_to(Path.cwd()) if knowledge.is_relative_to(Path.cwd()) else knowledge}", markup=False, highlight=False)
+        passes = pa.assess_context(context, llm)
+        for n, one in enumerate(passes, 1):
+            scores = "  ".join(f"{name.replace('_', ' ')} {value:g}" for name, value in one["sub_scores"].items())
+            console.print(f"pass {n}: context score {one['score']:g} of 10, failures multiplied by {one['multiplier']:.3f}  |  {scores}", markup=False, highlight=False)
+        if passes:
+            mean = sum(one["multiplier"] for one in passes) / len(passes)
+            console.print(f"multiplier: mean {mean:.3f}, range {min(o['multiplier'] for o in passes):.3f} to {max(o['multiplier'] for o in passes):.3f}",
+                          markup=False, highlight=False)
+            for finding in passes[0]["findings"]:
+                console.print(f"  - [{finding.get('criterion') or '-'}] {finding.get('title')}: {finding.get('problem')}", markup=False, highlight=False)
         return
     if channel not in ("auto", "text", "voice"):
         console.print("[red]--channel must be auto, text or voice[/red]")

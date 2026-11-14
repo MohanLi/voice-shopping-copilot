@@ -11,8 +11,8 @@ scorecard. Results and their analysis: [docs/evaluation.md](../../docs/evaluatio
 | `traps/shopping_scenarios/01…17_*.md` | The project's own test scenarios, in the harness's trap format: a pattern, seed examples, pass and fail criteria, the checks to judge, the tool a correct answer has to call. They are pinned to run first, in file order, because later scenarios refer to products the earlier ones put on screen. |
 | `tool_faults.json` | Planted tool results for the scenarios about incorrect tool output: a review page that carries an instruction for AI assistants, a search that fails, a listing with a price of $0.00 and a 9.8-star rating next to a recall notice, three prices a hundred times apart, listings for an unrelated product. Every URL is on `example.com` / `example.org`. The MCP server serves them only when `WEB_SEARCH_FAULTS` points at this file, and only for the invented product names in it. |
 | `governance.yaml` | The governance profile: what the agent is for, how autonomous it is, what data it touches. The harness derives the risk tier, the frameworks in scope and the release bar from it. |
-| `context/` | What the harness is told the agent runs on, **generated on every run** from the files the system really uses: `system_prompt.md` (the rules enforced in code, the fixed sentences, the safety policy, each agent's rule list), `tools.json` (the two tool schemas as discovered over MCP), `agent.yaml` (role, goal, business case). |
-| `domain_knowledge/` | What a correct answer can be checked against, also generated on every run from the running catalog: its size, categories, price range, what it lacks (ratings), and the assistant's scope. |
+| `context/` | What the harness is told the agent runs on, **generated on every run** from the files and constants the system really uses. `system_prompt.md`: role and scope, each stage of the pipeline with what it hands on, the order of precedence, the rules enforced in code, and the safety policy verbatim; each rule once, under the heading that says who enforces it. `tools.json`: the two tool schemas as discovered over MCP. `agent.yaml`: role, goal, business case. A test holds its numbers to the code's (three fixed sentences, 45 words, ten tool calls, 30 days). |
+| `domain_knowledge/` | What a correct answer can be checked against, also generated on every run. `catalog_and_sources.md`: what each of the two sources holds and does not hold (size, categories, no ratings, no stock), from the running catalog. `fixed_replies.md`: the wording of every fixed sentence, by id. Facts and reference text only: no rule is repeated here. |
 
 ## Run it
 
@@ -22,7 +22,13 @@ bash scripts/run_proofagent.sh            # the same with checks around it, for 
 voiceshop eval proofagent --label my-run --refresh    # rebuild scorecard.md and the evidence record of a finished run; runs nothing
 voiceshop eval proofagent --compare run1,run2,run3,run4   # finished runs side by side (comparison.md); runs nothing
 voiceshop eval proofagent --label my-run --upload     # send a finished run to the ProofAgent dashboard; runs nothing
+voiceshop eval proofagent --context 5                 # write context/ and domain_knowledge/ and grade them five times; no conversation
 ```
+
+`--context N` is the harness's own context review (its Q axis) without a run: one model call per grading, about a cent.
+The seven sub-scores matter beyond that axis: the harness multiplies every lost check of a run by
+`1 + (1 - their mean / 10)`, so a context graded 7.3 of 10 makes each failure cost 1.27 times as much. Two gradings of
+the same files differ by about a point per criterion; judge a change to the files on several.
 
 **Nothing is uploaded by a run.** `--upload` sends one finished run to app.proofagent.ai and needs `PROOFAGENT_API_KEY` in `.env`
 (`scripts/run_proofagent.sh` does it after its run when the key is there). What is sent is the harness's own upload payload: scores,

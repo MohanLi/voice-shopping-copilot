@@ -56,17 +56,19 @@ class SearchFilters(BaseModel):
 
     price_min: float | None = Field(default=None, ge=0, description="Minimum price in USD")
     price_max: float | None = Field(default=None, ge=0, description="Maximum price in USD (the shopper's budget)")
-    category: str | None = Field(default=None, description="Category name, e.g. 'Toys & Games', 'Puzzles', 'Costumes'")
+    category: str | None = Field(default=None, description="Category name at any level of the catalog's category paths, e.g. 'Toys & Games', 'Puzzles', 'Costumes'")
     brand: str | None = Field(default=None, description="Brand name, e.g. 'LEGO', 'Melissa & Doug'")
     age_years: float | None = Field(
-        default=None, ge=0, le=120, description="Age in years of the person the product is for; keeps products recommended for that age"
+        default=None, ge=0, le=120,
+        description="Age in years of the person the product is for; keeps products whose stated age range includes it. "
+                    "Below 3, only products whose listing says they suit babies or toddlers"
     )
     materials: list[str] = Field(default_factory=list, description="Keep products made of ANY of these materials, e.g. ['wood']")
     claims: list[str] = Field(default_factory=list, description="Keep products whose listing states ALL of these, e.g. ['BPA-free']")
     exclude_safety_flags: list[str] = Field(
         default_factory=list, description=f"Drop products carrying any of these flags: {', '.join(SAFETY_FLAGS)}"
     )
-    allow_unknown_age: bool = Field(default=False, description="With age_years: also keep products whose listing states no age")
+    allow_unknown_age: bool = Field(default=False, description="With age_years of 3 or more: also keep products whose listing states no age. Ignored below 3")
 
     def is_empty(self) -> bool:
         return not any([

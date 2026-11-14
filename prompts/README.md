@@ -38,9 +38,9 @@ requests); they are disclosed for the same reason and no agent uses them at run 
 There is no separate "system prompt" for the assistant as a whole: each agent has its own, listed above. The
 few-shot examples used are inside the files that use them (`router.md` has twenty routing examples, `critic.md`
 has seven finding / no-finding examples). Each file's header also carries a short `rules:` list, the prompt's
-operative rules one line each; the document the ProofAgent evaluation is given as the system's instructions is
-generated from those lists, the safety policy and the fixed sentences (`voiceshop eval proofagent` writes it to
-`eval/proofagent/context/system_prompt.md`).
+operative rules one line each. The document the ProofAgent evaluation is given as the system's instructions
+(`eval/proofagent/context/system_prompt.md`, written by `voiceshop eval proofagent`) states each agent's rule
+once, as part of its stage in the pipeline, next to the rules that code enforces and the safety policy verbatim.
 
 Current versions: router 8, planner 4, retriever 3, answerer 14, critic 9, safety policy 4. What changed in each
 and why is in [docs/evaluation.md](../docs/evaluation.md) and [docs/decisions.md](../docs/decisions.md).

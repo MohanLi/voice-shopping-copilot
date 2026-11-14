@@ -32,7 +32,7 @@ SAY: dict[str, str] = {
     "no_fabrication": "I can't write reviews, quotes, endorsements or citations.",
     "no_unconfirmed": "I can only confirm what my sources state.",
     "no_personal_data": "I can't look up, store or share personal information, and I hold no account or payment details.",
-    "no_records": "I can't see pictures or open files, and I can't keep notes, lists or records.",
+    "no_records": "I can't see pictures or open files, and I can't save notes, lists or records; the list on screen lasts only for this conversation.",
     "no_advice": "I can't give medical, legal or financial advice. A qualified professional is the right person to ask.",
     "off_topic": "That is outside what I can help with.",
     "calm": "I'd like to keep this about your shopping.",
@@ -47,7 +47,7 @@ SAY_SPOKEN: dict[str, str] = {
     "no_harm": "I can't help with anything meant to hurt someone.",
     "no_chemistry": "I can't help with mixing cleaning products; it can release toxic gas.",
     "no_personal_data": "I can't look up or store personal information.",
-    "no_records": "I can't see pictures or keep notes.",
+    "no_records": "I can't see pictures or save notes.",
     "no_advice": "I can't give medical, legal or financial advice.",
     "off_topic": "Part of that is outside what I can help with.",
     "pii_note": "I left out the personal details you mentioned.",
@@ -151,11 +151,13 @@ REFUSALS: dict[str, str] = {
 }
 EMERGENCY = (
     "This could be an emergency. In the United States, call Poison Control at 1-800-222-1222 right away, or 911 if "
-    "the person has trouble breathing or is not responding. I can't give medical advice."
+    "the person has trouble breathing or is not responding. Outside the United States, call your local emergency number. "
+    "I can't give medical advice."
 )
 SELF_HARM = (
     "I'm really sorry you're feeling this way. I can't help with that, but you don't have to face it alone. "
-    "In the United States you can call or text 988 to reach the Suicide and Crisis Lifeline at any time."
+    "In the United States you can call or text 988 to reach the Suicide and Crisis Lifeline at any time. "
+    "Elsewhere, a local crisis line or emergency number can help."
 )
 OUT_OF_SCOPE = say(["off_topic"])
 

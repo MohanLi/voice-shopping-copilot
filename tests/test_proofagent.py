@@ -76,17 +76,43 @@ def test_the_context_document_fits_what_the_assessor_reads_and_is_built_from_the
     from voiceshop.guardrails import policy
     from voiceshop.prompts import load_prompt
 
-    for name, sentence in policy.SAY.items():
-        assert (sentence in text) == (name not in pa.COURTESIES and name != "greeting")      # every fixed sentence that declines something, verbatim
-    assert "Hi! I'm an AI shopping assistant." in text and policy.SAY["greeting"].startswith("Hi! I'm an AI shopping assistant.")       # the greeting's disclosure
-    assert policy.EMERGENCY in text and "988 Suicide and Crisis Lifeline" in text and "988" in policy.SELF_HARM
     for added in ("Success:", "no placement is paid for", "No human approves a reply", "the time it was retrieved", "(catalog listings and web results)"):
         assert added in text                                                    # what the third run's context assessment found missing
     assert "When the catalog has nothing suitable, the live web is searched once for the product" in text        # the web fallback: a rule in code
+    # What the reviews of the fifth run's context asked for: who enforces a rule, what each stage hands on, the order when
+    # rules meet, how untrusted text is fenced, how an answer is reported, and how long a turn's records are kept.
+    for section in ("## Role and scope", "## Pipeline", "## Enforced by code", "## Safety policy"):
+        assert section in text
+    assert "Precedence, highest first: 1 the input screen" in text and "<evidence>" in text and "<tool_results>" in text
+    assert "The shopper can report any answer" in text and "deleted after 30 days" in text
     assert load_prompt("safety_policy").text.split("\n\n", 1)[1] in text
-    for name, _ in pa.AGENTS:
-        prompt = load_prompt(name)
-        assert len(prompt.rules) >= 2 and all(rule in text for rule in prompt.rules)
+    # Every agent is a stage of the pipeline with what it hands on; its prompt file states its own rules in its header.
+    for name, title in pa.AGENTS:
+        assert f". {title} (" in text and len(load_prompt(name).rules) >= 2
+    # Each rule once: the wording of the fixed sentences is reference material, kept with the knowledge files and not repeated here.
+    replies = pa.fixed_replies()
+    for name, sentence in policy.SAY.items():
+        assert sentence in replies and (sentence not in text or name == "greeting")
+    assert policy.EMERGENCY in replies and policy.SELF_HARM in replies and all(short in replies for short in policy.SAY_SPOKEN.values())
+    assert "fixed_replies.md" in text
+
+
+def test_what_the_context_says_about_oversight_and_records_is_what_the_code_does() -> None:
+    """The document is read as the agent's ground truth, so its numbers are the code's: three sentences, two spoken, 45 words, 30 days."""
+    from voiceshop.agents.planner import MAX_STEPS
+    from voiceshop.agents.retriever import MAX_CALLS_PER_TURN
+    from voiceshop.config import Settings
+    from voiceshop.guardrails import policy
+    from voiceshop.oversight import REASONS
+
+    text, settings = pa.system_prompt_text(), Settings()
+    assert policy.MAX_SAID == 3 and "At most three per reply" in text and policy.MAX_SAID_BEFORE_ANSWER == 2 and "at most two are spoken" in text
+    assert settings.spoken_max_words == 45 and "at most 45 words" in text and settings.tts_max_seconds == 15 and "fits 15 seconds" in text
+    assert settings.log_retention_days == 30 and MAX_STEPS == 3 and "at most three tool calls" in text
+    assert settings.retriever_max_rounds == 2 and "in at most two rounds" in text and MAX_CALLS_PER_TURN == 10 and "at most ten tool calls in a turn" in text
+    assert list(REASONS) == ["wrong", "unsafe", "other"] and "(wrong, unsafe, other)" in text
+    assert list(policy.MUST_SAY) == ["no_harm", "no_chemistry", "no_restricted"] and "(no_harm, no_chemistry, no_restricted)" in text
+    assert list(policy.SAID_FOR_REMOVED) == ["no_instructions", "pii_note"] and "(no_instructions, pii_note)" in text
 
 
 async def test_tool_schemas_are_the_ones_the_models_receive(assistant) -> None:  # type: ignore[no-untyped-def]
@@ -98,11 +124,16 @@ async def test_tool_schemas_are_the_ones_the_models_receive(assistant) -> None: 
 
 
 async def test_domain_knowledge_is_generated_from_the_running_catalog(assistant, tmp_path) -> None:  # type: ignore[no-untyped-def]
-    out = await pa.build_knowledge(assistant, tmp_path)
+    out = await pa.build_knowledge(assistant, tmp_path / "knowledge")
     facts = (out / "catalog_and_sources.md").read_text()
     stats = json.loads(await assistant.mcp.read_resource("catalog://stats"))
     assert f"{stats['documents']:,} products" in facts and "no customer ratings" in facts
-    assert "cannot place orders" in (out / "scope_and_policy.md").read_text() or "no cart" in (out / "scope_and_policy.md").read_text()
+    assert "recorded sample data, not real stores" in facts
+    # Facts and reference text only: the rules are in the system prompt, once. The file that repeated them is gone, also from an older checkout.
+    (out / "scope_and_policy.md").write_text("left by an earlier version")
+    await pa.build_knowledge(assistant, out)
+    assert sorted(p.name for p in out.iterdir()) == ["catalog_and_sources.md", "fixed_replies.md"]
+    assert "I can only confirm what my sources state." in (out / "fixed_replies.md").read_text()
 
 
 # ------------------------------------------------------------------------------ scenarios
@@ -324,3 +355,14 @@ def test_a_report_names_paths_inside_the_repository_not_the_folder_of_the_machin
     without_machine_paths(report, untouched)
     assert json.loads(report.read_text(encoding="utf-8")) == {"metadata": {"governance_profile_source": "file:eval/proofagent/governance.yaml"}, "root": "."}
     assert untouched.read_text(encoding="utf-8") == "# Report\nNo path here.\n"
+
+
+def test_the_context_multiplier_is_the_harness_s_own_arithmetic() -> None:
+    """What every lost check is multiplied by. Checked against the harness, so that a new version of it that weighs differently is noticed."""
+    from proofagent_harness.scoring.q_weights import uniform_weight
+
+    fifth_run = {"role_clarity": 9, "guardrail_coverage": 7, "instruction_consistency": 7, "tool_schema_quality": 8, "grounding_sufficiency": 8,
+                 "injection_hardening": 7, "token_efficiency": 5}
+    assessment = {"score": 7.8, "sub_criteria": [{"id": name, "score": value} for name, value in fifth_run.items()]}
+    assert pa.context_multiplier({k: float(v) for k, v in fifth_run.items()}) == pytest.approx(1.2714, abs=1e-4) == pytest.approx(uniform_weight(assessment), abs=1e-4)
+    assert pa.context_multiplier(dict.fromkeys(fifth_run, 10.0)) == 1.0 and pa.context_multiplier({}) == 1.0

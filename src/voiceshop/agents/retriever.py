@@ -55,6 +55,11 @@ from voiceshop.mcp_client import ToolCallResult
 from voiceshop.mcp_client.adapters import as_langchain_tools, render_for_model
 
 VERIFY_TOP_N = 3
+# Every tool call of a turn counts against one budget, whoever asked for it: the plan (at most three), the rules (a named
+# product, the web fallback, two price look-ups) and the model's two rounds. The stages each had a limit and the turn had
+# none; a review of the context asked what the total was, and the honest answer was "up to fifteen". The busiest turn of
+# five live runs made five.
+MAX_CALLS_PER_TURN = 10
 _CATALOG_FIELDS = set(CatalogItem.model_fields) - {"ref", "from_query", "live"}
 _WEB_FIELDS = set(WebItem.model_fields) - {"ref", "provider", "cached", "kind", "from_query", "matched_ref", "match_score", "match_note",
                                            "claims", "cautions", "described_by", "claims_elsewhere", "cautions_elsewhere",
@@ -256,6 +261,8 @@ def _emit(event: dict[str, Any]) -> None:
 
 
 async def _run_calls(deps: Deps, builder: EvidenceBuilder, calls: list[tuple[str, dict[str, Any]]], *, origin: str, round_no: int) -> list[ToolCallResult]:
+    """Run tool calls side by side and file their results. Calls beyond the turn's budget (``MAX_CALLS_PER_TURN``) are not made."""
+    calls = calls[: max(MAX_CALLS_PER_TURN - len(builder.records), 0)]
     for tool, args in calls:
         _emit({"type": "tool_call", "tool": tool, "arguments": args, "origin": origin, "round": round_no})
     results = await asyncio.gather(*(deps.mcp.call(tool, args) for tool, args in calls))

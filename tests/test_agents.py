@@ -2953,3 +2953,24 @@ def test_a_page_that_names_a_recommended_product_is_not_a_second_row() -> None:
     assert one_row_per_product(AnswerDraft(recommendations=[tin, pack], spoken="x"), found, Constraints()) == (AnswerDraft(recommendations=[tin, pack], spoken="x"), [])
     assert one_row_per_product(AnswerDraft(recommendations=[page, tin], spoken="x"), found, Constraints())[1] == []
     assert rules.first_sentences("One. Two is longer. Three.", 12) == "One." and rules.first_sentences("A single sentence that is far too long to fit", 20) == "A single sentence ..."
+
+
+async def test_a_turn_has_one_budget_of_tool_calls_whoever_asks_for_them() -> None:
+    """Each stage had a limit of its own and the turn had none: the plan, the rules and the model's rounds could add up to fifteen calls."""
+    from types import SimpleNamespace
+
+    from voiceshop.agents.retriever import MAX_CALLS_PER_TURN, EvidenceBuilder, _run_calls
+    from voiceshop.mcp_client import ToolCallResult
+
+    made: list[str] = []
+
+    async def call(tool: str, arguments: dict[str, Any]) -> ToolCallResult:
+        made.append(arguments["query"])
+        return ToolCallResult(tool=tool, arguments=arguments, ok=True, data={"results": [], "kind": "shopping"})
+
+    deps, builder = SimpleNamespace(mcp=SimpleNamespace(call=call)), EvidenceBuilder()
+    first = await _run_calls(deps, builder, [("web.search", {"query": f"q{n}"}) for n in range(7)], origin="plan", round_no=0)      # type: ignore[arg-type]
+    more = await _run_calls(deps, builder, [("web.search", {"query": f"r{n}"}) for n in range(7)], origin="agent", round_no=1)     # type: ignore[arg-type]
+    none = await _run_calls(deps, builder, [("web.search", {"query": "one more"})], origin="price", round_no=2)                   # type: ignore[arg-type]
+    assert (len(first), len(more), none) == (7, 3, []) and len(made) == len(builder.records) == MAX_CALLS_PER_TURN == 10
+    assert made[-1] == "r2"                                      # the calls that are made are the first asked for
