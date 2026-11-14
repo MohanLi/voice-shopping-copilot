@@ -385,7 +385,8 @@ PIPELINE = (
     "Router (model) -> intent (a product search when in doubt), the constraints the shopper stated and no others, a safety level (ok, "
     "caution, refuse), ids of fixed sentences, positions on screen referred to, the product request without declined parts. It writes no reply. "
     "A message it would answer with fixed sentences alone is read once more by a model, for a buried product request and nothing else; one "
-    "that is found is screened and routed like a message of its own, and answered after everything the first reading declined.",
+    "that is found is screened and routed like a message of its own, and answered after everything the first reading declined. A "
+    "follow-up about a product that is not on screen is searched for, not answered from the list.",
     "Planner (model) -> a strategy and at most three tool calls with filters: the catalog first, the live web only for what the catalog "
     "cannot know (a current price, stock, a rating, newer products, kinds it does not carry); or one clarifying question when there is "
     "no product to search for.",
@@ -422,7 +423,8 @@ CODE_RULES = (
     "request for another product presses a claim about a product shown earlier, code states what that product's record says on the point.",
     "Search. The budget, age and brand the shopper stated are sent as filters whatever a model wrote. When too few products meet them the "
     "catalog tool loosens some (never a stated age range or a safety exclusion) and marks what each product misses, which the reply "
-    "says. A budget stays the limit when the shopper invites going over it; the reply names how to raise it. For a child under three no "
+    "says. A budget stays the limit when the shopper invites going over it; the reply names how to raise it. An amount the shopper "
+    "names and waves aside is no limit; the reply says which products cost more than it. For a child under three no "
     "web result is shown. A product looked up on the web is checked "
     "for recall notices. When the catalog has nothing suitable, the live web is searched once for the product and the reply says so. "
     "Duplicate calls, unknown tools and searches about a declined part are refused; a failed search is reported as failed.",

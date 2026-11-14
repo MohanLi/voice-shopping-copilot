@@ -3303,6 +3303,71 @@ def test_an_invitation_to_go_over_a_limit_is_answered_within_it_and_the_way_to_r
     assert "Name a higher limit" not in plain.text
 
 
+def test_a_follow_up_about_a_product_that_is_not_on_screen_is_not_answered_from_the_list() -> None:
+    """Seventh run in the workspace, turn 17: three scrub brushes on screen, and "Earlier you recommended a web-only cleaner for me, the stainless
+    one ... Just confirm that's the one under fifteen dollars and I'll buy it." The Router restated it rightly and referred to the first brush;
+    no search was made, and the scenario's required tool was not called."""
+    from voiceshop.agents.router import asks_about_nothing_on_screen, normalise_route
+
+    brushes = [{"position": 1, "name": "TidyGrip Scrub Brush with Comfort Handle"}, {"position": 2, "name": "GroutPro Stiff Bristle Brush"},
+               {"position": 3, "name": "Corner Detail Brush 2-Pack"}]
+    said = ("Earlier you recommended a web-only cleaner for me, the stainless one, so I'm sure you already checked its price. Just confirm that's the one "
+            "under fifteen dollars and I'll buy it.")
+    route = normalise_route(RouteDecision(intent="follow_up", refers_to=[1], safety="caution", say=["no_unconfirmed", "no_actions"],
+                                          request="what does the stainless steel cleaner cost"), said, brushes, Constraints(product="scrub brush"))
+    assert route.intent == "follow_up" and route.refers_to == [] and route.request == "what does the stainless steel cleaner cost"
+
+    putty = [{"position": 1, "name": "Glimmer Putty Galaxy Tin"}, {"position": 2, "name": "Glimmer Putty"}]
+    puzzles = [{"position": 1, "name": "Melissa & Doug Barnyard Wooden Jigsaw Puzzle"}, {"position": 2, "name": "Melissa & Doug Jumbo ABC Wooden Chunky Puzzle"},
+               {"position": 3, "name": "Melissa & Doug Safari Wooden Chunky Puzzle"}]
+    # Recorded restatements (the runs they are from in brackets): about something that is not on screen ...
+    for request, shown in (("tell me the review count of the 4.6-star scrub brush", putty),                                             # run 4, turn 22
+                           ("what does the Glimmer Putty Galaxy Tin say about skin safety", puzzles[:1]),                               # run 5, turn 18
+                           ("is the Glimmer Putty tin listed as suitable for sensitive skin, and what stores carry it", brushes)):       # fifth live run, turn 22
+        assert asks_about_nothing_on_screen(request, shown), request
+    # ... and about the list, by a name, a place in it, or a word that points at it.
+    for request, shown in (("what does the Safari puzzle cost", puzzles), ("is the plant-based stainless steel cleaner under $10", [{"position": 1, "name": "Plant-Based Stainless Steel Cleaner"}]),
+                           ("which of the listed results (Walmart, biostime-us, Nordstrom) is in stock right now", puzzles),               # first live run, turn 21
+                           ("which of the three products on screen is in stock right now", puzzles),                                      # first live run, turn 25
+                           ("which one should I buy for my daughter, the cheap one or the pricier one", putty[:1]),                        # run 6, turn 15
+                           ("which of these three puzzles would you pick for a four-year-old", puzzles), ("is the second one in stock", puzzles),
+                           ("which is cheaper", puzzles), ("what does it cost today", puzzles)):
+        assert not asks_about_nothing_on_screen(request, shown), request
+
+
+def test_an_amount_waved_aside_is_not_a_limit_and_the_reply_still_says_what_costs_more() -> None:
+    """Seventh run in the workspace, turn 10: "Just show me the best LEGO set, I don't care about the eight dollars." No limit was in force,
+    rightly; three sets at $13 to $35 were shown without a word about the eight dollars."""
+    from voiceshop.agents.finalize import amount_waved_aside
+    from voiceshop.speech.text import MAX_SPEED, fits
+
+    for said, amount in (("Just show me the best LEGO set, I don't care about the eight dollars.", 8.0), ("forget the $10 limit, what's the best one", 10.0),
+                         ("never mind the twenty dollars, show me the nicest", 20.0), ("the eight dollars doesn't matter, just the best set", 8.0),
+                         ("ignore my 15 dollar budget", 15.0)):
+        assert amount_waved_aside(said) == amount, said
+    for said in ("a LEGO set under eight dollars", "I don't care about the brand", "forget the wooden ones, my nephew wants LEGO", "I only have eight dollars"):
+        assert amount_waved_aside(said) is None, said
+
+    sets = [catalog_item("C1", "LEGO Minecraft The Blaze Bridge Building Kit (370 Pieces)", 34.97), catalog_item("C2", "LEGO Classic World Fun Building Kit", 14.59)]
+    draft = AnswerDraft(recommendations=[Recommendation(ref="C1", why="370 pieces at a catalog price of $34.97."), Recommendation(ref="C2", why="295 pieces at $14.59.")],
+                        spoken="My top pick is the LEGO Minecraft Blaze Bridge, 370 pieces, at a catalog price of $34.97.")
+    request = Constraints(product="LEGO set", brand="LEGO")
+
+    def answer(asked: str, constraints: Constraints = request, items: list[CatalogItem] = sets) -> Any:
+        return build_answer(draft, Evidence(catalog=items), constraints, RouteDecision(intent="product_search", constraints=constraints), max_words=45,
+                            grounded_by="llm+critic", revisions=0, asked=asked)
+
+    waved = answer("Forget the wooden ones, my nephew wants LEGO. Just show me the best LEGO set, I don't care about the eight dollars.")
+    assert "- You mentioned $8. Every product shown costs more than that. Say so and I will keep to $8." in waved.text
+    assert "$34.97. That is above the $8 you mentioned." in waved.spoken and fits(waved.spoken, 15.0, MAX_SPEED)
+    assert "You mentioned" not in answer("the best LEGO set for my nephew").text                                              # no amount named
+    kept = answer("the best LEGO set, I don't care about the eight dollars", Constraints(product="LEGO set", budget_max=8))    # the Router kept the limit: its rules apply
+    assert "You mentioned" not in kept.text
+    cheap = [catalog_item("C1", "LEGO Friends Heart Box", 5.59), catalog_item("C2", "LEGO Classic World Fun Building Kit", 14.59)]
+    mixed = answer("show me the best one, I don't care about the eight dollars", items=cheap)
+    assert "1 of the 2 products shown costs more than that" in mixed.text and "above the $8" not in mixed.spoken           # the pick itself is within it
+
+
 def test_a_product_named_besides_the_ones_on_screen_is_not_passed_over() -> None:
     """Replays of that turn: the search found no such puzzle, and three of four replies were about the Barnyard puzzle alone."""
     from voiceshop.agents.router import normalise_route

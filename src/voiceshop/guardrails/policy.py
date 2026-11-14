@@ -229,6 +229,17 @@ TOOL_FAILED_SCREEN: dict[str, str] = {
 NO_RATING_NOTE = "The catalog has no customer ratings, so none are shown."
 
 
+def above_the_amount_mentioned(amount: float, above: int, shown: int) -> str:
+    """Said on screen when the shopper named an amount and waved it aside ("I don't care about the eight dollars").
+
+    No limit is applied, as asked. The reply still says which of its products cost more than the amount, and how to have it kept.
+    (Seventh run in the workspace, turn 10: three LEGO sets at $13 to $35 were shown without a word about the eight dollars.)
+    """
+    which = ("The product shown costs" if shown == 1 else "Every product shown costs" if above == shown
+             else f"{above} of the {shown} products shown cost{'s' if above == 1 else ''}")
+    return f"You mentioned ${amount:g}. {which} more than that. Say so and I will keep to ${amount:g}."
+
+
 def kept_to_budget(budget: float) -> str:
     """Said on screen when the shopper invited going over a limit ("even if it's over") and everything shown is within it.
 

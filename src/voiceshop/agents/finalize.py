@@ -12,6 +12,7 @@ import re
 import time
 from typing import Any
 
+from voiceshop.agents import rules
 from voiceshop.agents.rules import short_name
 from voiceshop.agents.state import (
     AnswerDraft,
@@ -493,6 +494,35 @@ _OVER_IS_FINE = re.compile(
     r"|\b(?:a\s+(?:bit|little)\s+)?over\s+(?:is|would\s+be)\s+(?:fine|ok|okay)\b|\bmoney\s+is\s+no\s+object\b|\bprice\s+(?:doesn'?t|does\s+not)\s+matter\b", re.I)
 
 
+# An amount named and waved aside in the same breath: "I don't care about the eight dollars", "forget the ten dollar limit".
+_AMOUNT = rf"(?:\$\s?\d+(?:\.\d+)?|{rules._NUMBER}[\s-]*(?:dollars?|bucks?))"
+_WAVED_ASIDE = re.compile(
+    rf"\b(?:(?:don'?t|do\s+not|doesn'?t|does\s+not)\s+(?:care|mind|worry)\s+about|forget(?:\s+about)?|never\s+mind|ignore|skip|scrap|drop)\s+"
+    rf"(?:the|my|that|this|our)?\s*(?P<a>{_AMOUNT})"
+    rf"|(?P<b>{_AMOUNT})(?:\s+(?:budget|limit|cap))?\s+(?:doesn'?t|does\s+not)\s+matter", re.I)
+
+
+def amount_waved_aside(asked: str | None) -> float | None:
+    """The amount of money a message names and sets aside, if it does."""
+    found = _WAVED_ASIDE.search(asked or "")
+    if not found:
+        return None
+    said = re.sub(r"[\s-]*(?:dollars?|bucks?)$", "", (found.group("a") or found.group("b")).replace("$", "").strip(), flags=re.I)
+    amount = rules.words_to_number(said)
+    return float(amount) if amount else None
+
+
+def above_the_amount(items: list[CatalogItem | WebItem], asked: str | None, constraints: Constraints) -> tuple[float, list[CatalogItem | WebItem]] | None:
+    """(the amount the shopper waved aside, the products shown that cost more), when no limit is in force and there are such products."""
+    from voiceshop.guardrails.output import best_price
+
+    amount = amount_waved_aside(asked) if constraints.budget_max is None else None
+    if amount is None:
+        return None
+    above = [item for item in items if (price := best_price(item)) is not None and price > amount + 0.005]
+    return (amount, above) if above else None
+
+
 def within_an_invitation_to_go_over(items: list[CatalogItem | WebItem], asked: str | None, constraints: Constraints) -> bool:
     """Did the shopper state a limit, say that going over it would be fine, and get products that are all within it?"""
     from voiceshop.guardrails.output import best_price
@@ -561,6 +591,9 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
         notes.append(f"{lead}, so the search loosened: " + ", ".join(evidence.relaxed).replace("_", " ") + ".")
     if items and not abstained and within_an_invitation_to_go_over(items, asked, constraints):
         notes.insert(0, policy.kept_to_budget(constraints.budget_max))                                 # type: ignore[arg-type]
+    waved = above_the_amount(items, asked, constraints) if items and not abstained else None
+    if waved:
+        notes.insert(0, policy.above_the_amount_mentioned(waved[0], len(waved[1]), len(items)))
     for key, value in evidence.unmatched_filters.items():
         notes.append(policy.not_in_catalog(key, value))
     notes.extend(policy.TOOL_FAILED_SCREEN[tool] for tool in evidence.failed_tools if tool in policy.TOOL_FAILED_SCREEN)
@@ -605,6 +638,8 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
     if rows and not abstained:
         first = split_sentences(draft.spoken)[:1]
         *safety, tail = _after_lead(first, spoken_notes, len(rows), about_screen, draft.spoken)
+        if waved and items[0] in waved[1] and not about_screen:
+            safety = [f"That is above the ${waved[0]:g} you mentioned.", *safety]       # said right after the pick it is true of
         # In order of importance: what the answer says, the safety sentence, the pointer to the screen, the question.
         # (The pointer used to come before the answer's second sentence: "I can't confirm that. Details and sources are
         # on screen." was all that was said of an answer whose second sentence gave the catalog price and the reason.)

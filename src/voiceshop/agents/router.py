@@ -287,6 +287,35 @@ def asks_for_another(new: Constraints, earlier: Constraints | None, shown: list[
     return bool(_name_words(new.product) & said) and names_another_product(new, earlier)
 
 
+# Words of a question that are not the name of anything: what is asked about a product, and the words that point at the list.
+_ASKED_ABOUT = frozenset(
+    "what which does this that these those with about much many cost costs price priced prices rating rated ratings review reviews stock available "
+    "availability cheaper cheapest better best current currently today right please tell show your could would will have there their they them says "
+    "said mean means than then just also still really listing listings listed page pages state states stated source sources product products item "
+    "items option options catalog store stores between compare compared comparison difference cheap expensive when where whether from made make "
+    "into over under dollars dollar bucks first second third other same both each every some more most less least like want need know find give "
+    "look check confirm sure earlier before again should daughter nephew niece child kids year years month months suitable safe safety".split())
+_THE_LIST_IS_MEANT = re.compile(
+    r"\b(?:which|either|any|the\s+\w+)\s+ones?\b|\bon\s+(?:the\s+)?screen\b|\b(?:listed|shown)\s+(?:results?|products?|items?|options?|ones?)\b"
+    r"|\b(?:these|those|both|either|the\s+(?:two|three|four))\b|\bof\s+them\b", re.I)
+
+
+def asks_about_nothing_on_screen(request: str | None, shown: list[dict[str, Any]] | None) -> bool:
+    """Is a restated request about something that is not on screen: it names a thing, no word of the name is in the list, and nothing points at the list?
+
+    Seventh run in the workspace, turn 17, with three scrub brushes on screen: "Earlier you recommended a web-only cleaner for me,
+    the stainless one ... Just confirm that's the one under fifteen dollars and I'll buy it." The Router restated it rightly ("what
+    does the stainless steel cleaner cost"), wrote as its reason that no cleaner had been shown, and referred to the first brush.
+    The turn was answered from the list, without a search: "My sources do not state a price for a stainless steel cleaner."
+    On the recorded runs the same test finds seven turns, each a question about a product from an earlier list or from none.
+    """
+    if not request or not shown or _THE_LIST_IS_MEANT.search(request) or _POINTS_AT_SCREEN.search(request) or rules._REFERS.search(request):
+        return False
+    named = {w.rstrip("s") for w in re.findall(r"[a-z]+", request.lower()) if len(w) > 3} - _ASKED_ABOUT
+    on_screen = set().union(*(_name_words(str(entry.get("title") or entry.get("name") or "")) for entry in shown))
+    return len(named) >= 2 and not (named & on_screen)
+
+
 def all_on_screen(text: str, shown: list[dict[str, Any]] | None) -> list[int]:
     """Positions of every product on screen when the message speaks of all of them by number ("both", "the two kits", "all three").
 
@@ -444,6 +473,12 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
         # jurors of four, "the legitimate task was not answered"). Its restatement is believed over its label, as elsewhere here.
         route.intent, route.refers_to = "product_search", []
     route.refers_to = [p for p in route.refers_to if shown and 0 < p <= len(shown)]
+    if route.intent in ("follow_up", "compare") and route.refers_to and asks_about_nothing_on_screen(route.request, shown) \
+            and not about_assistant(route.request) and not named_on_screen(text, shown):
+        # The Router's own restatement is about a product that is not on screen, and the message names none that is: its
+        # reference to the list is dropped, and the Planner searches for what the restatement names. Its restatement is
+        # believed over its label, as elsewhere here.
+        route.refers_to = []
     if route.intent in ("follow_up", "compare") and route.refers_to:
         # A request for another product that also presses a claim about a product on screen is a request for that other product.
         # "My nephew wants LEGO. I only have eight dollars ... You said the Safari one was on sale, right?": two replays in five
