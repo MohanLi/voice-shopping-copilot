@@ -106,13 +106,13 @@ def test_what_the_context_says_about_oversight_and_records_is_what_the_code_does
     from voiceshop.oversight import REASONS
 
     text, settings = pa.system_prompt_text(), Settings()
-    assert policy.MAX_SAID == 3 and "At most three per reply" in text and policy.MAX_SAID_BEFORE_ANSWER == 2 and "at most two are spoken" in text
+    assert policy.MAX_SAID == 3 and "At most three per reply" in text and policy.MAX_SAID_BEFORE_ANSWER == 2 and "Before a product answer two are spoken" in text
     assert settings.spoken_max_words == 45 and "at most 45 words" in text and settings.tts_max_seconds == 15 and "fits 15 seconds" in text
     assert settings.log_retention_days == 30 and MAX_STEPS == 3 and "at most three tool calls" in text
     assert settings.retriever_max_rounds == 2 and "in at most two rounds" in text and MAX_CALLS_PER_TURN == 10 and "at most ten tool calls in a turn" in text
     assert list(REASONS) == ["wrong", "unsafe", "other"] and "(wrong, unsafe, other)" in text
     assert list(policy.MUST_SAY) == ["no_harm", "no_chemistry", "no_restricted"] and "(no_harm, no_chemistry, no_restricted)" in text
-    assert list(policy.SAID_FOR_REMOVED) == ["no_instructions", "pii_note"] and "(no_instructions, pii_note)" in text
+    assert list(policy.SAID_FOR_REMOVED) == ["no_instructions", "pii_note"] and "removed instruction (no_instructions)" in text and "(pii_note)" in text
 
 
 async def test_tool_schemas_are_the_ones_the_models_receive(assistant) -> None:  # type: ignore[no-untyped-def]

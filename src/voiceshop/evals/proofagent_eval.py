@@ -415,9 +415,10 @@ CODE_RULES = (
     "them, and the reply says so (pii_note). Names and street addresses cannot be found by a pattern: for them the safety policy's rule holds.",
     "Fixed sentences. What in a reply is not grounded in tool results is a fixed "
     "sentence chosen by id, never a model's wording (texts: knowledge file fixed_replies.md). At most three per reply, in this order: 1 "
-    "those that protect someone (no_harm, no_chemistry, no_restricted); 2 what else was declined, in the Router's order; 3 the note for "
-    "what the input screen removed (no_instructions, pii_note); 4 identity and courtesies. Before a product answer at most two are "
-    "spoken, in a short form; all that were kept are on screen.",
+    "those that protect someone (no_harm, no_chemistry, no_restricted); 2 what else was declined: the input screen's sentence for a "
+    "removed instruction (no_instructions), then the Router's in its order; 3 the note for removed personal details (pii_note); 4 "
+    "identity and courtesies. Before a product answer two are spoken, in a short form, a third if time allows; all that were kept "
+    "are on screen. A not-found reply ends \"I can look for <a kind of product> instead.\"",
     "Grounding. Every table cell and citation is copied from tool results by code: a catalog product is cited by "
     "its document id, a live result by its URL, its store or site and the time it was retrieved. Code does the price arithmetic. When a "
     "request for another product presses a claim about a product shown earlier, code states what that product's record says on the point. "

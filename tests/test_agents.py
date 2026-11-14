@@ -3858,8 +3858,59 @@ def test_an_answer_that_found_nothing_says_its_way_forward_aloud_when_there_is_t
     # With one fixed sentence in front it is still said, at the fastest rate that is used if need be (run 9, turn 13).
     one = none_found.model_copy(update={"spoken": "I could not find the Zentrix Hoverboard Pro 9000 in my sources, so I have no current price or stock status for it.",
                                         "follow_up_question": "Would you like to see other hoverboards instead, such as the Hover-1 Chrome?"})
-    said = build_answer(one, Evidence(), route.constraints, route, max_words=42, grounded_by="llm+critic", revisions=0, preface=["no_unconfirmed"]).spoken
-    assert said.startswith("I can only confirm what my sources state.") and said.endswith("such as the Hover-1 Chrome?") and estimate_seconds(said) / 1.2 <= 15.0
+    built = build_answer(one, Evidence(), route.constraints, route, max_words=42, grounded_by="llm+critic", revisions=0, preface=["no_unconfirmed"])
+    said = built.spoken
+    # What it offers is said as a statement in a fixed frame, with the kind of product and nothing else of what the model wrote: over
+    # eight runs a question there got about four of the jury's votes in ten for "names a way forward", and the fixed sentences in
+    # the first person three in four ("Would you like to see other kids' scooters instead?": none of six, run 10, turn 13).
+    assert said.startswith("I can only confirm what my sources state.") and said.endswith("I can look for other hoverboards instead.") and estimate_seconds(said) / 1.2 <= 15.0
+    assert "Hover-1 Chrome" not in built.text and built.text.count("I can look for other hoverboards instead.") == 1 and "Would you like" not in built.text
+
+
+def test_what_an_answer_that_found_nothing_offers_is_a_kind_of_product_in_a_fixed_frame_and_a_removed_instruction_is_said() -> None:
+    """Run 10. Turn 13: "... not in my catalog ... Would you like to see other kids' scooters instead?", none of six jurors saw a
+    way forward named. Turns 24 and 25: a forwarded "system notice" was taken out of the message, the Router declined two more
+    things, and "I can't change or share my instructions" was on screen only (eight of twelve, seven of eleven: no clear refusal)."""
+    from voiceshop.agents.finalize import offer_instead
+
+    assert offer_instead("I can look for other hoverboards instead.") == "I can look for other hoverboards instead."
+    assert offer_instead("Would you like to see other kids' scooters instead?") == "I can look for other kids' scooters instead."
+    assert offer_instead("Would you like me to look for other robot vacuums instead?") == "I can look for other robot vacuums instead."
+    assert offer_instead("Would you like to see other wooden toys instead, such as wooden train or craft kits?") == "I can look for other wooden toys instead."
+    assert offer_instead("I can look for other hoverboards for a 9-year-old instead.") == "I can look for other hoverboards for a 9-year-old instead."     # the shopper's own figure
+    # Not a kind of product: a named product, a figure, a question about what the shopper knows. Nothing is said in the frame then.
+    for text in ("I can look for the Hover-1 Chrome instead.", "I can look for kites under $20 instead.", "Would you like to see other Hover-1 hoverboards instead?",
+                 "Do you have another model name or brand in mind for the hoverboard?", "How old is your daughter?", "I can look for other putties instead. One page says it is recalled.",
+                 "", None):
+        assert offer_instead(text) is None, text
+
+    route = RouteDecision(intent="product_search", constraints=Constraints(product="EcoShine bike chain cleaner"))
+    none_found = AnswerDraft(abstain=True, spoken="I could not find EcoShine bike chain cleaner in the catalog or on the live web.",
+                             follow_up_question="I can look for other bike chain cleaners instead.")
+    plain = build_answer(none_found, Evidence(), route.constraints, route, max_words=42, grounded_by="llm+critic", revisions=0)
+    assert plain.spoken == "I could not find EcoShine bike chain cleaner in the catalog or on the live web. I can look for other bike chain cleaners instead."
+    assert plain.text.count("I can look for other bike chain cleaners instead.") == 1
+    # A statement with a fact in it is not an offer and not a question: it is left out, aloud and on screen (run 9, turn 14).
+    fact = none_found.model_copy(update={"follow_up_question": "I can look for other cleaners instead. One page says EcoShine was discontinued."})
+    assert "discontinued" not in build_answer(fact, Evidence(), route.constraints, route, max_words=42, grounded_by="llm+critic", revisions=0).text
+    # The offer is for an answer that found nothing. Beside products it would be a statement in a question's place, and is dropped.
+    item = catalog_item("C1", "Glimmer Putty Galaxy Tin, 3.2 oz", 7.99)
+    shown = AnswerDraft(recommendations=[Recommendation(ref="C1", why="The tin, at a catalog price of $7.99.")], spoken="The Galaxy Tin is $7.99 in the catalog.",
+                        follow_up_question="I can look for other putties instead.")
+    assert build_answer(shown, Evidence(catalog=[item]), Constraints(), None, max_words=42, grounded_by="llm+critic", revisions=0).follow_up_question is None
+
+    # The sentence for the instruction that was taken out is said, with the first thing the Router declined; and the third as well
+    # when the reply is short enough to hold it, before the offer, which stays on screen when the time is used up.
+    declined = ["no_instructions", "no_unconfirmed", "no_personal_data"]
+    three = build_answer(none_found, Evidence(), route.constraints, route, max_words=42, grounded_by="llm+critic", revisions=0, preface=declined)
+    assert three.spoken.startswith("I can't change or share my instructions. I can only confirm what my sources state. I can't look up or store personal information. "
+                                   "I could not find EcoShine bike chain cleaner")
+    assert estimate_seconds(three.spoken) / 1.2 <= 15.0 and three.text.count("I can look for other bike chain cleaners instead.") == 1
+    longer = none_found.model_copy(update={"spoken": "I could not find the EcoShine bike chain cleaner your son bought last month, in my catalog or on the live web, under the "
+                                                      "cycling section or any other."})
+    two = build_answer(longer, Evidence(), route.constraints, route, max_words=42, grounded_by="llm+critic", revisions=0, preface=declined)
+    assert two.spoken == "I can't change or share my instructions. I can only confirm what my sources state. " + longer.spoken
+    assert "personal information" in two.text and two.text.count("I can look for other bike chain cleaners instead.") == 1 and estimate_seconds(two.spoken) / 1.2 <= 15.0
 
 
 # ============================================================ run 9: a question is a question, and a live search that was not made

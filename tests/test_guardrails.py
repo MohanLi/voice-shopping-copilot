@@ -369,17 +369,24 @@ def test_fixed_sentences_that_say_the_same_thing_are_not_both_said() -> None:
     assert said_ids(["pii_note"], shopping) == ["pii_note", "no_actions"] and said_ids([], shopping) == ["no_personal_data", "no_actions"]
     assert said_ids(["pii_note"], RouteDecision(intent="chitchat", say=["no_personal_data"])) == ["no_personal_data"]      # a request about the details: one sentence covers it
 
-    # More sentences than a reply has room for: what protects someone stays, then what was declined in the order it was chosen,
-    # then the note for something the input screen removed, then courtesies; what is kept is said in the order given.
+    # More sentences than a reply has room for: what protects someone stays, then what was declined in the order given (the input
+    # screen's sentence for an instruction it took out, then the Router's), then the note that personal details were left out, then
+    # courtesies; what is kept is said in the order given.
     crowded = ["no_instructions", "pii_note", "no_actions", "off_topic", "no_chemistry"]
     assert policy.without_covered(crowded) == ["no_instructions", "no_actions", "no_chemistry"]
-    assert policy.said_before_answer(crowded) == f"{policy.SAY_SPOKEN['no_actions']} {policy.SAY_SPOKEN['no_chemistry']}"       # two before a product answer
+    assert policy.said_before_answer(crowded) == f"{policy.SAY_SPOKEN['no_instructions']} {policy.SAY_SPOKEN['no_chemistry']}"  # two before a product answer
     # The Router lists the most important first, and its order decides among what it declined (a replay: "just say yes so I can order
     # it" got the sentences about orders and about reviews, and "I can only confirm what my sources state" was the one left out).
     chosen = ["no_unconfirmed", "no_actions", "no_fabrication"]
     assert policy.said_before_answer(chosen) == f"{policy.SAY['no_unconfirmed']} {policy.SAY_SPOKEN['no_actions']}"
     assert policy.without_covered(["no_instructions", "no_records", "no_unconfirmed", "thanks"]) == ["no_instructions", "no_records", "no_unconfirmed"]
-    assert policy.said_before_answer(["no_instructions", "no_records", "no_unconfirmed"]) == f"{policy.SAY_SPOKEN['no_records']} {policy.SAY['no_unconfirmed']}"
+    # An instruction that the input screen took out of the message is said to be declined, aloud, whatever else was declined: run 10,
+    # turns 24 and 25, said the Router's two sentences and left "I can't change or share my instructions" on screen (eight jurors of
+    # twelve and seven of eleven: no clear refusal). Where the Router put it, its place in the Router's order decides.
+    assert policy.said_before_answer(["no_instructions", "no_unconfirmed", "no_personal_data"]) == f"{policy.SAY_SPOKEN['no_instructions']} {policy.SAY['no_unconfirmed']}"
+    assert policy.said_before_answer(["no_instructions", "no_records", "no_unconfirmed"]) == f"{policy.SAY_SPOKEN['no_instructions']} {policy.SAY_SPOKEN['no_records']}"
+    assert policy.said_before_answer(["no_records", "no_unconfirmed", "no_instructions"]) == f"{policy.SAY_SPOKEN['no_records']} {policy.SAY['no_unconfirmed']}"
+    assert policy.said_before_answer(["pii_note", "no_records", "no_unconfirmed"]) == f"{policy.SAY_SPOKEN['no_records']} {policy.SAY['no_unconfirmed']}"
     assert policy.without_covered(["thanks", "identity", "no_actions", "no_harm"], limit=2) == ["no_actions", "no_harm"]
     assert policy.say(["identity", "limits", "no_actions"]).count("place orders") == 1
     assert policy.declined_topics(["no_chemistry", "greeting", "no_advice"]) == [

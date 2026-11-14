@@ -409,6 +409,54 @@ def said_before(preface: list[str] | None, lead: str, max_seconds: float) -> lis
 _RECALL_SAID = re.compile(r"\brecall|\bdiscontinu|\bsafety\s+notice|\bno\s+longer\s+(?:made|sold)", re.I)
 
 
+def all_declined_said(preface: list[str] | None, before: list[str], spoken: str, max_seconds: float) -> list[str]:
+    """``before`` with the third declined part said too, when the reply as it stands still fits its time with it.
+
+    Two are said before an answer so that the answer gets its share of the fifteen seconds (``said_before``). When the
+    answer is short, there is room: "I can't change or share my instructions. I can only confirm what my sources state.
+    I can't look up or store personal information. I could not find the EcoShine bike chain cleaner." is eleven seconds.
+    Nothing gives way for it: it is added to a reply that is already complete.
+    """
+    ids = [i for i in dict.fromkeys(preface or []) if i in policy.SAY]
+    removed = [i for i in ids if i in policy.SAID_FOR_REMOVED]
+    ids = [i for i in ids if i not in removed[1:]]
+    if len(policy.without_covered(ids)) <= policy.MAX_SAID_BEFORE_ANSWER or before != [policy.said_before_answer(ids)]:
+        return before
+    every = policy.say(ids, offer=False, spoken=True)
+    return [every] if fits(f"{every} {spoken}", max_seconds, MAX_SPEED) else before
+
+
+# What an answer that found nothing offers to look for next, in the one form in which it is said. The Answerer is asked
+# for "I can look for <a kind of product> instead."; a question that offers the same is read the same way.
+_OFFER_STATED = re.compile(r"^I\s+(?:can|could)\s+(?:also\s+)?(?:look\s+for|search\s+for|find\s+you|show\s+you|check\s+for)\s+(?P<what>.+?)[.!]?$", re.I)
+_OFFER_ASKED = re.compile(r"^(?:would\s+you\s+like|do\s+you\s+want|shall\s+I|should\s+I)\b(?:\s+me)?(?:\s+to)?\s+"
+                          r"(?:see|look\s+for|look\s+at|find|browse|search\s+for)\s+(?P<what>.+?)\?$", re.I)
+_NOT_A_KIND = re.compile(r"[$\d?!.;:\"]|^(?:the|this|that|it|them|one)\b", re.I)
+_AN_AGE = re.compile(r"\b\d{1,2}(?:\s*-\s*|\s+)(?:year|month)s?(?:\s*-\s*|\s+)old\b", re.I)      # the shopper's own figure, the only one a kind may carry
+MAX_OFFER_WORDS = 10
+
+
+def offer_instead(text: str | None) -> str | None:
+    """"I can look for <a kind of product> instead.", from what the Answerer wrote as the way forward of an abstention; else None.
+
+    A question after "I could not find it" was the reply's way forward for ten runs, and the jury's votes on whether one
+    was named show what a question is worth there: about four votes in ten over eight runs, and two of eighteen in run 10
+    for "Would you like to see other kids' scooters instead?". The two fixed sentences in the first person ("I can find
+    you one cleaner for the job instead", "use the store named with each product") got three in four and nineteen in
+    twenty in the same runs. So the offer is a statement, and its frame is written here. The model supplies the kind of
+    product and nothing else: no product name, no figure, nothing that would have to be checked against the evidence or
+    cited (run 9, turn 14, was a fact in this field). What does not fit the frame is not said in it.
+    """
+    line = " ".join((text or "").split())
+    match = _OFFER_STATED.match(line) or _OFFER_ASKED.match(line)
+    if match is None:
+        return None
+    what = re.sub(r"\s+instead$", "", match["what"].split(",")[0].strip(), flags=re.I).strip()
+    if not what or _NOT_A_KIND.search(_AN_AGE.sub("", what)) or len(what.split()) > MAX_OFFER_WORDS:
+        return None
+    return f"I can look for {what} instead."
+
+
 def whole_sentences(text: str, around: list[str], max_seconds: float, max_words: int, *, keep_prices: bool = False) -> list[str]:
     """The sentences of ``text``, from the first, that can be said together with ``around`` inside the time limit.
 
@@ -610,7 +658,10 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
     # checks against the evidence, and it carries no citation. ("How old is your daughter? One page says it is not suitable
     # under three." Five jurors of six, certainty overstated; the page was in the evidence and not among the citations.
     # Run 9, turn 14.) What a source states belongs in a reason or a caveat, where it is checked and cited.
-    question = " ".join(s for s in split_sentences((draft.follow_up_question or "").strip()) if s.rstrip().endswith("?")) or None
+    # An answer that found nothing has no choice to narrow: what stands there is an offer of what to look for next, and
+    # it is said as a statement in a fixed frame (``offer_instead``).
+    offer = offer_instead(draft.follow_up_question) if abstained else None
+    question = offer or " ".join(s for s in split_sentences((draft.follow_up_question or "").strip()) if s.rstrip().endswith("?")) or None
     if question and abstained and draft.spoken.strip().endswith("?"):
         question = None                                      # the statement already ends by asking; a second question would only repeat it
     before = said_before(preface, draft.spoken, max_seconds)                              # what was declined is said first
@@ -640,14 +691,6 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
         if extra:
             first = whole_sentences(draft.spoken, [*before, *extra], max_seconds, max_words, keep_prices=constraints.wants_current_info)
             spoken = " ".join([*first, *extra])
-    if abstained and question and question.lower() not in spoken.lower() and fits(" ".join([*before, spoken, question]), max_seconds, MAX_SPEED):
-        # An answer that found nothing ends with the way forward its question offers, aloud as on screen. ("The Zentrix
-        # Hoverboard Pro nine thousand isn't in my catalog, and no brand called Zentrix is carried. My live web search found
-        # nothing either." The offer of a scooter or a ride-on toy for a seven-year-old was on screen only, and three jurors
-        # of four found no alternative named: run 8, turn 13.) It gives way only when the reply would run over its time at
-        # the fastest rate that is used: in run 9 a fixed sentence stood in front, the question was left out at the
-        # unhurried rate, and what was said ended on "I have no current price or stock status for it".
-        spoken = f"{spoken} {question}".strip()
     if rows and not abstained:
         first = split_sentences(draft.spoken)[:1]
         *safety, tail = _after_lead(first, spoken_notes, len(rows), about_screen, draft.spoken)
@@ -663,6 +706,15 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
         if question and question.lower() not in " ".join(parts).lower() and fits(" ".join([*before, *parts, question]), max_seconds, COMFORT_SPEED):
             parts.append(question)
         spoken = " ".join(parts)
+    before = all_declined_said(preface, before, spoken, max_seconds)
+    if abstained and question and question.lower() not in spoken.lower() and fits(" ".join([*before, spoken, question]), max_seconds, MAX_SPEED):
+        # An answer that found nothing ends with its way forward, aloud as on screen. ("The Zentrix Hoverboard Pro nine
+        # thousand isn't in my catalog, and no brand called Zentrix is carried. My live web search found nothing either."
+        # The offer of a scooter or a ride-on toy for a seven-year-old was on screen only, and three jurors of four found
+        # no alternative named: run 8, turn 13.) It gives way only when the reply would run over its time at the fastest
+        # rate that is used: in run 9 a fixed sentence stood in front, the question was left out at the unhurried rate,
+        # and what was said ended on "I have no current price or stock status for it". A declined part comes before it.
+        spoken = f"{spoken} {question}".strip()
 
     # ---- on-screen text
     lines: list[str] = []
