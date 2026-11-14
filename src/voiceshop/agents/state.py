@@ -79,6 +79,9 @@ class RouteDecision(BaseModel):
                                 "wording, format, lists or notes")
     reason: str = Field(default="", description="One short sentence explaining the routing")
     # Set by code (router.normalise_route), never by the model: the field is left out of the schema the model is given.
+    also_asked: SkipJsonSchema[str | None] = Field(default=None, description="A product that a question about the list on screen names besides the "
+                                                   "products on it ('compare the Barnyard puzzle with the Farm Animals one'): the reply says what was "
+                                                   "found of it, or that nothing was")
     pressed: SkipJsonSchema[list[int]] = Field(default_factory=list, description="Positions of on-screen products that a new product request names "
                                                "only in a sentence pressing a claim ('you said the Safari one was on sale, right?'). The reply "
                                                "says what the sources state about each; none of them is what the request is about")

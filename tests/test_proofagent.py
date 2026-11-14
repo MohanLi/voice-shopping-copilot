@@ -388,3 +388,17 @@ def test_a_series_of_runs_is_read_by_its_median_and_its_worst_run() -> None:
     assert "All runs are of one version of the code: abc1234." in text
     mixed = pa.series_markdown([card("a", 96.0, 95.0, "GOLD"), card("b", 96.0, 95.0, "GOLD", version="def5678")])
     assert "NOT of one version" in mixed and "| Task Success | 96.0% | 96.0% | 96.0% | 96.0% |" in mixed        # two runs: the median is their mean
+
+
+def test_the_context_document_shares_no_phrase_with_what_the_evidence_record_states_in_clear() -> None:
+    """The record of a run carries its context documents only as digests, and refuses any field it states in clear that repeats
+    three words in a row of such a document. One of its own fixed fields reads "declared by the operator". The rewritten context
+    said a report is stored "for review by the operator", and the fifth run in the workspace has no record for that reason
+    (BUILD_PERSONAL_DATA: /scope/facts/tools/source ...)."""
+    import re
+
+    from voiceshop.evals.proofagent_eval import fixed_replies, system_prompt_text
+
+    words = re.findall(r"[a-z0-9]+", f"{system_prompt_text()} {fixed_replies()}".lower())
+    runs = {" ".join(words[i:i + 3]) for i in range(len(words) - 2)}
+    assert not runs & {"declared by the", "by the operator"}

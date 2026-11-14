@@ -15,6 +15,7 @@ Each finding is an :class:`Issue` with a severity:
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from itertools import combinations
 
 from voiceshop.agents.state import AnswerDraft, CatalogItem, Constraints, Evidence, Issue, WebItem
@@ -279,6 +280,93 @@ def _has_live_price(item: CatalogItem | WebItem) -> bool:
 _THE_REQUEST = r"(?!\s+(?:request|requirement|criteri(?:on|a)|constraint|wish|preference|brief|ask)\b)"
 
 
+# A statement that nothing of a kind was found. What it names is compared with the titles the search returned.
+_SOURCES = r"(?:my|the|our)\s+(?:sources|catalog(?:ue)?|results|evidence|listings)"
+_NOTHING_FOUND = (
+    re.compile(r"\bno\s+(?P<what>[^.;,!?()]{3,70}?)\s+(?:is|are|was|were|appears?|turned\s+up|came\s+(?:back|up)|shows?\s+up)\s+(?:listed\s+|found\s+)?"
+               r"(?:in|among)\s+" + _SOURCES, re.I),
+    re.compile(r"\b(?:the|a|an|any)\s+(?P<what>[^.;,!?()]{3,70}?)\s+(?:has|have|had)\s+no\s+(?:entry|listing|record|match)\s+in\s+" + _SOURCES, re.I),
+    re.compile(r"\b(?:the|a|an|any)\s+(?P<what>[^.;,!?()]{3,70}?)\s+(?:is|are|was|were)\s+not\s+(?:in|among|listed\s+in|found\s+in|carried\s+in)\s+" + _SOURCES, re.I),
+    re.compile(r"\b(?:could\s+not|couldn'?t|did\s+not|didn'?t|cannot|can'?t|was\s+unable\s+to)\s+find\s+(?:a|an|the|any)\s+(?P<what>[^.;,!?()]{3,70}?)"
+               r"(?=\s+(?:in|on|among|for|within|at|under|that|which|with)\b|[.;,!?]|$)", re.I),
+    re.compile(r"\b" + _SOURCES + r"\s+(?:has|have|holds?|lists?|shows?|carr(?:y|ies))\s+no\s+(?P<what>[^.;,!?()]{3,70}?)(?=\s+(?:in|on|for|within|at|under|that|which|with)\b|[.;,!?]|$)", re.I),
+)
+# Words of such a statement that do not name the product.
+_NOT_A_NAME = frozenset(
+    "a an the any some no not of for in on at to by with and or my our your their its this that these those one ones such other another current live "
+    "listing listings entry entries record records match matches result results product products item items option options kind kinds exact exactly "
+    "single separate standalone stand alone individual specific particular named called version price priced available availability stock today now "
+    "catalog catalogue sources source web page pages store stores brand branded from made anything something nothing thing things".split())
+# "No current listing for the Barnyard puzzle", "no reviews": about something a product has or lacks, not about whether it was found.
+_ABOUT_AN_ATTRIBUTE = re.compile(r"\b(?:listings?|prices?|ratings?|reviews?|stock|availability|recalls?|notices?|warnings?|offers?|deals?|sales?|discounts?|"
+                                 r"statements?|claims?|sources?|pages?|information|details?|mentions?|evidence|confirmation|materials?|ingredients?)\b", re.I)
+# The statement already says how what was found differs from what was asked.
+_QUALIFIED = re.compile(r"\b(?:single|separate|standalone|stand-alone|individual|on\s+its\s+own|by\s+itself|exact|exactly|by\s+that\s+name|of\s+that\s+name|"
+                        r"closest|nearest|only|instead|but|though|although|however|other\s+than|apart\s+from|besides|except)\b", re.I)
+
+
+def _name_stems(text: str) -> set[str]:
+    """The words of a product name, lower-cased and without a plural ending."""
+    out = set()
+    for word in re.findall(r"[a-z0-9]+", (text or "").lower()):
+        if word in _NOT_A_NAME or len(word) < 3:
+            continue
+        out.add(word[:-1] if word.endswith("s") and not word.endswith("ss") and len(word) > 3 else word)
+    return out
+
+
+def found_all_the_same(text: str, evidence: Evidence, besides: Sequence[str] = ()) -> tuple[str, CatalogItem | WebItem] | None:
+    """A statement that nothing of a kind was found, and a search result whose title carries every word of that kind.
+
+    Fifth run in the workspace, turn 26: "compare the Barnyard puzzle with the Melissa & Doug Farm Animals one". The search
+    returned "Melissa & Doug Peg Puzzles Set, Farm Animals, Pets, Ocean (3 Peg Puzzles ...)". The reply: "no Farm Animals
+    puzzle is in my sources". Eleven of twelve jurors: contradicted by the tool results. The honest sentence names what was
+    found and how it differs (a set of three that includes it, at another price).
+
+    ``besides``: handles of products the answer already presents; a statement about them is not what this is about. A
+    sentence that qualifies itself ("no single ...", "the closest is ...") is left alone, and so is a name of one word
+    shorter than five letters.
+    """
+    for sentence in re.split(r"(?<=[.!?;])\s+", text or ""):
+        if _QUALIFIED.search(sentence):
+            continue
+        for pattern in _NOTHING_FOUND:
+            for found in pattern.finditer(sentence):
+                what = found.group("what").strip()
+                words = _name_stems(what)
+                if not words or (len(words) == 1 and len(next(iter(words))) < 5) or _ABOUT_AN_ATTRIBUTE.search(what):
+                    continue
+                # "not in the catalog" is a statement about the catalog; a listing on the web does not contradict it, and the other way round
+                low = sentence.lower()
+                only_catalog = "catalog" in low and not re.search(r"\b(?:sources|results|evidence|web|online)\b", low)
+                only_web = bool(re.search(r"\b(?:web|online)\b", low)) and "catalog" not in low
+                searched: list[CatalogItem | WebItem] = [*([] if only_web else evidence.catalog), *([] if only_catalog else evidence.web)]
+                for item in searched:
+                    if item.ref in besides or (isinstance(item, WebItem) and item.flagged):
+                        continue
+                    if words <= _name_stems(f"{item.title} {item.brand or ''}" if isinstance(item, CatalogItem) else item.title):
+                        return what, item
+    return None
+
+
+# A clause that reports what a text the shopper pasted says: "the review you pasted gives it five stars".
+_SHOPPERS_TEXT = re.compile(
+    r"\b(?:the|that|this|your)\s+(?:review|text|message|note|post|comment|quote|label)\s+(?:that\s+)?you\s+(?:pasted|shared|sent|forwarded|quoted|read|copied|gave|included)\b"
+    r"|\b(?:the|that|your)\s+(?:pasted|forwarded|quoted|shared)\s+(?:review|text|message|note|post|comment)\b", re.I)
+
+
+def without_shoppers_text(text: str, user_text: str | None) -> str:
+    """``text`` without the clauses that report what the shopper's own pasted text says about ratings.
+
+    "The review you pasted gives it five stars; I cannot verify it" states nothing about the product's rating: it says what
+    a text in the shopper's message says. It is left out of the rating checks, and only when that message speaks of ratings
+    or reviews itself, so that the wording cannot carry a rating nobody gave.
+    """
+    if not text or not user_text or not _RATING_TALK.search(user_text):
+        return text
+    return " ".join(clause for clause in re.split(r"(?<=[.!?;])\s+", text) if not _SHOPPERS_TEXT.search(clause))
+
+
 def _claims_in(text: str) -> list[tuple[str, tuple[str, ...]]]:
     """Sensitive claims the text asserts. "No source confirms it is eco-friendly" asserts nothing and is the right thing to say.
 
@@ -431,7 +519,8 @@ def settled_by_prices(asked: str | None, on_screen: list[str], evidence: Evidenc
 
 def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints, *, max_words: int = 42,
                 max_seconds: float | None = None, spoken_after: list[str] | None = None, total_seconds: float | None = None,
-                user_text: str | None = None, focus: list[str] | None = None, settled: tuple[bool, str] | None = None) -> list[Issue]:
+                user_text: str | None = None, focus: list[str] | None = None, settled: tuple[bool, str] | None = None,
+                also_asked: str | None = None) -> list[Issue]:
     """All rule-based findings for one draft.
 
     ``focus`` lists the handles of on-screen products a follow-up refers to: their prices may be stated next to a
@@ -629,10 +718,11 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
             if not _explained(amount, all_prices, constraints, differences=bool(items)):
                 issues.append(Issue(code="ungrounded_price", severity="revise", where=where,
                                     message=f"${amount:.2f} in the {where} text is not a price of {of_what}."))
-        if asserted(_RATING_TALK, text) and not any(_has_rating(i) for i in pool):
+        about_products = without_shoppers_text(text, user_text)      # what a pasted review says is not a rating of a product
+        if asserted(_RATING_TALK, about_products) and not any(_has_rating(i) for i in pool):
             issues.append(Issue(code="rating_not_in_evidence", severity="revise", where=where,
                                 message="No recommended item has a rating in the evidence; remove the mention of ratings or reviews."))
-        elif (wrong := ratings_misstated(text, priced_pool)) is not None:
+        elif (wrong := ratings_misstated(about_products, priced_pool)) is not None:
             issues.append(Issue(code="rating_not_as_stated", severity="revise", where=where, message=wrong))
         stock = asserted(_STOCK_TALK, text)
         if stock and not any(_has_stock_info(i, evidence) for i in pool):
@@ -717,6 +807,35 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
             continue
         break
 
+    # ---- a product the question names besides the ones on screen is not passed over
+    # "Compare the Barnyard puzzle with the Melissa & Doug Farm Animals one. I need price, piece count ..." The search found no
+    # such puzzle, and three replays of four answered about the Barnyard puzzle alone (replays of the fifth run in the workspace,
+    # turn 26). The words that name the other product, and that no product of the answer carries, have to appear in the reply.
+    if also_asked:
+        answered_words = set().union(*(_name_stems(i.title) for i in answered)) if answered else set()
+        its_own = _name_stems(also_asked) - answered_words
+        every = " ".join([draft.spoken, draft.abstain_reason or "", *(f"{r.why} {r.caveat or ''}" for r in draft.recommendations)])
+        if its_own and not its_own & _name_stems(every):
+            issues.append(Issue(code="asked_product_unmentioned", severity="revise", where="spoken",
+                                message=f"The shopper also asked about \"{also_asked}\", and the reply does not mention it. If the search returned "
+                                        "it, state the facts asked for; if not, say in the spoken text that it was not found, and name a result "
+                                        "that carries part of its name if there is one."))
+
+    # ---- "none was found" is not said of something the search returned
+    presented = [i.ref for i in answered]
+    for where, text in (("spoken", draft.spoken), ("abstain_reason", draft.abstain_reason or ""),
+                        *((rec.ref, f"{rec.why} {rec.caveat or ''}") for rec in draft.recommendations)):
+        same = found_all_the_same(text, evidence, besides=presented)
+        if same is not None:
+            what, item = same
+            price = best_price(item)
+            issues.append(Issue(code="found_called_absent", severity="revise", where=where,
+                                message=f"The text says no {what} was found, but the search returned {item.ref}, titled \"{item.title[:90]}\""
+                                        + (f" (${price:.2f})" if price is not None else "") + f". Say what {item.ref} is and how it differs from what was "
+                                        "asked (a set that includes it, another size, another price), or say that the exact product was not found "
+                                        f"and name {item.ref} as the closest. Do not say that nothing of the kind was found."))
+            break
+
     # ---- a question about a price is answered with a price, or with the statement that none was found
     # Live run, turn 15: "can you check today's price for the Aqua Beads Mega Set?" The set had a recall notice and a listing at
     # $18.99. The reply gave the recall, rightly did not recommend it, and said nothing about the price.
@@ -766,7 +885,9 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
             room = max(8, int((total_seconds * 0.95 * MAX_SPEED - around) * WORDS_PER_SECOND) - 1)
             issues.append(Issue(code="spoken_too_long", severity="revise", where="spoken",
                                 message=f"The spoken sentence is {spoken_words(first)} words when read aloud (a price counts as five to seven); with what is "
-                                        f"said around it there is room for {room}. Keep the name, one or two facts and the price."))
+                                        f"said around it there is room for {room}. Keep the name, one or two facts and the price in the first "
+                                        "sentence. Leave out nothing the shopper asked about: put it in a second sentence, which is said if "
+                                        "time allows and is shown on screen either way."))
     elif max_seconds is not None and estimate_seconds(first) > max_seconds + 1.0 and not any(i.code == "spoken_too_long" for i in issues):
         issues.append(Issue(code="spoken_too_long", severity="revise", where="spoken",
                             message=f"The spoken sentence takes about {estimate_seconds(first):.0f} seconds to say (a price counts as five words); "

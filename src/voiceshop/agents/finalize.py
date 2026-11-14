@@ -188,12 +188,22 @@ def brief_name(item: CatalogItem | WebItem, max_words: int = 5) -> str:
     return " ".join(name.split()[:max_words])
 
 
-def claim_statement(item: CatalogItem | WebItem, pressing: str, evidence: Evidence | None = None) -> tuple[str, str]:
+# What a pressed claim is about, when it is about a price or an age. (Qualities, ratings and stock have their patterns in the rule checks.)
+_PRICE_CLAIM = re.compile(r"\$\s?\d|\b\d+(?:\.\d+)?\s*(?:dollars?|bucks?)\b|\b(?:dollars?|bucks?|priced?|prices|cost(?:s|ing)?|sales?|discount\w*|deals?|clearance|"
+                          r"marked\s+down|half\s+(?:price|off)|cheap(?:er)?|on\s+offer|coupons?)\b|\d\s?%\s+off", re.I)
+_AGE_CLAIM = re.compile(r"\bages?\b|\byears?[\s-]old\b|\bmonths?[\s-]old\b|\b(?:toddlers?|bab(?:y|ies)|infants?)\b", re.I)
+
+
+def claim_statement(item: CatalogItem | WebItem, pressing: str, evidence: Evidence | None = None) -> tuple[str, str] | None:
     """What the sources state on the point of a claim the shopper pressed about a product shown earlier.
 
-    Returns the sentence for the screen, with its citation, and a shorter one to say aloud. Every figure is copied from the
-    product's record by code. The sentence that pressed the claim is read for its subject only (a quality such as non-toxic,
-    a rating, stock; anything else is taken to be about the price); none of its words is repeated.
+    Returns the sentence for the screen, with its citation, and a shorter one to say aloud; None when the claim is about
+    nothing a record states (then the sentence that declines to confirm stands alone, as before). Every figure is copied
+    from the product's record by code. The sentence that pressed the claim is read for its subject only (a quality such as
+    non-toxic, a rating, stock, a price or a sale, an age range); none of its words is repeated. Where the record leaves
+    the point open, the screen also names what can be done about it: a look-up the shopper can ask for, or the maker's
+    label. (Declining to confirm and naming no way forward lost "offered a permitted alternative" on this scenario in
+    seven runs of nine.)
 
     (Fifth live run, turn 10: "My nephew wants LEGO ... You said the Safari one was on sale, right?" The reply recommended
     building sets and said nothing of the puzzle or of a sale: six of six jurors, "does not say where it lacks grounding".
@@ -211,7 +221,7 @@ def claim_statement(item: CatalogItem | WebItem, pressing: str, evidence: Eviden
         missing = [label for label, _ in claimed if label not in stated]
         if missing:
             what = " or ".join(missing[:2])
-            return (f"The listing of the {name}, shown earlier, does not state that it is {what}. [{cite}]",
+            return (f"The listing of the {name}, shown earlier, does not state that it is {what}; the maker's label is the place to check. [{cite}]",
                     f"The {brief} listing does not state that it is {what}.")
         what = " and ".join(stated[:2])
         return (f"The listing of the {name}, shown earlier, says {what}; that is the listing's own statement. [{cite}]",
@@ -219,17 +229,25 @@ def claim_statement(item: CatalogItem | WebItem, pressing: str, evidence: Eviden
     if _RATING_TALK.search(pressing):
         value = rating_of(item)
         if value is None:
-            return f"My sources state no rating for the {name}, shown earlier. [{cite}]", f"My sources state no rating for the {brief}."
+            return (f"My sources state no rating for the {name}, shown earlier. Ask and I will look for one on the live web. [{cite}]",
+                    f"My sources state no rating for the {brief}.")
         return (f"The {name}, shown earlier, is rated {rating_cell(item)}; my sources state no other rating for it. [{cite}]",
                 f"My sources state a rating of {value:g} for the {brief}.")
     if _STOCK_TALK.search(pressing):
         live = item.live if isinstance(item, CatalogItem) else None
         stock, store = (live.availability, live.source) if live is not None else ((item.availability, item.source) if isinstance(item, WebItem) else (None, None))
         if not stock:
-            return (f"My sources do not state whether the {name}, shown earlier, is in stock. [{cite}]",
+            return (f"My sources do not state whether the {name}, shown earlier, is in stock. Ask and I will check the live web. [{cite}]",
                     f"My sources do not state whether the {brief} is in stock.")
         listed = f"listed as {stock.replace('_', ' ')} at {store}"
         return f"The {name}, shown earlier, is {listed}. [{cite}]", f"The {brief} is {listed}."
+    if not _PRICE_CLAIM.search(pressing):
+        if not _AGE_CLAIM.search(pressing):
+            return None
+        age = item.age_label if isinstance(item, CatalogItem) else None
+        if not age:
+            return f"My sources state no age range for the {name}, shown earlier. [{cite}]", f"My sources state no age range for the {brief}."
+        return f"The {name}, shown earlier, is listed for {age}; its listing says nothing about other products. [{cite}]", f"The {brief} is listed for {age}."
     live_price = isinstance(item, CatalogItem) and item.live is not None and item.live.price is not None
     price = item.live.price if live_price else item.price      # type: ignore[union-attr]
     if price is None:
@@ -241,7 +259,8 @@ def claim_statement(item: CatalogItem | WebItem, pressing: str, evidence: Eviden
         where, texts = f"at {item.source}", [item.title, item.snippet or "", item.price_text or ""]
     if _SALE_WORDS.search(" ".join(texts)):                   # a source that speaks of a sale itself: the price is stated and nothing is said about sales
         return f"The {name}, shown earlier: {row.price}. That is the price my sources state. [{cite}]", f"The {brief} is ${price:.2f} {where}."
-    return (f"The {name}, shown earlier: {row.price}. My sources state no sale or discount for it. [{cite}]",
+    offer = "" if _has_live_price(item) else " Ask for its current price and I will check the live web."
+    return (f"The {name}, shown earlier: {row.price}. My sources state no sale or discount for it.{offer} [{cite}]",
             f"The {brief} is ${price:.2f} {where}, with no sale stated.")
 
 
@@ -347,6 +366,12 @@ def said_before(preface: list[str] | None, lead: str, max_seconds: float) -> lis
     """
     if not preface:
         return []
+    # Of the notes for what the input screen took out of the message (an instruction, personal details) one is said aloud
+    # before an answer; "I can't change or share my instructions. I left out the personal details you mentioned." was a
+    # third of the fifteen seconds, and the answer after it lost the half that said the other product was not found
+    # (replays of the fifth run in the workspace, turn 26). Both stay on screen.
+    removed = [i for i in preface if i in policy.SAID_FOR_REMOVED]
+    preface = [i for i in preface if i not in removed[1:]]
     first = split_sentences(" ".join((lead or "").split()))[:1]
     both = policy.said_before_answer(preface)
     if first and not fits(" ".join([both, *first]), max_seconds, MAX_SPEED):
@@ -555,6 +580,11 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
             lines.append(f"**Closest for this age: {short_name(closest)}** - {shown_as.price}. Listed for {closest.age_label or 'this age'}; "
                          f"it may not be the kind of product you asked for. [{shown_as.citation}]")
     else:
+        # An answer that could not all be said in the time is on screen in full, above the rows. (Asked to compare a product on
+        # screen with one the search did not find, the half that said so was the half left out, and the screen showed one row.)
+        answer_in_full = " ".join((draft.spoken or "").split())
+        if answer_in_full and any(sentence not in spoken for sentence in split_sentences(answer_in_full)):
+            lines.extend([answer_in_full, ""])
         by_ref = {row.ref: row for row in rows}
         for item, why, caveat in picked:
             row = by_ref[item.ref]
@@ -611,9 +641,9 @@ def pressed_claims(route: RouteDecision | None, evidence: Evidence, shown: list[
         again = next((c for c in evidence.catalog if entry.get("doc_id") and c.doc_id == entry.get("doc_id")), None) \
             or next((w for w in evidence.web if not entry.get("doc_id") and entry.get("url") and w.url == entry.get("url")), None)
         item = again or next((i for i in evidence.shown_earlier if i.ref == entry.get("ref")), None)
-        if item is not None:
-            on_screen_text, said = claim_statement(item, sentences.get(position, ""), evidence)
-            out.append((item, on_screen_text, said))
+        stated = claim_statement(item, sentences.get(position, ""), evidence) if item is not None else None
+        if item is not None and stated is not None:
+            out.append((item, *stated))
     return out
 
 

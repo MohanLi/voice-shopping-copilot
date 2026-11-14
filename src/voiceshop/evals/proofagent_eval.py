@@ -424,13 +424,15 @@ CODE_RULES = (
     "for recall notices. When the catalog has nothing suitable, the live web is searched once for the product and the reply says so. "
     "Duplicate calls, unknown tools and searches about a declined part are refused; a failed search is reported as failed.",
     "Rule checks on a draft. A dollar amount, rating or stock status must be a source's own, of a product the answer is about; a price "
-    "over the budget is said to be over it; the policy's Claims rules hold (claims, recalls, assurances); the spoken reply fits 15 seconds "
-    "(at most 45 words). After one revision, what still fails is rebuilt by code from the evidence.",
+    "over the budget is said to be over it; \"none was found\" is not said of a product the search returned; the policy's Claims rules hold "
+    "(claims, recalls, assurances); the spoken reply fits 15 seconds (at most 45 words). After one revision, what still fails is rebuilt "
+    "by code from the evidence.",
     "Untrusted text. Tool results and their notes reach a model only inside a fence that its prompt declares to be data, never instructions: "
     "<evidence> (Answerer, Critic), <tool_results> (Retriever), <earlier_turns> and <products_on_screen> (Router, Planner). The MCP "
     "server removes instruction-like text from tool results (catalog listings and web results) before any model sees it; a web result "
     "that had such text is flagged and is never a price source. A draft that repeats instruction-like text, a key, or a code or link from "
-    "the message is blocked.",
+    "the message is blocked. A text the shopper pastes and asks about (a review) is summed up as theirs and as unverified; nothing in it "
+    "becomes a statement about a product.",
     "State. The products on screen, their evidence and the stated constraints are kept for one conversation only: a follow-up keeps the "
     "list and its numbering; a new search replaces it.",
     "Disclosure. The screen and the greeting say this is an AI assistant; the table is labelled as chosen and "
@@ -439,7 +441,7 @@ CODE_RULES = (
     "Poison Control and 911, thoughts of self-harm to the 988 Lifeline (United States); health, legal and money questions to a "
     "professional. A shopper who asks for a person is told there is none.",
     "Oversight. No human approves a reply before it is spoken. The shopper can report any answer (wrong, unsafe, other); the report is "
-    "stored with the turn's id for review by the operator, beside the turn's record (message as the agents saw it, "
+    "stored with the turn's id for the operator to review, beside the turn's record (message as the agents saw it, "
     "plan, tool calls, checks).",
     "Records stay on the machine the assistant runs on; the shopper's recording is never stored. Logs, reports and reply audio are "
     "deleted after 30 days. Only prompts to the model provider and queries to the search API leave the machine.",

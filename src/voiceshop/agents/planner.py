@@ -190,6 +190,26 @@ def describe_step(plan_step: PlanStep) -> str:
     return f'{plan_step.tool} "{plan_step.query}"' + (f" ({'; '.join(limits)})" if limits else "")
 
 
+def searched_under_another_name(route: RouteDecision, constraints: Constraints, plan: Plan) -> Constraints | None:
+    """The constraints without their product, when a question that points at nothing on screen is searched under another name.
+
+    A follow-up keeps the product of the request before it: "is there a cheaper one?" is still about bead kits. A replay
+    of the fifth run in the workspace: the list on screen was a putty; "Okay, the Barnyard puzzle is for my niece ... how
+    did you pick it?" named a product from four turns earlier, the Router called it a follow-up about nothing on screen,
+    and the Planner searched the catalog for the puzzle. The request stayed "Glimmer Putty Galaxy Tin", and the next
+    answer about the puzzle carried the caveat "this is not a putty product". When no word of the searches is a word of
+    the earlier product, that product is not what the turn is about, and it stops being a constraint.
+    """
+    if route.intent not in ("follow_up", "compare") or route.refers_to or not constraints.product:
+        return None
+    from voiceshop.agents.router import _name_words
+
+    searched = " ".join(s.query or "" for s in plan.steps if s.tool in ("rag.search", "web.search"))
+    if not searched.strip() or _name_words(constraints.product) & _name_words(searched):
+        return None
+    return constraints.model_copy(update={"product": None})
+
+
 def make_planner_node(deps: Deps):  # type: ignore[no-untyped-def]
     async def planner_node(state: TurnState) -> dict[str, Any]:
         started = time.perf_counter()
@@ -223,6 +243,10 @@ def make_planner_node(deps: Deps):  # type: ignore[no-untyped-def]
         except LLMCallError as exc:
             plan, meta, fallback = rules.plan(route, constraints, asked, shown, web_available=deps.web_available), {"model": "rules"}, fallback_note(exc)
         plan, notes = normalise_plan(plan, route, constraints, text, shown, deps)
+        renamed = searched_under_another_name(route, constraints, plan)
+        if renamed is not None:
+            constraints = renamed
+            notes = [*notes, "the search is for another product than the earlier request named: that product is no longer a constraint"]
 
         summary = STRATEGY_LABEL.get(plan.strategy, plan.strategy)
         if plan.steps:
@@ -239,6 +263,8 @@ def make_planner_node(deps: Deps):  # type: ignore[no-untyped-def]
                            constraints=render_constraints(constraints), adjustments=notes or None,
                            model=meta.get("model"), prompt=meta.get("prompt"), prompt_version=meta.get("version"), fallback=fallback)],
         }
+        if renamed is not None:
+            update["session_constraints"] = constraints
         if plan.strategy == "clarify":
             question = safe_question(plan.clarifying_question, text)
             update["answer"] = FinalAnswer(spoken=question, text=question, kind="clarify", follow_up_question=question)
