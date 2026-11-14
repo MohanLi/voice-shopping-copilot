@@ -176,6 +176,75 @@ def _has_live_price(item: CatalogItem | WebItem) -> bool:
     return isinstance(item, WebItem) or (item.live is not None and item.live.price is not None)
 
 
+_SALE_WORDS = re.compile(r"\b(?:sale|discount\w*|clearance|deals?|marked\s+down|price\s+drop|save\s+\$?\d|was\s+\$)|\d\s?%\s+off", re.I)
+
+
+def brief_name(item: CatalogItem | WebItem, max_words: int = 5) -> str:
+    """A product's name without its maker, for a sentence that has to be said in a few seconds ("Safari Wooden Chunky Puzzle")."""
+    name = short_name(item)
+    brand = (item.brand or "").strip() if isinstance(item, CatalogItem) else ""
+    if brand and name.lower().startswith(brand.lower() + " ") and len(name.split()) > len(brand.split()) + 1:
+        name = name[len(brand):].strip()
+    return " ".join(name.split()[:max_words])
+
+
+def claim_statement(item: CatalogItem | WebItem, pressing: str, evidence: Evidence | None = None) -> tuple[str, str]:
+    """What the sources state on the point of a claim the shopper pressed about a product shown earlier.
+
+    Returns the sentence for the screen, with its citation, and a shorter one to say aloud. Every figure is copied from the
+    product's record by code. The sentence that pressed the claim is read for its subject only (a quality such as non-toxic,
+    a rating, stock; anything else is taken to be about the price); none of its words is repeated.
+
+    (Fifth live run, turn 10: "My nephew wants LEGO ... You said the Safari one was on sale, right?" The reply recommended
+    building sets and said nothing of the puzzle or of a sale: six of six jurors, "does not say where it lacks grounding".
+    In the third live run the fixed sentence "I can only confirm what my sources state" stood alone before the picks: three
+    of six.)
+    """
+    from voiceshop.guardrails.output import _RATING_TALK, _STOCK_TALK, _claims_in, item_text, rating_of
+
+    row = table_row(0, item, "", None, evidence)
+    name, brief, cite = short_name(item), brief_name(item), row.citation
+    claimed = _claims_in(pressing)
+    if claimed:
+        support = item_text(item)
+        stated = [label for label, variants in claimed if any(v in support for v in variants)]
+        missing = [label for label, _ in claimed if label not in stated]
+        if missing:
+            what = " or ".join(missing[:2])
+            return (f"The listing of the {name}, shown earlier, does not state that it is {what}. [{cite}]",
+                    f"The {brief} listing does not state that it is {what}.")
+        what = " and ".join(stated[:2])
+        return (f"The listing of the {name}, shown earlier, says {what}; that is the listing's own statement. [{cite}]",
+                f"The {brief} listing says {what}.")
+    if _RATING_TALK.search(pressing):
+        value = rating_of(item)
+        if value is None:
+            return f"My sources state no rating for the {name}, shown earlier. [{cite}]", f"My sources state no rating for the {brief}."
+        return (f"The {name}, shown earlier, is rated {rating_cell(item)}; my sources state no other rating for it. [{cite}]",
+                f"My sources state a rating of {value:g} for the {brief}.")
+    if _STOCK_TALK.search(pressing):
+        live = item.live if isinstance(item, CatalogItem) else None
+        stock, store = (live.availability, live.source) if live is not None else ((item.availability, item.source) if isinstance(item, WebItem) else (None, None))
+        if not stock:
+            return (f"My sources do not state whether the {name}, shown earlier, is in stock. [{cite}]",
+                    f"My sources do not state whether the {brief} is in stock.")
+        listed = f"listed as {stock.replace('_', ' ')} at {store}"
+        return f"The {name}, shown earlier, is {listed}. [{cite}]", f"The {brief} is {listed}."
+    live_price = isinstance(item, CatalogItem) and item.live is not None and item.live.price is not None
+    price = item.live.price if live_price else item.price      # type: ignore[union-attr]
+    if price is None:
+        return f"My sources state no price for the {name}, shown earlier. [{cite}]", f"My sources state no price for the {brief}."
+    if isinstance(item, CatalogItem):
+        where = f"now at {item.live.source}" if live_price and item.live is not None else "in the catalog"
+        texts = [item.title, item.description or "", (item.live.note or "") if item.live is not None else ""]
+    else:
+        where, texts = f"at {item.source}", [item.title, item.snippet or "", item.price_text or ""]
+    if _SALE_WORDS.search(" ".join(texts)):                   # a source that speaks of a sale itself: the price is stated and nothing is said about sales
+        return f"The {name}, shown earlier: {row.price}. That is the price my sources state. [{cite}]", f"The {brief} is ${price:.2f} {where}."
+    return (f"The {name}, shown earlier: {row.price}. My sources state no sale or discount for it. [{cite}]",
+            f"The {brief} is ${price:.2f} {where}, with no sale stated.")
+
+
 def safety_notes(items: list[CatalogItem | WebItem], constraints: Constraints, route: RouteDecision | None,
                  evidence: Evidence | None = None, asked: str | None = None) -> tuple[list[str], list[str]]:
     """On-screen notes and (short) spoken sentences, decided from flags and constraints, never by a model.
@@ -371,6 +440,7 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
                  shown: list[dict[str, Any]] | None = None, on_screen: Evidence | None = None, weak_score: float | None = None,
                  asked: str | None = None) -> FinalAnswer:
     about_screen = route is not None and route.intent in ("follow_up", "compare")     # not a fresh list of picks
+    pressed = pressed_claims(route, evidence, shown, asked)
     picked: list[tuple[CatalogItem | WebItem, str, str | None]] = []
     for rec in draft.recommendations[:3]:
         item = evidence.get(rec.ref)
@@ -436,6 +506,12 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
     if question and abstained and draft.spoken.strip().endswith("?"):
         question = None                                      # the statement already ends by asking; a second question would only repeat it
     before = said_before(preface, draft.spoken, max_seconds)                              # what was declined is said first
+    if len(pressed) == 1:
+        # One claim about one product: what the sources state about it is said in place of "I can only confirm what my sources
+        # state", when it can be said together with the answer's first sentence. Both are on screen either way.
+        specific = [*said_before([i for i in preface or [] if i != "no_unconfirmed"], draft.spoken, max_seconds), pressed[0][2]]
+        if fits(" ".join([*specific, *split_sentences(" ".join((draft.spoken or "").split()))[:1]]), max_seconds, MAX_SPEED):
+            before = specific
     # The model's sentences are kept whole or not at all. (They used to be cut at a word count as well, which left
     # "... at a catalog price." and "... no live listing was found, so I." in the spoken reply of a live check.)
     spoken = " ".join(whole_sentences(draft.spoken, before, max_seconds, max_words, keep_prices=constraints.wants_current_info))
@@ -503,9 +579,42 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
                           web=[*evidence.web, *(w for w in (on_screen.web if on_screen else []) if evidence.get(w.ref) is None)])
         cited = [found for row in rows if (found := merged.get(row.ref)) is not None]
         evidence = merged
-    answer = FinalAnswer(spoken=spoken.strip(), text="\n".join(lines).strip(), table=rows, citations=citations_for(cited, evidence), notes=notes,
+    citations = citations_for(cited, evidence)
+    if pressed:                                               # after the fixed sentences, before the answer to the request itself
+        lines = [" ".join(on_screen_text for _, on_screen_text, _ in pressed), "", *lines]
+        citations += [c for c in citations_for([item for item, _, _ in pressed], evidence) if all(c.ref != known.ref for known in citations)]
+    answer = FinalAnswer(spoken=spoken.strip(), text="\n".join(lines).strip(), table=rows, citations=citations, notes=notes,
                          follow_up_question=question, kind=kind, grounded_by=grounded_by, revisions=revisions)  # type: ignore[arg-type]
-    return with_preface(answer, preface, max_seconds=max_seconds, said=" ".join(before) or None)
+    answer = with_preface(answer, preface, max_seconds=max_seconds, said=" ".join(before) or None)
+    if pressed and not preface:                               # no fixed sentence in front: the statement is said first all the same
+        answer = answer.model_copy(update={"spoken": f"{' '.join(before)} {answer.spoken}".strip()})
+    return answer
+
+
+def pressed_claims(route: RouteDecision | None, evidence: Evidence, shown: list[dict[str, Any]] | None,
+                   asked: str | None) -> list[tuple[CatalogItem | WebItem, str, str]]:
+    """For each product on screen that a new request presses a claim about: the product, the sentence for the screen, the one to say.
+
+    The product is the record that was on screen (``Evidence.shown_earlier``), or this turn's own result when the search
+    found the same product again. At most two are answered; a third would crowd out the answer to the request.
+    """
+    if route is None or route.intent != "product_search" or not route.pressed or not shown:
+        return []
+    from voiceshop.agents.router import claims_by_position
+
+    sentences = claims_by_position(asked or "", shown)
+    out: list[tuple[CatalogItem | WebItem, str, str]] = []
+    for position in route.pressed[:2]:
+        if not 0 < position <= len(shown):
+            continue
+        entry = shown[position - 1]
+        again = next((c for c in evidence.catalog if entry.get("doc_id") and c.doc_id == entry.get("doc_id")), None) \
+            or next((w for w in evidence.web if not entry.get("doc_id") and entry.get("url") and w.url == entry.get("url")), None)
+        item = again or next((i for i in evidence.shown_earlier if i.ref == entry.get("ref")), None)
+        if item is not None:
+            on_screen_text, said = claim_statement(item, sentences.get(position, ""), evidence)
+            out.append((item, on_screen_text, said))
+    return out
 
 
 def shown_from(answer: FinalAnswer) -> list[dict[str, Any]]:
@@ -564,7 +673,8 @@ def remember(state: TurnState, answer: FinalAnswer) -> dict[str, Any]:
         if is_new_request or new_catalog_search or not state.get("shown") or earlier is None or current is None:
             update["shown"] = shown_from(answer)          # a new list replaces what was on screen
             update["shown_constraints"] = constraints     # ... and it stays the list for this budget, age and product (see router_node)
-            update["last_evidence"] = behind_the_rows(answer, current, earlier)
+            kept = behind_the_rows(answer, current, earlier)
+            update["last_evidence"] = kept.model_copy(update={"shown_earlier": []}) if kept is not None and kept.shown_earlier else kept
         else:
             # The turn was about products already on screen: positions ("the third one") stay valid, and what was
             # learnt about them (live offers, new web results) is added to what is remembered.

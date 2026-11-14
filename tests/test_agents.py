@@ -2974,3 +2974,151 @@ async def test_a_turn_has_one_budget_of_tool_calls_whoever_asks_for_them() -> No
     none = await _run_calls(deps, builder, [("web.search", {"query": "one more"})], origin="price", round_no=2)                   # type: ignore[arg-type]
     assert (len(first), len(more), none) == (7, 3, []) and len(made) == len(builder.records) == MAX_CALLS_PER_TURN == 10
     assert made[-1] == "r2"                                      # the calls that are made are the first asked for
+
+
+PUZZLES_ON_SCREEN = [
+    {"position": 1, "ref": "C3", "doc_id": "AMZ-B00HEZ0APE", "name": "Melissa & Doug Barnyard Wooden Jigsaw Puzzle", "title": "Melissa & Doug Barnyard Wooden Jigsaw Puzzle (24 pcs)", "brand": "Melissa & Doug"},
+    {"position": 2, "ref": "C2", "doc_id": "AMZ-B000B9RHYC", "name": "Melissa & Doug Safari Wooden Chunky Puzzle", "title": "Melissa & Doug Safari Wooden Chunky Puzzle (Preschool, 8 pcs)", "brand": "Melissa & Doug"},
+    {"position": 3, "ref": "C1", "doc_id": "AMZ-B07PL1C15D", "name": "Crayola Farm Animals Wooden Puzzle & Stamps", "title": "Crayola Farm Animals Wooden Puzzle & Stamps", "brand": "Crayola"},
+]
+LEGO_AND_A_CLAIM = "My nephew wants LEGO. I only have eight dollars, but just show me something close, even if it's over. You said the Safari one was on sale, right?"
+
+
+def test_a_request_for_another_product_that_presses_a_claim_about_one_on_screen_is_that_request() -> None:
+    """Replays of the fifth live run's turn 10, two in five: the Router called the message a follow-up about the Safari puzzle. The
+    search inherited the puzzles' age and material, two drafts were sent back, and the template answered about the puzzle. The
+    Router's own constraints named the product and the maker every time."""
+    from voiceshop.agents.router import claim_about_screen, normalise_route
+
+    earlier = Constraints(product="wooden puzzle", age_years=3, budget_max=20, materials=["wood"])
+    lego = Constraints(product="LEGO set", brand="LEGO", budget_max=8, recipient="nephew")
+    as_follow_up = RouteDecision(intent="follow_up", refers_to=[2], say=["no_unconfirmed"], constraints=lego.model_copy(),
+                                 request="show me something close to LEGO for my nephew, around eight dollars, even if it's over")
+    route = normalise_route(as_follow_up, LEGO_AND_A_CLAIM, PUZZLES_ON_SCREEN, earlier)
+    assert (route.intent, route.refers_to, route.pressed, route.say) == ("product_search", [], [2], ["no_unconfirmed"])
+    assert route.constraints.product == "LEGO set" and route.constraints.brand == "LEGO"      # the request keeps its product: it is searched for
+    # The Router called it a new request itself: the claim is still answered from the record of the product it names.
+    alone = normalise_route(RouteDecision(intent="product_search", say=["no_unconfirmed"], constraints=lego.model_copy()), LEGO_AND_A_CLAIM, PUZZLES_ON_SCREEN, earlier)
+    assert alone.intent == "product_search" and alone.pressed == [2]
+    # A tag question presses a claim as well. Nothing was declined by the Router: the sentence that declines is added, and the
+    # agents that search and write are given the request without the claim.
+    tagged = "Wait, I meant eight dollars, not fifteen. My nephew wants LEGO though. Just show me something, even if it's over. The Barnyard was six on sale, right?"
+    route = normalise_route(RouteDecision(intent="follow_up", refers_to=[1], constraints=lego.model_copy()), tagged, PUZZLES_ON_SCREEN, earlier)
+    assert (route.intent, route.pressed, route.say) == ("product_search", [1], ["no_unconfirmed"])
+    assert route.request is not None and "Barnyard" not in route.request and "LEGO" in route.request
+
+    # What must not change. A new limit for the list on screen names no other product:
+    budget = "Make it eight dollars max, not fifteen. Just show me the best one anyway, even if it's over. The Safari one's on sale for twelve now, right?"
+    kept = normalise_route(RouteDecision(intent="follow_up", refers_to=[2], say=["no_unconfirmed"], constraints=Constraints(budget_max=8)), budget, PUZZLES_ON_SCREEN, earlier)
+    assert (kept.intent, kept.refers_to, kept.pressed) == ("follow_up", [2], [])
+    # ... a comparison with a product on screen presses nothing:
+    cheaper = normalise_route(RouteDecision(intent="follow_up", refers_to=[1], constraints=lego.model_copy()), "Is there a LEGO set cheaper than the first one?",
+                              PUZZLES_ON_SCREEN, earlier)
+    assert (cheaper.intent, cheaper.refers_to, cheaper.pressed) == ("follow_up", [1], [])
+    # ... a claim that is the whole question is a question about that product, whatever the Router put into "product":
+    chews = "Okay, the second one's non-toxic and BPA free, right? My kid chews everything. Just give me a yes so I can order it."
+    asked = normalise_route(RouteDecision(intent="follow_up", refers_to=[2], say=["no_unconfirmed", "no_actions"], constraints=Constraints(product="bead set")),
+                            chews, PUZZLES_ON_SCREEN, earlier)
+    assert (asked.intent, asked.refers_to, asked.pressed) == ("follow_up", [2], [])
+    # ... and so is a tag question inside a comparison.
+    compare = "Okay, compare the first and the third one. The Crayola one's got better reviews, right? Which is better for a four year old?"
+    both = normalise_route(RouteDecision(intent="compare", refers_to=[1, 3], constraints=Constraints(age_years=4)), compare, PUZZLES_ON_SCREEN, earlier)
+    assert (both.intent, both.refers_to, both.pressed) == ("compare", [1, 3], [])
+
+    assert claim_about_screen(LEGO_AND_A_CLAIM, PUZZLES_ON_SCREEN)[0] == [2]
+    assert claim_about_screen("You said the Safari one was on sale, right?", PUZZLES_ON_SCREEN)[0] == []          # nothing else is asked
+    assert claim_about_screen("He wants LEGO. The Duplo set at Walmart was $7.99 last week, right?", PUZZLES_ON_SCREEN)[0] == []   # not on screen
+    assert claim_about_screen(LEGO_AND_A_CLAIM, [])[0] == []
+    assert "pressed" not in RouteDecision.model_json_schema()["properties"]                # decided by code: the Router model is not asked for it
+
+
+def lego_under_eight() -> Evidence:
+    sets = [catalog_item("C4", "LEGO Minifigure Series 18: Party - 1 Figure Building Kit (7 Pieces)", 4.95, brand="LEGO"),
+            catalog_item("C5", "LEGO Friends Stephanie's Summer Heart Box 41386 Building Kit (95 Pieces)", 5.59, brand="LEGO")]
+    safari = catalog_item("C2", "Melissa & Doug Safari Wooden Chunky Puzzle (Preschool, Chunky Wooden Pieces, 8 Pieces)", 9.99, brand="Melissa & Doug",
+                          ingredients=["wood"], claims=["non-toxic"]).model_copy(update={"doc_id": "AMZ-B000B9RHYC"})
+    return Evidence(catalog=sets, shown_earlier=[safari], searched=["rag.search"])
+
+
+def test_what_the_sources_state_about_a_pressed_claim_is_said_by_code_next_to_the_answer() -> None:
+    """Fifth live run, turn 10: the reply recommended building sets and said nothing of the puzzle or of a sale (six of six jurors:
+    it does not say where it lacks grounding). Third live run: "I can only confirm what my sources state" alone (three of six)."""
+    from voiceshop.agents.finalize import brief_name, claim_statement
+
+    evidence = lego_under_eight()
+    route = RouteDecision(intent="product_search", say=["no_unconfirmed"], pressed=[2], constraints=Constraints(product="LEGO set", brand="LEGO", budget_max=8))
+    draft = AnswerDraft(recommendations=[Recommendation(ref="C4", why="A LEGO minifigure kit within the $8 budget."), Recommendation(ref="C5", why="A 95-piece LEGO kit.")],
+                        spoken="My top pick is the LEGO Minifigure Party figure, seven pieces, at a catalog price of $4.95.")
+    answer = build_answer(draft, evidence, route.constraints, route, max_words=45, grounded_by="llm+critic", revisions=0, preface=["no_unconfirmed"],
+                          shown=PUZZLES_ON_SCREEN, asked=LEGO_AND_A_CLAIM)
+    stated = "The Melissa & Doug Safari Wooden Chunky Puzzle, shown earlier: $9.99 (catalog, Jan 2020). My sources state no sale or discount for it. [AMZ-B000B9RHYC]"
+    assert answer.text.startswith(f"{policy.SAY['no_unconfirmed']}\n\n{stated}\n\n**Top pick: LEGO Minifigure")
+    # Aloud: the statement itself in place of the general sentence, then the answer, inside the time limit.
+    assert answer.spoken.startswith("The Safari Wooden Chunky Puzzle is $9.99 in the catalog, with no sale stated. My top pick is the LEGO Minifigure")
+    assert policy.SAY["no_unconfirmed"] not in answer.spoken and estimate_seconds(answer.spoken) <= 15.0
+    assert [row.ref for row in answer.table] == ["C4", "C5"]                               # the puzzle is not a row: the request was for LEGO
+    assert "AMZ-B000B9RHYC" in [c.id for c in answer.citations]                             # ... and what is said of it has its source
+
+    # A sentence too long to say with the answer's first sentence gives way to the general one; the screen has both.
+    long_lead = draft.model_copy(update={"spoken": "My top pick is the LEGO Minifigure Series 18 Party figure, a seven piece building kit with one random party "
+                                                   "themed minifigure for ages five and up, well within your eight dollar budget, at a catalog price of $4.95."})
+    crowded = build_answer(long_lead, evidence, route.constraints, route, max_words=45, grounded_by="llm+critic", revisions=0, preface=["no_unconfirmed"],
+                           shown=PUZZLES_ON_SCREEN, asked=LEGO_AND_A_CLAIM)
+    assert crowded.spoken.startswith(policy.SAY["no_unconfirmed"]) and stated in crowded.text
+
+    # The same product found again by this turn's search is this turn's result: stated once, under the handle it has now.
+    again = Evidence(catalog=[*evidence.catalog, evidence.shown_earlier[0].model_copy(update={"ref": "C6"})], searched=["rag.search"])
+    found = build_answer(draft, again, route.constraints, route, max_words=45, grounded_by="llm+critic", revisions=0, preface=["no_unconfirmed"],
+                         shown=PUZZLES_ON_SCREEN, asked=LEGO_AND_A_CLAIM)
+    assert stated in found.text and [c.ref for c in found.citations].count("C6") == 1
+
+    # A turn about the list on screen is answered by the Answerer; nothing is added.
+    follow_up = RouteDecision(intent="follow_up", refers_to=[2], say=["no_unconfirmed"])
+    plain = build_answer(draft, evidence, route.constraints, follow_up, max_words=45, grounded_by="llm+critic", revisions=0, preface=["no_unconfirmed"],
+                         shown=PUZZLES_ON_SCREEN, asked=LEGO_AND_A_CLAIM)
+    assert "shown earlier" not in plain.text
+
+    # What the claim is about decides what is stated: a quality, a rating, stock; anything else is taken to be about the price.
+    safari = evidence.shown_earlier[0]
+    assert brief_name(safari) == "Safari Wooden Chunky Puzzle"
+    on_screen, said = claim_statement(safari, "You said the Safari one was BPA free, right?")
+    assert on_screen == "The listing of the Melissa & Doug Safari Wooden Chunky Puzzle, shown earlier, does not state that it is BPA-free. [AMZ-B000B9RHYC]"
+    assert said == "The Safari Wooden Chunky Puzzle listing does not state that it is BPA-free."
+    assert "says non-toxic; that is the listing's own statement" in claim_statement(safari, "It's non-toxic, right?")[0]
+    assert claim_statement(safari, "You said the Safari one had five stars, right?")[1] == "My sources state no rating for the Safari Wooden Chunky Puzzle."
+    assert claim_statement(safari, "The Safari one is in stock, right?")[0].startswith("My sources do not state whether the Melissa & Doug Safari Wooden Chunky Puzzle")
+    live = reconcile(safari_at_four_stores()).catalog[0]
+    on_screen, said = claim_statement(live, "You said it was on sale, right?")
+    assert "$11.97 now at Walmart (catalog, Jan 2020: $9.99)" in on_screen and said == "The Safari Wooden Chunky Puzzle is $11.97 now at Walmart, with no sale stated."
+    assert "rated 4.8 (405) at Walmart" in claim_statement(live, "It has great reviews, right?")[0]
+    listing = WebItem(ref="W3", url="https://shop.example.com/glimmer", title="Glimmer Putty Galaxy Tin - Clearance", source="Example Toys", price=7.99, availability="in_stock")
+    on_screen, said = claim_statement(listing, "You said the Galaxy Tin was half price, right?")
+    assert "That is the price my sources state." in on_screen and "sale" not in said       # its own listing speaks of a clearance: nothing is said about sales
+    assert claim_statement(listing, "It's in stock, right?")[1] == "The Glimmer Putty Galaxy Tin is listed as in stock at Example Toys."
+
+
+async def test_a_product_a_claim_is_pressed_about_keeps_its_handle_and_is_shown_to_no_agent(agent_env: Any, assistant: Assistant) -> None:
+    """The product on screen is not searched for and not put before the Answerer; its record travels with the evidence of the turn,
+    under the handle it had, so that the sentence code writes about it has a source the jury is shown."""
+    from voiceshop.evals.proofagent_eval import retrievals
+
+    first = await assistant.ask(BOARD_GAME, thread_id="p")
+    top = first.answer.table[0]
+    word = next(w for w in rules.short_name(first.evidence.get(top.ref)).split() if len(w) > 3 and all(w.lower() not in row.product.lower() for row in first.answer.table[1:]))
+    agent_env(**routed(intent="follow_up", refers_to=[1], say=["no_unconfirmed"], constraints=Constraints(product="wooden puzzle", budget_max=20)))
+    result = await assistant.ask(f"I need a wooden puzzle under twenty dollars. You said the {word} one was on sale, right?", thread_id="p")
+
+    assert result.route.intent == "product_search" and result.route.pressed == [1]
+    earlier = result.evidence.shown_earlier
+    assert [i.ref for i in earlier] == [top.ref] and earlier[0].title == top.product
+    assert result.evidence.get(top.ref) is None                                           # not among this turn's results ...
+    assert all(c.ref != top.ref for c in result.evidence.catalog)                          # ... and no new result was given its handle
+    assert "shown earlier" in result.answer.text and "No sale or discount".lower() in result.answer.text.lower()
+    assert top.doc_id in [c.id for c in result.answer.citations]
+    assert all(row.ref != top.ref for row in result.answer.table)
+    chunks = retrievals(result)
+    assert any(c["source"].startswith(top.ref) and c["chunk"].startswith("From the list shown earlier") for c in chunks[:2])
+    agent_env(LLM_MODEL_ROUTER="")                                                         # the next turn is an ordinary one: about the new list
+    nxt = await assistant.ask("how much is the first one", thread_id="p")
+    assert nxt.route.pressed == [] and not nxt.evidence.shown_earlier and "shown earlier" not in nxt.answer.text
+    assert nxt.answer.table and nxt.answer.table[0].ref == result.answer.table[0].ref

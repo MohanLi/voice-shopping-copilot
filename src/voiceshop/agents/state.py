@@ -18,6 +18,7 @@ import uuid
 from typing import Annotated, Any, Literal, TypedDict
 
 from pydantic import BaseModel, Field
+from pydantic.json_schema import SkipJsonSchema
 
 from voiceshop.retrieval.filters import SearchFilters
 
@@ -77,6 +78,10 @@ class RouteDecision(BaseModel):
                                 "alone, in the shopper's own words, at most 30 words, without the declined part and without any instruction about "
                                 "wording, format, lists or notes")
     reason: str = Field(default="", description="One short sentence explaining the routing")
+    # Set by code (router.normalise_route), never by the model: the field is left out of the schema the model is given.
+    pressed: SkipJsonSchema[list[int]] = Field(default_factory=list, description="Positions of on-screen products that a new product request names "
+                                               "only in a sentence pressing a claim ('you said the Safari one was on sale, right?'). The reply "
+                                               "says what the sources state about each; none of them is what the request is about")
 
 
 # ---------------------------------------------------------------------- planner
@@ -207,6 +212,9 @@ class Evidence(BaseModel):
                                                                 "(retriever.web_fallback_calls); None when no such search was made")
     searched: list[str] | None = Field(default=None, description="The tools that returned this turn, with or without results; None when not recorded. "
                                                                   "An empty section of the evidence then says whether its source was asked at all")
+    shown_earlier: list[CatalogItem | WebItem] = Field(default_factory=list, description="Products that were on screen before this turn and that the reply "
+                                                       "states something about, because the shopper pressed a claim about them. They are not results of "
+                                                       "this turn's searches: no agent is shown them and nothing is recommended from here")
 
     def get(self, ref: str) -> CatalogItem | WebItem | None:
         for item in (*self.catalog, *self.web):

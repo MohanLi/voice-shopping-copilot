@@ -183,18 +183,23 @@ def retrievals(result: TurnResult, *, budget_chars: int = 1800) -> list[dict[str
         return []
     cited = [row.ref for row in result.answer.table if row.why] or [row.ref for row in result.answer.table]      # the rows the answer is about
     cited += [c.ref for c in result.answer.citations if c.ref not in cited]                # an abstention cites without a table
-    items: list[CatalogItem | WebItem] = [*evidence.catalog, *evidence.web]
-    items.sort(key=lambda i: (cited.index(i.ref) if i.ref in cited else len(cited) + 1))
+    items: list[CatalogItem | WebItem] = [*evidence.catalog, *evidence.web, *evidence.shown_earlier]
+    # A product shown earlier that the reply states something about (a claim the shopper pressed) comes right after the first row:
+    # the list is cut to a size, and the record behind a sentence of the reply must not be what is cut.
+    earlier = {i.ref for i in evidence.shown_earlier}
+    items.sort(key=lambda i: (0.5 if i.ref in earlier else cited.index(i.ref) if i.ref in cited else len(cited) + 1))
     out: list[dict[str, Any]] = []
     used = 0
     for item in items:
-        detail = item.ref in cited[:3]
+        detail = item.ref in cited[:3] or item.ref in earlier
         if isinstance(item, CatalogItem):
             row: dict[str, Any] = {"source": f"{item.ref} {item.doc_id}", "chunk": _catalog_chunk(item, detail)}
             if item.rerank_score is not None:
                 row["score"] = round(float(item.rerank_score), 2)
         else:
             row = {"source": f"{item.ref} {item.source or 'web'} ({item.kind})", "chunk": _web_chunk(item, detail)}
+        if item.ref in earlier:
+            row["chunk"] = "From the list shown earlier in this conversation, not a result of this turn's search: " + row["chunk"]
         size = len(json.dumps(row))
         if out and used + size > budget_chars:
             break
@@ -411,7 +416,8 @@ CODE_RULES = (
     "what the input screen removed (no_instructions, pii_note); 4 identity and courtesies. Before a product answer at most two are "
     "spoken, in a short form; all that were kept are on screen.",
     "Grounding. Every table cell and citation is copied from tool results by code: a catalog product is cited by "
-    "its document id, a live result by its URL, its store or site and the time it was retrieved. Code does the price arithmetic.",
+    "its document id, a live result by its URL, its store or site and the time it was retrieved. Code does the price arithmetic. When a "
+    "request for another product presses a claim about a product shown earlier, code states what that product's record says on the point.",
     "Search. The budget, age and brand the shopper stated are sent as filters whatever a model wrote. When too few products meet them the "
     "catalog tool loosens some (never a stated age range or a safety exclusion) and marks what each product misses, which the reply "
     "says. For a child under three no web result is shown. A product looked up on the web is checked "

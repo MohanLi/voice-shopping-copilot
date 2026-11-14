@@ -577,6 +577,18 @@ async def _rule_round(deps: Deps, plan: Plan, constraints: Constraints, builder:
     return [f"rule-based mode: live price check for {len(calls)} product(s)"]
 
 
+def pressed_products(route: RouteDecision | None, shown: list[dict[str, Any]] | None, earlier: Evidence | None) -> list[CatalogItem | WebItem]:
+    """The products on screen that a new request presses a claim about (``RouteDecision.pressed``), as they were remembered.
+
+    They are not searched for and no agent is shown them: the turn is about another product. What the sources state about
+    them is said by code (``finalize.claim_statements``), from the record that was on screen.
+    """
+    if route is None or route.intent != "product_search" or not route.pressed or earlier is None:
+        return []
+    refs = [str((shown or [])[p - 1].get("ref")) for p in route.pressed if 0 < p <= len(shown or [])]
+    return [item for ref in refs if (item := earlier.get(ref)) is not None]
+
+
 def make_retriever_node(deps: Deps):  # type: ignore[no-untyped-def]
     async def retriever_node(state: TurnState) -> dict[str, Any]:
         started = time.perf_counter()
@@ -600,6 +612,9 @@ def make_retriever_node(deps: Deps):  # type: ignore[no-untyped-def]
             elif meant is not None:
                 builder.seed(earlier, meant)                  # a new search that also points at a product on screen: it stays in the evidence, under its handle
                 kept = list(meant)
+        pressed = pressed_products(route, state.get("shown"), earlier)
+        if pressed:
+            builder.reserve(earlier)                          # type: ignore[arg-type]  # their handles go on meaning them (see shown_earlier)
 
         planned_calls = [(s.tool, step_arguments(s)) for s in plan.steps]
         planned = await _run_calls(deps, builder, planned_calls, origin="plan", round_no=0) if planned_calls else []
@@ -634,6 +649,10 @@ def make_retriever_node(deps: Deps):  # type: ignore[no-untyped-def]
                 error = f"{type(exc).__name__}: {str(exc)[:200]}"
 
         evidence = builder.build()
+        if pressed:
+            # A product found again by this turn's search is in the evidence already, under a new handle; it is not kept twice.
+            found = {c.doc_id for c in evidence.catalog} | {w.url for w in evidence.web}
+            evidence = evidence.model_copy(update={"shown_earlier": [i for i in pressed if (i.doc_id if isinstance(i, CatalogItem) else i.url) not in found]})
         failed = [r for r in builder.records if not r.ok]
         summary = (f"{len(builder.records)} tool call(s): {len(evidence.catalog)} catalog product(s), {len(evidence.web)} web result(s)"
                    + (f" | {len(failed)} failed" if failed else "") + (f" | constraints loosened: {', '.join(evidence.relaxed)}" if evidence.relaxed else "")
@@ -671,7 +690,7 @@ def make_widen_node(deps: Deps):  # type: ignore[no-untyped-def]
         builder = EvidenceBuilder()
         builder.reserve(previous)                             # a handle of this turn is never given to another result
         on_screen: Evidence | None = state.get("last_evidence")
-        if on_screen is not None and route is not None and route.intent in ("follow_up", "compare"):
+        if on_screen is not None and (previous.shown_earlier or (route is not None and route.intent in ("follow_up", "compare"))):
             builder.reserve(on_screen)                        # nor a handle that is on screen
         await _run_calls(deps, builder, calls, origin="fallback", round_no=0)
         records = [*log, *builder.records]

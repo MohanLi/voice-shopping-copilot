@@ -182,11 +182,70 @@ _WRITES = re.compile(
 _WANTS_AGREEMENT = re.compile(
     r"\byou\s+(?:said|told|mentioned|promised|confirmed|agreed|already|did\s+say)\b|\b(?:just\s+)?confirm(?:\s+(?:it|that|this))?\b"
     r"|\bgive\s+me\s+a\s+yes\b|\bsay\s+yes\b|\bas\s+you\s+(?:said|know)\b|\badmit\s+(?:it|that)\b", re.I)
+# The tag that turns a statement into a claim to be agreed with: "The Barnyard was six on sale, right?"
+_TAG_QUESTION = re.compile(
+    r"(?:,|\s)\s*(?:right|correct|yeah|yes|no|true|is(?:n'?t| not)\s+it|was(?:n'?t| not)\s+it|does(?:n'?t| not)\s+it|did(?:n'?t| not)\s+(?:it|you)"
+    r"|are(?:n'?t| not)\s+they|do(?:n'?t| not)\s+they|were(?:n'?t| not)\s+they)\s*\?+\s*$", re.I)
+# Words that point at the list on screen without naming a product on it.
+_POINTS_AT_SCREEN = re.compile(r"\b(?:that|this)\s+one\b|\b(?:those|these)\s+(?:ones|two|three)\b|\bthe\s+(?:other|same)\s+one\b|\bboth\s+of\s+them\b", re.I)
 # A request for products to choose from, as opposed to a question about the products on screen.
 _ASKS_FOR_OPTIONS = re.compile(
     r"\b(?:what|which)\b[^.?!]{0,40}\b(?:options?|choices?|ones|products?|items?|kinds?|sets?|kits?|alternatives?)\b[^.?!]{0,40}\b(?:are|is|do\s+you|have|carry|in\s+the\s+catalog)\b"
     r"|\b(?:list|show\s+me|find\s+me|give\s+me|recommend|suggest|any)\b[^.?!]{0,30}\b(?:options?|choices?|alternatives?|others?|more)\b"
     r"|\bwhat\b[^.?!]{0,30}\b(?:are|is)\s+(?:there\s+)?in\s+(?:the|your)\s+catalog\b|\b(?:do\s+you\s+have|are\s+there)\s+any\b", re.I)
+
+
+def claim_about_screen(text: str, shown: list[dict[str, Any]] | None) -> tuple[list[int], str]:
+    """Products on screen that a message names only where it presses a claim, and the message without those sentences.
+
+    "My nephew wants LEGO. I only have eight dollars, but just show me something close, even if it's over. You said the
+    Safari one was on sale, right?" asks for a LEGO set. The puzzle on screen is named in the last sentence alone, which
+    states something and asks for agreement. Positions are returned only when the rest of the message stands on its own:
+    it is not empty, and it neither names a product on screen nor points at one ("the first one", "that one").
+    """
+    if not shown:
+        return [], text
+    from voiceshop.speech.text import split_sentences
+
+    sentences = split_sentences(" ".join((text or "").split()))
+    claims = [s for s in sentences if _WANTS_AGREEMENT.search(s) or _TAG_QUESTION.search(s)]
+    rest = " ".join(s for s in sentences if s not in claims)
+    if not claims or len(rest.split()) < 3:
+        return [], text
+    if named_on_screen(rest, shown) or rules._REFERS.search(rest) or _POINTS_AT_SCREEN.search(rest):
+        return [], text
+    positions = [p for p in claims_by_position(text, shown) if 0 < p <= len(shown)]
+    return positions, (rest if positions else text)
+
+
+def claims_by_position(text: str, shown: list[dict[str, Any]] | None) -> dict[int, str]:
+    """The sentences of a message that press a claim, by the position of the product on screen each one names."""
+    from voiceshop.speech.text import split_sentences
+
+    out: dict[int, str] = {}
+    for sentence in split_sentences(" ".join((text or "").split())):
+        if not (_WANTS_AGREEMENT.search(sentence) or _TAG_QUESTION.search(sentence)):
+            continue
+        ordinal = [(rules._ORDINALS[m.group(1).lower()] if rules._ORDINALS[m.group(1).lower()] > 0 else len(shown or [])) for m in rules._REFERS.finditer(sentence)]
+        for position in dict.fromkeys([*named_on_screen(sentence, shown), *ordinal]):
+            out[position] = f"{out[position]} {sentence}" if position in out else sentence
+    return out
+
+
+def asks_for_another(new: Constraints, earlier: Constraints | None, shown: list[dict[str, Any]] | None, asked: str) -> bool:
+    """Does ``asked`` name a product, or a maker, that the list on screen is not about?
+
+    The Router's constraints say which product; ``asked`` (the message without the claim it presses) has to name it too,
+    by a word of the product or by the maker. What the Router put into "product" for a question about the list on screen
+    is not a request for it ("Melissa & Doug bead set box dimensions", on a replay).
+    """
+    from voiceshop.agents.reconcile import brand_named
+
+    said = {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", asked.lower())}
+    on_screen = [f"{entry.get('title') or entry.get('name') or ''} {entry.get('brand') or ''}" for entry in shown or []]
+    if new.brand and brand_named(new.brand, asked) and not any(brand_named(new.brand, title) for title in on_screen):
+        return True
+    return bool(_name_words(new.product) & said) and names_another_product(new, earlier)
 
 
 def all_on_screen(text: str, shown: list[dict[str, Any]] | None) -> list[int]:
@@ -234,6 +293,7 @@ def not_the_childs(constraints: Constraints, product: str | None, *on_screen: st
 def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]] | None, earlier: Constraints | None = None) -> RouteDecision:
     """Code backstops applied to whatever the Router model returned."""
     c = route.constraints
+    route.pressed = []                                        # decided here, by rule (see claim_about_screen)
     if c.budget_max is not None and c.budget_max <= 0:
         c.budget_max = None
     if c.budget_min is not None and (c.budget_min <= 0 or (c.budget_max is not None and c.budget_min > c.budget_max)):
@@ -306,6 +366,16 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
         # jurors of four, "the legitimate task was not answered"). Its restatement is believed over its label, as elsewhere here.
         route.intent, route.refers_to = "product_search", []
     route.refers_to = [p for p in route.refers_to if shown and 0 < p <= len(shown)]
+    if route.intent in ("follow_up", "compare") and route.refers_to:
+        # A request for another product that also presses a claim about a product on screen is a request for that other product.
+        # "My nephew wants LEGO. I only have eight dollars ... You said the Safari one was on sale, right?": two replays in five
+        # the Router called it a follow-up about the Safari puzzle. The search then inherited the puzzles' age and material, the
+        # drafts were sent back twice and the template answered about the puzzle; nothing was said about LEGO. The Router's own
+        # constraints named the product and the maker every time. The claim is answered from the puzzle's record, by code
+        # (finalize.claim_statements); the turn is the search the rest of the message asks for.
+        claimed, rest = claim_about_screen(text, shown)
+        if claimed and set(route.refers_to) <= set(claimed) and asks_for_another(c, earlier, shown, rest):
+            route.intent, route.refers_to = "product_search", []
     if route.intent in ("follow_up", "compare") and route.refers_to and any(i.startswith("no_") for i in route.say) \
             and about_assistant(route.request) and not product_question(text, shown)[0]:
         # The one question the Router passed on is about the assistant, which a fixed sentence already answers, and no
@@ -334,6 +404,14 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
             # Another product is another request: the brand, material and budget of the last one are not carried over.
             # (After one question about a "Zentrix" hoverboard, six later searches were for "Zentrix" beads, putty and pitchers.)
             route.intent = "product_search"
+    if route.intent == "product_search" and shown:
+        # What the sources state about a product on screen that the message names only to press a claim is said by code, next
+        # to the answer to the request itself. The sentence that declines to confirm is said with it.
+        route.pressed, rest = claim_about_screen(text, shown)
+        if route.pressed and "no_unconfirmed" not in route.say:
+            route.say = ["no_unconfirmed", *route.say][:MAX_SAY]                                        # type: ignore[assignment]
+        if route.pressed and not route.request:
+            route.request = rest                              # the agents that search and write are given the request without the claim
     if route.intent in SHOPPING:
         # A greeting or a thank-you in front of a request is answered by answering the request. ("Hi, what's the current price
         # of Glimmer Putty?" was met with the whole introduction, down to "What are you shopping for?", and then the price.)
