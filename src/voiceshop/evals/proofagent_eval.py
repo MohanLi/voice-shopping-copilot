@@ -420,7 +420,8 @@ CODE_RULES = (
     "spoken, in a short form; all that were kept are on screen.",
     "Grounding. Every table cell and citation is copied from tool results by code: a catalog product is cited by "
     "its document id, a live result by its URL, its store or site and the time it was retrieved. Code does the price arithmetic. When a "
-    "request for another product presses a claim about a product shown earlier, code states what that product's record says on the point.",
+    "request for another product presses a claim about a product shown earlier, code states what that product's record says on the point. "
+    "A product named by its catalog id is looked up by that id and code states what it is; an id the catalog lacks is not repeated.",
     "Search. The budget, age and brand the shopper stated are sent as filters whatever a model wrote. When too few products meet them the "
     "catalog tool loosens some (never a stated age range or a safety exclusion) and marks what each product misses, which the reply "
     "says. A budget stays the limit when the shopper invites going over it; the reply names how to raise it. An amount the shopper "

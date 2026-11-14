@@ -329,3 +329,45 @@ def test_a_loosened_search_still_returns_the_products_that_met_every_filter(engi
     # Nothing is loosened when enough products meet the filters: the order is the search's own.
     plenty = engine.search("wooden building block set", brand, top_k=3)
     assert not plenty.relaxed and len(plenty.results) == 3 and all(h.brand == "Vallejo" for h in plenty.results)
+
+
+def test_a_product_named_by_its_document_id_is_returned_first_whatever_its_title(engine: SearchEngine) -> None:
+    """ "The turmeric gummies are back under AMZ-B00LKZCHW8. Can you check that one specifically?" An id is in no title, so no
+    ranking finds it: three turns of the library-only run searched for turmeric gummies and said there were none."""
+    from voiceshop.data.schema import catalog_ids, without_catalog_ids
+    from voiceshop.retrieval.engine import HELD_BACK_BY_ID
+
+    assert catalog_ids("pull up AMZ-B00LKZCHW8 and b07wtxk62l, then AMZ-B00LKZCHW8 again; ref DKZ-5057, a 4-year-old") == ["AMZ-B00LKZCHW8", "AMZ-B07WTXK62L"]
+    assert without_catalog_ids("turmeric gummies AMZ-B00LKZCHW8") == "turmeric gummies" and without_catalog_ids("AMZ-B00LKZCHW8") == ""
+
+    target = next(pl for pl in engine.payloads if "puzzle" not in pl["title"].lower())
+    alone = engine.search(target["doc_id"])                            # the id and nothing else: that product and nothing else
+    assert [h.doc_id for h in alone.results] == [target["doc_id"]] and alone.results[0].rerank_score is None
+    assert not alone.relaxed and not alone.unmatched_filters and alone.candidates == 0
+    assert [h.doc_id for h in engine.search(target["sku"].lower()).results] == [target["doc_id"]]       # as a shopper may type it
+
+    among = engine.search(f"wooden jigsaw puzzle {target['doc_id']}", top_k=5)                         # the words are searched as always
+    assert among.results[0].doc_id == target["doc_id"] and len(among.results) == 5
+    assert [h.doc_id for h in among.results[1:]] == [h.doc_id for h in engine.search("wooden jigsaw puzzle", top_k=5).results if h.doc_id != target["doc_id"]][:4]
+
+    # A limit the product misses is said, and does not hide it from the shopper who named it.
+    dear = engine.search(target["doc_id"], SearchFilters(price_max=round(target["price"] / 2, 2), brand="LEGO"))
+    assert [h.doc_id for h in dear.results] == [target["doc_id"]] and not dear.relaxed
+    assert any("above" in note for note in dear.results[0].constraint_notes)
+
+    # An id the catalog does not have is reported, and nothing is guessed in its place.
+    unknown = engine.search("AMZ-B0ZZZZZZZZ")
+    assert unknown.results == [] and unknown.unmatched_filters == {"product id:AMZ-B0ZZZZZZZZ": "AMZ-B0ZZZZZZZZ"}
+    both = engine.search(f"{target['doc_id']} AMZ-B0ZZZZZZZZ")
+    assert [h.doc_id for h in both.results] == [target["doc_id"]] and list(both.unmatched_filters) == ["product id:AMZ-B0ZZZZZZZZ"]
+
+    # What is never loosened holds for a product named by its id too: the under-three rule, a safety exclusion.
+    not_for_babies = next(pl for pl in engine.payloads if not pl["for_under_3"])
+    held = engine.search(not_for_babies["doc_id"], SearchFilters(age_years=1.5))
+    assert held.results == [] and held.safety_rules == [UNDER_3_RULE, HELD_BACK_BY_ID] and not held.unmatched_filters
+    flagged = next(pl for pl in engine.payloads if "choking_hazard" in pl["safety_flags"])
+    assert engine.search(flagged["doc_id"], SearchFilters(exclude_safety_flags=["choking_hazard"])).results == []
+    assert [h.doc_id for h in engine.search(flagged["doc_id"]).results] == [flagged["doc_id"]]
+    for_babies = next(pl for pl in engine.payloads if pl["for_under_3"] and pl["age_min_months"] <= 18 <= pl["age_max_months"]
+                      and not set(pl["safety_flags"]) & set(UNDER_3_EXCLUDED_FLAGS))
+    assert [h.doc_id for h in engine.search(for_babies["doc_id"], SearchFilters(age_years=1.5)).results] == [for_babies["doc_id"]]

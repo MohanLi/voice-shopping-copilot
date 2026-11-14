@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 from rapidfuzz import fuzz
 
 from voiceshop.config import Settings, get_settings
+from voiceshop.data.schema import catalog_ids, without_catalog_ids
 from voiceshop.retrieval import documents as docs
 from voiceshop.retrieval.embedder import Embedder, build_embedder
 from voiceshop.retrieval.filters import (
@@ -51,6 +52,9 @@ log = logging.getLogger(__name__)
 SearchMode = Literal["hybrid", "dense", "lexical"]
 MANIFEST = "manifest.json"
 VOCAB = "vocab.json"
+# Reported in a response's safety rules when a product that the query named by its id is not returned because of them.
+HELD_BACK_BY_ID = ("A product the query named by its id is not returned: it does not pass the safety rules that are never loosened "
+                   "(a safety exclusion, or the under-three rule). Say that it is held back for safety; do not describe it.")
 
 
 class IndexNotBuiltError(RuntimeError):
@@ -104,6 +108,7 @@ class SearchEngine:
         self.rerank_top_n, self.rerank_weight = rerank_top_n, rerank_weight
         self.filter_index = FilterIndex(payloads)
         self.vocab = Vocabulary.from_payloads(payloads)
+        self.position = {str(pl["doc_id"]).upper(): n for n, pl in enumerate(payloads)}      # where each document id is in the index
 
     # ----------------------------------------------------------------- loading
     @classmethod
@@ -205,16 +210,25 @@ class SearchEngine:
         timings: dict[str, float] = {}
         filters = filters or SearchFilters()
         original = resolve(filters, self.vocab)
+        # A product the query names by its document id comes first, whatever its title: an id is in no title and in no
+        # description, so no ranking finds it. ("The turmeric gummies are back under AMZ-B00LKZCHW8. Can you check that one
+        # specifically?" Three turns of the library-only run asked for a product this way; the search was for turmeric
+        # gummies, and each reply was that there were none. The id is a teething necklace.) The words of the query are searched
+        # as always; a query that is ids and nothing else returns those products and nothing else.
+        named = catalog_ids(query)
+        words = without_catalog_ids(query) if named else query
+        by_id, unknown_ids, held_back = self.named_by_id(named, original)
         # A brand or category the catalog does not know cannot be a filter; keep it as query text instead.
-        text_query = " ".join([query, *original.unmatched.values()]).strip() if original.unmatched else query
+        text_query = " ".join([words, *original.unmatched.values()]).strip() if original.unmatched else words
 
         strict_matches = int(self.filter_index.mask(original).sum()) if not original.is_empty() else len(self.payloads)
         n = max(self.n_candidates, top_k * 4)
         active, relaxed = original, []
         t = time.perf_counter()
-        fused, dense_rank, lexical_rank = self._candidates(text_query, active, mode, n)
+        only_ids = bool(named) and not words                  # nothing was asked for in words: an unknown brand is not searched as text either
+        fused, dense_rank, lexical_rank = ([], {}, {}) if only_ids else self._candidates(text_query, active, mode, n)
         met_all: list[int] = []
-        if relax and len(fused) < top_k:
+        if relax and len(fused) < top_k and not only_ids:
             # The products that meet every filter, fewer than were asked for. They come first in the results, whatever the
             # looser search prefers. "My nephew wants LEGO", up to eight dollars: three LEGO sets met both; the search
             # loosened the brand to fill its list, the query said "LEGO-compatible bricks", and the five results were five
@@ -228,6 +242,7 @@ class SearchEngine:
                 if len(fused) >= top_k:
                     break
             fused = [*met_all, *(doc for doc in fused if doc not in set(met_all))]      # at the head, so that the re-ranker scores them too
+        fused = [doc for doc in fused if doc not in set(by_id)]                         # a product found by its id is not ranked as well
         timings["retrieve"] = (time.perf_counter() - t) * 1000
 
         use_rerank = (self.reranker is not None) if rerank is None else (rerank and self.reranker is not None)
@@ -238,7 +253,7 @@ class SearchEngine:
             t = time.perf_counter()
             head = fused[: max(1, rerank_top_n or self.rerank_top_n)]
             assert self.reranker is not None
-            values = self.reranker.score(query, [rerank_text(self.payloads[d]) for d in head])
+            values = self.reranker.score(words, [rerank_text(self.payloads[d]) for d in head])
             rerank_scores = dict(zip(head, (float(v) for v in values), strict=True))
             by_score = sorted(head, key=lambda d: -rerank_scores[d])
             if rerank_mode == "replace":
@@ -258,19 +273,24 @@ class SearchEngine:
             first = [doc for doc in ordered if doc in strict][: max(1, top_k - 2)]
             ordered = [*first, *(doc for doc in ordered if doc not in strict)]
             scores = {doc: 1.0 / (rank + 1) for rank, doc in enumerate(ordered)}
+        if by_id:
+            # No match score for them: the cross-encoder was not asked how well a title fits a string of letters, and
+            # "is anything here relevant" (best_match_score) is a question about the words of the query, not about the id.
+            ordered = [*by_id, *ordered]
+            scores = {doc: 1.0 / (rank + 1) for rank, doc in enumerate(ordered)}
         results: list[docs.SearchHit] = []
         picked: list[int] = []
         collapsed = 0
         for doc in ordered:
             pl = self.payloads[doc]
-            if dedupe and any(self._same_listing(pl, self.payloads[kept]) for kept in picked):
+            if dedupe and doc not in by_id and any(self._same_listing(pl, self.payloads[kept]) for kept in picked):
                 collapsed += 1
                 continue
             hit = docs.hit_from_payload(pl)
             hit.score = round(float(scores[doc]), 6)
             hit.dense_rank, hit.lexical_rank = dense_rank.get(doc), lexical_rank.get(doc)
             hit.rerank_score = round(float(rerank_scores[doc]), 4) if doc in rerank_scores else None
-            if relaxed:
+            if relaxed or doc in by_id:                       # what a product named by its id misses of the filters is said, not hidden
                 hit.constraint_notes = constraint_notes(pl, original)
             results.append(hit)
             picked.append(doc)
@@ -281,9 +301,9 @@ class SearchEngine:
             query=query,
             results=results,
             applied_filters=self.describe_filters(active),
-            unmatched_filters=original.unmatched,
+            unmatched_filters={**original.unmatched, **{f"product id:{doc_id}": doc_id for doc_id in unknown_ids}},
             relaxed=relaxed,
-            safety_rules=original.safety_rules,
+            safety_rules=[*original.safety_rules, *([HELD_BACK_BY_ID] if held_back else [])],
             strict_matches=strict_matches,
             candidates=len(fused),
             variants_collapsed=collapsed,
@@ -315,6 +335,21 @@ class SearchEngine:
             if pl["doc_id"] == doc_id or pl["sku"] == doc_id:
                 return pl
         return None
+
+    def named_by_id(self, ids: list[str], f: ResolvedFilters) -> tuple[list[int], list[str], list[str]]:
+        """For the document ids a query names: the products to return, the ids the catalog does not have, the ids held back for safety.
+
+        A shopper who names a product is shown that product. A budget, a brand, a category or an age range it does not
+        meet is said in its ``constraint_notes``; none of them hides it. What is never loosened for any search holds here
+        too: a safety exclusion, and the under-three rule with its stated age.
+        """
+        known = [doc_id for doc_id in ids if doc_id in self.position]
+        unknown = [doc_id for doc_id in ids if doc_id not in self.position]
+        safety = ResolvedFilters(exclude_safety_flags=f.exclude_safety_flags, under_3=f.under_3, age_months=f.age_months if f.under_3 else None)
+        allowed = self.filter_index.mask(safety)
+        found = [self.position[doc_id] for doc_id in known if bool(allowed[self.position[doc_id]])]
+        held_back = [doc_id for doc_id in known if not bool(allowed[self.position[doc_id]])]
+        return found, unknown, held_back
 
     def stats(self) -> dict[str, Any]:
         prices = np.array([pl["price"] for pl in self.payloads]) if self.payloads else np.array([0.0])

@@ -39,7 +39,8 @@ class RagSearchResult(BaseModel):
     query: str
     applied_filters: dict[str, Any] = Field(default_factory=dict, description="Filters actually applied (after any relaxation)")
     unmatched_filters: dict[str, str] = Field(
-        default_factory=dict, description="Requested category / brand / material values the catalog does not contain"
+        default_factory=dict, description="Requested category / brand / material values the catalog does not contain, and "
+                                          "product ids named in the query that it does not have"
     )
     relaxed: list[str] = Field(
         default_factory=list,
@@ -48,7 +49,8 @@ class RagSearchResult(BaseModel):
     safety_rules: list[str] = Field(default_factory=list, description="Rules applied automatically for safety; they are never loosened")
     strict_matches: int = Field(default=0, description="How many catalog products satisfy every requested filter")
     best_match_score: float | None = Field(
-        default=None, description="Re-ranker score of the best result (higher is better); null when the re-ranker is off"
+        default=None, description="Re-ranker score of the best result found by the words of the query (higher is better); null when "
+                                  "the re-ranker is off, or when every result was found by its id"
     )
     catalog: CatalogInfo = Field(default_factory=CatalogInfo)
     notes: list[str] = Field(default_factory=list, description="Caveats the answer must respect")

@@ -232,3 +232,17 @@ async def test_resources_describe_the_catalog_without_adding_a_tool(engine: Sear
     assert uris == {"catalog://stats", "catalog://categories"}
     assert stats["documents"] == len(engine.payloads) and stats["web_search"]["providers"] == ["fixture"]
     assert categories["toys & games"] >= 1 and list(categories.values()) == sorted(categories.values(), reverse=True)
+
+
+async def test_rag_search_by_document_id_returns_the_product_and_reports_an_id_the_catalog_lacks(engine: SearchEngine, tmp_path: Path) -> None:
+    target = engine.payloads[0]
+    async with session(engine, tmp_path) as (client, _):
+        tools = {tool.name: tool for tool in (await client.list_tools()).tools}
+        assert "By id: a product's doc_id in `query`" in tools["rag.search"].description
+        found = (await client.call_tool("rag.search", {"query": target["doc_id"]})).structuredContent
+        assert [hit["doc_id"] for hit in found["results"]] == [target["doc_id"]] and found["best_match_score"] is None
+        missing = (await client.call_tool("rag.search", {"query": "AMZ-B0ZZZZZZZZ"})).structuredContent
+        assert missing["results"] == [] and missing["unmatched_filters"] == {"product id:AMZ-B0ZZZZZZZZ": "AMZ-B0ZZZZZZZZ"}
+        # The note tells the answer what to say and does not hand it the id: a code that names nothing is not repeated.
+        (note,) = [n for n in missing["notes"] if "product id" in n]
+        assert "no product under that id" in note and "B0ZZZZZZZZ" not in note

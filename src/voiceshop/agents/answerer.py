@@ -129,6 +129,8 @@ def _request_block(state: TurnState, constraints: Constraints, plan: Plan | None
         lines.append(f'The question also names a product that is not on screen: "{route.also_asked}". If the evidence has it, state the facts '
                      "asked for; if it does not, say in \"spoken\" that it was not found, and name an evidence item that carries part of its "
                      "name if there is one (a set that includes it, another size).")
+    if route and route.named_ids:
+        lines.extend(named_id_lines(route.named_ids, state.get("evidence") or Evidence()))
     if "Text the shopper pasted and asks about" in asked or pasted_text(asked):
         # Said here as well as in the prompt's rule 10d: with the question about the product in front of it, the Answerer
         # answered that and left the pasted review unmentioned in three replays of four.
@@ -138,6 +140,33 @@ def _request_block(state: TurnState, constraints: Constraints, plan: Plan | None
     if route and route.safety == "caution":
         lines.append(f"Safety caution: {route.safety_reason or 'see policy'}")
     return "\n".join(lines)
+
+
+def named_id_lines(ids: list[str], evidence: Evidence) -> list[str]:
+    """What the Answerer is told about the catalog ids the shopper named: which evidence item each one is, or that there is none.
+
+    A shopper who names an id may be wrong about what it is ("the turmeric gummies are back under AMZ-B00LKZCHW8": a
+    teething necklace). The product is called by its own name, and the request for another kind of product is answered
+    as it would be without the id.
+    """
+    found = {c.doc_id.upper(): c for c in evidence.catalog}
+    lines = []
+    for doc_id in ids[:2]:
+        item = found.get(doc_id)
+        if item is not None:
+            lines.append(f'The shopper named the catalog id {doc_id}. In the evidence that is {item.ref}: "{item.title}". If the shopper asked '
+                         "what that id is, or about its price or details, recommend it as the one product and say in \"spoken\" what it is and "
+                         "what it costs. If they asked for another kind of product and gave the id as one of those, do not recommend it: say in "
+                         f'"spoken" that the id is {item.ref}, by its own name, and answer the request for that other kind of product as usual. '
+                         "Never call it by a name the shopper gave it that its listing does not bear.")
+        elif any(key.split(":")[0] == "product id" for key in evidence.unmatched_filters):
+            lines.append("The shopper named a catalog id, and the catalog has no product under it (it was checked against every product id). "
+                         'Say that in "spoken", without repeating the id and without guessing which product was meant; then answer the rest of '
+                         "the request, if there is one.")
+        else:
+            lines.append('The shopper named a catalog id, and the product under it is held back by a safety rule (see the notes). Say in "spoken" '
+                         "that you do not suggest that product here and why, without describing it.")
+    return lines
 
 
 def evidence_block(evidence: Evidence, weak: float | None, asked_age: float | None = None) -> str:
@@ -312,6 +341,11 @@ def with_what_was_asked_for(draft: AnswerDraft, evidence: Evidence, constraints:
 def template_answer(state: TurnState, evidence: Evidence, constraints: Constraints, weak: float | None) -> AnswerDraft:
     """The answer built by code from the evidence, with the row for the product that states what was asked for (a search only)."""
     draft = rules.answer(evidence, constraints, weak, focus_refs(state), focus_labels(state), searched_tools(state))
+    route: RouteDecision | None = state.get("route")
+    first = evidence.get(draft.recommendations[0].ref) if draft.recommendations else None
+    if route is not None and isinstance(first, CatalogItem) and first.doc_id.upper() in route.named_ids and draft.spoken.startswith("My top pick is "):
+        # The product the shopper named by its id was looked up, not picked: the sentence says so.
+        draft = draft.model_copy(update={"spoken": "The id you named is the " + draft.spoken[len("My top pick is "):]})
     return with_what_was_asked_for(draft, evidence, constraints)[0] if a_search(state) else draft
 
 

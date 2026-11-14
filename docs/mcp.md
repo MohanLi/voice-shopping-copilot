@@ -127,6 +127,27 @@ Output (`outputSchema`; also returned as validated `structuredContent`):
 `ingredients` holds the materials a listing states (this dataset is toys and household goods, not cosmetics);
 `ingredients_source` and `brand_source` say where each value came from. See [data.md](data.md).
 
+**A product's id as the query.** The Citation column of the table shows a `doc_id`, so a shopper can ask for a
+product by it ("pull up AMZ-B00LKZCHW8"). An id is in no title and no description, and no ranking finds it; the
+tool reads it by its form (`AMZ-` and ten characters, or the ten characters alone, in either case) and returns
+that product first:
+
+- the id alone returns that product and nothing else; among other words, the words are searched as always and the
+  product named by its id stands in front of their results;
+- a budget, a brand, a category or an age range it does not meet is said in its `constraint_notes` and does not
+  hide it. What is never loosened holds for it too: a safety exclusion and the under-three rule keep it back, and
+  `safety_rules` then says so;
+- it carries no `rerank_score`, and `best_match_score` stays the score of what the words found: whether the
+  catalog has what the shopper asked for in words is a separate question, and the web fallback depends on it;
+- an id the catalog does not have is reported in `unmatched_filters` under `"product id:<id>"`, checked against
+  every id in the index. The note that goes with it tells the answer to say so without repeating the id.
+
+This is one more thing the same tool does with `query`, not a third tool. The Planner's plan gets the look-up by
+code (`planner.id_lookup`), because the Planner model writes queries in words and left the id out of two in
+three; what the id names is stated by code next to the answer (`finalize.named_by_id`). Found in the
+library-only ProofAgent run, where three turns asked for a product by its id and each was answered "I could not
+find turmeric gummies" ([evaluation.md](evaluation.md)).
+
 ## `web.search`
 
 Input: `query` (required), `max_results` (1–10, default 5), `kind`, `site` (one host, e.g. `target.com`) and

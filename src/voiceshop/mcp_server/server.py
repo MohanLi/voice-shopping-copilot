@@ -84,6 +84,10 @@ the query words: price_max (the budget), age_years, brand, category, materials (
 listing states them, e.g. BPA-free), exclude_safety_flags. A brand, category, material or claim the catalog does not \
 have is used as search text instead and reported in `unmatched_filters`{categories}.
 
+By id: a product's doc_id in `query` (AMZ-B00HEZ0APE, as cited on screen; alone or among other words) returns that \
+product first, whatever the other filters say, with what it misses of them in its `constraint_notes`. An id the \
+catalog does not have is reported in `unmatched_filters` under "product id".
+
 Results, best first: doc_id (cite this), sku, title, price (USD, January 2020), rating (null: this catalog has no \
 ratings), brand, ingredients (the materials the listing states), age_label, safety_flags, claims, features, \
 description, and unit prices where they apply.
@@ -338,6 +342,12 @@ def _rag_result(response: Any, top_k: int, took_ms: float) -> RagSearchResult:
         notes.append("This catalog has no customer ratings: rating is null. Report that there is no rating, never a number.")
     notes.extend(response.safety_rules)
     for kind, value in response.unmatched_filters.items():
+        if kind.split(":")[0] == "product id":
+            # The id itself is in `unmatched_filters`; the note leaves it out, so that no answer repeats a code that names nothing.
+            notes.append("The query named a product id that is not in the catalog (checked against every product id, not only these "
+                         "results). Say that the catalog has no product under that id; do not repeat the id, and do not guess which "
+                         "product was meant.")
+            continue
         notes.append(f"No {kind.split(':')[0]} named {value!r} is in the catalog (checked against the full list, not only these results); "
                      "it was used as search text instead of a filter.")
     if response.relaxed:

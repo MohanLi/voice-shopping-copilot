@@ -47,6 +47,7 @@ from voiceshop.agents.state import (
     step,
 )
 from voiceshop.data import units
+from voiceshop.data.schema import catalog_ids, without_catalog_ids
 from voiceshop.guardrails import policy
 from voiceshop.guardrails.input import unsafe_query
 from voiceshop.llm.factory import get_chat_model, spec_for
@@ -310,6 +311,13 @@ def nothing_close(records: list[ToolRecord], best_match_score: float | None, wea
     return None
 
 
+def looked_up_by_id(records: list[ToolRecord]) -> bool:
+    """Was every catalog search of the turn a look-up by product id that returned its product? Then there is no match to judge."""
+    searches = [r for r in records if r.tool == "rag.search" and r.ok]
+    return bool(searches) and all(r.n_results and catalog_ids(str(r.arguments.get("query") or ""))
+                                  and not without_catalog_ids(str(r.arguments.get("query") or "")) for r in searches)
+
+
 def already_searched(product: str, records: list[ToolRecord]) -> bool:
     """Has the live web been asked for listings of this product in this turn? The product's words within a query's, or the query's within the product's."""
     def words(text: str) -> set[str]:
@@ -491,6 +499,8 @@ def needs_agent(plan: Plan, builder: EvidenceBuilder, results: list[ToolCallResu
         return True, "a planned call failed"
     if not builder.catalog and not builder.web:
         return True, "the planned searches found nothing"
+    if builder.catalog and builder.best_match_score is None and looked_up_by_id(builder.records):
+        return False, "the product was looked up by its catalog id"
     if builder.catalog and builder.best_match_score is None:
         return True, "no match-quality score is available, so the model judges the results"
     if builder.best_match_score is not None and builder.best_match_score < weak_score and not builder.web:

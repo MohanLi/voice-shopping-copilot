@@ -257,7 +257,15 @@ def not_in_catalog(key: str, value: str) -> str:
     and four of six jurors still called it overstated: nothing in the reply or the step log said how it was known
     (the fifth live run, turn 13).
     """
+    if key.split(":")[0] == "product id":                     # a code that names no product is not repeated (see NO_SUCH_ID)
+        return NO_SUCH_ID
     return f"The catalog's full list of {_VOCABULARY.get(key.split(':')[0], key.split(':')[0] + 's')} has no '{value}'."
+
+
+# A product id the shopper named that the catalog does not have. Checked against every id in the index, and said without
+# the id: a string that names nothing in the catalog is a code from the message like any other, and is not repeated.
+NO_SUCH_ID = "The catalog has no product under the id you named; it was checked against every product id in the catalog."
+NO_SUCH_ID_SPOKEN = "My catalog has no product under the id you named."
 NO_RATING_NOTE_WEB = "These sources state no customer rating, so none is shown."
 # The catalog had nothing suitable, so the live web was searched for the product (retriever.web_fallback_calls): what
 # the Answerer is told under the tool notes, and what the shopper reads above a table of web results.

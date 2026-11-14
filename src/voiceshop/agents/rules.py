@@ -752,6 +752,10 @@ def answer(evidence: Evidence, constraints: Constraints, weak_score: float | Non
             follow_up_question="Would you like me to look for a similar product instead?",
         )
     chosen = focused[:3] if focused else pick(evidence, constraints, weak_score)
+    if not chosen and not constraints.product and any(key.split(":")[0] == "product id" for key in evidence.unmatched_filters):
+        # The request was a product id and the catalog has no product under it. The id is not repeated (policy.NO_SUCH_ID).
+        return AnswerDraft(recommendations=[], abstain=True, abstain_reason="the catalog has no product under the id named",
+                           spoken=policy.NO_SUCH_ID_SPOKEN, follow_up_question="Would you like me to search by the product's name instead?")
     if not chosen:
         wanted = describe_request(constraints)
         hint = "a higher budget" if constraints.budget_max else "different words or another kind of product"

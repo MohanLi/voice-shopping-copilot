@@ -545,6 +545,7 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
         if item is not None:
             picked.append((item, rec.why.strip(), (rec.caveat or "").strip() or None))
     items = [p[0] for p in picked]
+    pressed = [*pressed, *named_by_id(route, evidence, items, draft.spoken)]
     kept = screen_rows(picked, evidence, shown, on_screen) if about_screen else None
     positions: dict[str, int] = {}
     if kept is not None:
@@ -609,7 +610,7 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
     if question and abstained and draft.spoken.strip().endswith("?"):
         question = None                                      # the statement already ends by asking; a second question would only repeat it
     before = said_before(preface, draft.spoken, max_seconds)                              # what was declined is said first
-    if len(pressed) == 1:
+    if len(pressed) == 1 and pressed[0][2]:
         # One claim about one product: what the sources state about it is said in place of "I can only confirm what my sources
         # state", when it can be said together with the answer's first sentence. Both are on screen either way.
         specific = [*said_before([i for i in preface or [] if i != "no_unconfirmed"], draft.spoken, max_seconds), pressed[0][2]]
@@ -672,6 +673,8 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
                 label = position_word(positions[item.ref]).capitalize() + ": "
             else:
                 label = "" if about_screen else ("Top pick: " if row.rank == 1 else f"Option {row.rank}: ")
+                if route is not None and isinstance(item, CatalogItem) and item.doc_id.upper() in route.named_ids:
+                    label = f"{item.doc_id}: "                # the product the shopper named by its id is shown under that id
             lines.append(f"**{label}{short_name(item)}** - {row.price}. {why}" + (f" _Caveat: {caveat}_" if caveat else "") + f" [{row.citation}]")
     if notes:
         lines.append("")
@@ -699,6 +702,32 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
     if pressed and not preface:                               # no fixed sentence in front: the statement is said first all the same
         answer = answer.model_copy(update={"spoken": f"{' '.join(before)} {answer.spoken}".strip()})
     return answer
+
+
+def named_by_id(route: RouteDecision | None, evidence: Evidence, rows: list[CatalogItem | WebItem],
+                said: str = "") -> list[tuple[CatalogItem | WebItem, str, str]]:
+    """For each product the shopper named by its catalog id that the answer has no row for: the product, the sentence for the screen, the one to say.
+
+    What an id names is a fact of the catalog, so it is stated by code from the record the look-up returned, whatever the
+    answer goes on to say. ("Just pull up AMZ-B00LKZCHW8, tell me what it is, the price ..." asked about turmeric gummies:
+    the answers were "I could not find turmeric gummies", twice with nothing about the id and once with "the closest item
+    is a KidKusion teething necklace". The id is that necklace. The library-only run, turns 4, 6 and 7.) A product that
+    the answer recommends is shown under its id in its own row, and is not stated twice; nor is it said aloud twice when
+    the answer's own sentence (``said``) names it: then the statement stands on screen, with its citation. At most two.
+    """
+    if route is None or not route.named_ids:
+        return []
+    by_id = {c.doc_id.upper(): c for c in evidence.catalog}
+    shown_ids = {i.doc_id.upper() for i in rows if isinstance(i, CatalogItem)}
+    out: list[tuple[CatalogItem | WebItem, str, str]] = []
+    for doc_id in route.named_ids[:2]:
+        item = by_id.get(doc_id)
+        if item is None or doc_id in shown_ids:
+            continue
+        row = table_row(0, item, "", None, evidence)
+        aloud = "" if brief_name(item).lower() in said.lower() else f"The id you named is the {brief_name(item)}, ${item.price:.2f} in the catalog."
+        out.append((item, f"{item.doc_id} in the catalog is the {short_name(item)}: {row.price}. [{row.citation}]", aloud))
+    return out
 
 
 def pressed_claims(route: RouteDecision | None, evidence: Evidence, shown: list[dict[str, Any]] | None,

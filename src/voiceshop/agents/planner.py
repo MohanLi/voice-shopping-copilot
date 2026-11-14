@@ -17,6 +17,7 @@ from voiceshop.agents.deps import Deps
 from voiceshop.agents.llm_utils import LLMCallError, call_structured, compact_json, fallback_note
 from voiceshop.agents.router import said_ids
 from voiceshop.agents.state import Constraints, FinalAnswer, Plan, PlanStep, RouteDecision, TurnState, step
+from voiceshop.data.schema import catalog_ids, without_catalog_ids
 from voiceshop.guardrails import policy
 from voiceshop.guardrails.input import unsafe_query
 from voiceshop.llm.ledger import BudgetExceededError
@@ -94,6 +95,39 @@ def enforce_constraints(step_: PlanStep, constraints: Constraints) -> PlanStep:
     return step_.model_copy(update={"filters": type(wanted)(**base), "top_k": RAG_TOP_K})
 
 
+# Words that stand next to an id without naming a kind of product: "the product under catalog id ...", "item number ...".
+_ID_FILLER = frozenset({"product", "item", "catalog", "catalogue", "listing", "document", "sku", "asin", "number", "code", "under", "with", "named",
+                        "pull", "tell", "show", "check", "look", "find", "get", "give", "see", "open", "bring", "read", "search", "what", "which",
+                        "that", "this", "one", "specifically", "directly", "please", "about", "just", "info", "information", "detail", "price",
+                        "cost", "much", "summary", "table", "rank", "ranking", "say", "know", "want", "need", "mean", "called", "name"})
+
+
+def id_lookup(route: RouteDecision, constraints: Constraints, shown: list[dict[str, Any]] | None, steps: list[PlanStep]) -> PlanStep | None:
+    """The catalog search by id for the products a message names by their document ids; None when none is due.
+
+    The Planner model writes its searches in words, and an id is no word: of three turns that asked for "AMZ-B00LKZCHW8",
+    its query carried the id once (the library-only run, turns 4, 6 and 7). So the look-up is added by code, as the
+    shopper's limits are. Not for an id of a product on screen in a question about that list (it is answered from the
+    evidence behind the list), and not when a planned catalog search names the ids already.
+
+    Of the shopper's limits the step carries the budget and the age, which the search reports on for a product found by
+    its id, and the safety exclusions, which it applies. A brand, category or material would become search words.
+    """
+    on_screen = {str(entry.get("doc_id") or "").upper() for entry in shown or []} if route.intent in ("follow_up", "compare") else set()
+    wanted = [doc_id for doc_id in route.named_ids if doc_id not in on_screen]
+    if not wanted or set(wanted) <= {doc_id for s in steps if s.tool == "rag.search" for doc_id in catalog_ids(s.query)}:
+        return None
+    lookup = PlanStep(tool="rag.search", purpose="the product the shopper named by its catalog id", query=" ".join(wanted))
+    return enforce_constraints(lookup, constraints.model_copy(update={"brand": None, "category": None, "materials": []}))
+
+
+def names_only_ids(route: RouteDecision, constraints: Constraints) -> bool:
+    """Is the request a product id and nothing else: no words that say what kind of product is wanted?"""
+    from voiceshop.agents.router import _name_words
+
+    return bool(route.named_ids) and route.intent == "product_search" and not (_name_words(without_catalog_ids(constraints.product)) - _ID_FILLER)
+
+
 def normalise_plan(plan: Plan, route: RouteDecision, constraints: Constraints, user_text: str, shown: list[dict[str, Any]] | None, deps: Deps) -> tuple[Plan, list[str]]:
     """Apply configuration and consistency rules. Returns the plan and notes about what was changed."""
     notes: list[str] = []
@@ -109,6 +143,20 @@ def normalise_plan(plan: Plan, route: RouteDecision, constraints: Constraints, u
         steps.append(enforce_constraints(planned, constraints))
     steps = steps[:MAX_STEPS]
     strategy, verify = plan.strategy, plan.verify_current_price
+
+    whole = id_lookup(route, constraints, shown, []) if deps.rag_available and names_only_ids(route, constraints) else None
+    if whole is not None:
+        # The request is the id: the look-up is the whole plan. Whatever the model planned for the words around it
+        # ("product", "catalog id") would bring back products nobody asked for.
+        live = deps.web_available and deps.settings.web_price_check != "never" and constraints.wants_current_info
+        return plan.model_copy(update={"strategy": "catalog_then_web" if live else "catalog_only", "steps": [whole], "verify_current_price": bool(live),
+                                       "clarifying_question": None}), [*notes, "the request names a product by its catalog id: it is looked up by that id"]
+    lookup = id_lookup(route, constraints, shown, steps) if deps.rag_available else None
+    if lookup is not None:
+        steps = [lookup, *steps][:MAX_STEPS]
+        notes.append("added the look-up of the product the shopper named by its catalog id")
+        if strategy in ("from_memory", "clarify"):            # a plan that searches nothing would not make the look-up
+            strategy = "catalog_only"
 
     if strategy == "from_memory" and not shown:
         strategy, notes = "catalog_only", [*notes, "nothing on screen to answer from; searching the catalog instead"]

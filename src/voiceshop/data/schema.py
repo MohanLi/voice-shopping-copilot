@@ -11,6 +11,7 @@ fields we cannot know stay null. Nothing is invented.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -33,6 +34,23 @@ def doc_id_for(asin: str) -> str:
 
 def asin_from_doc_id(doc_id: str) -> str:
     return doc_id[len(DOC_ID_PREFIX):] if doc_id.startswith(DOC_ID_PREFIX) else doc_id
+
+
+# A document id as a shopper reads it in the Citation column ("AMZ-B00HEZ0APE"), or its ten characters alone, in either case.
+_DOC_ID = re.compile(rf"\b(?:{DOC_ID_PREFIX})?(B0[0-9A-Z]{{8}})\b", re.I)
+
+
+def catalog_ids(text: str | None) -> list[str]:
+    """The catalog document ids a text names, in order, each once, as they are written in the catalog ("AMZ-B00HEZ0APE").
+
+    Whether the catalog has a product under an id is the search's to say (``SearchEngine.search``): this reads a form.
+    """
+    return list(dict.fromkeys(doc_id_for(m.group(1).upper()) for m in _DOC_ID.finditer(text or "")))
+
+
+def without_catalog_ids(text: str | None) -> str:
+    """``text`` with the catalog document ids taken out: the words a search by meaning is given."""
+    return " ".join(_DOC_ID.sub(" ", text or "").split())
 
 
 class Product(BaseModel):

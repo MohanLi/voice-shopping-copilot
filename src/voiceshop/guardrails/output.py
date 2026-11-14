@@ -916,7 +916,10 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
     every_text = " ".join([draft.spoken, draft.conflict_note or "", draft.follow_up_question or "", draft.abstain_reason or "",
                            *(f"{r.why} {r.caveat or ''}" for r in draft.recommendations)])
     low = every_text.lower()
-    echoed = echoed_tokens(every_text, user_text, " ".join(item_text(i) for i in (*evidence.catalog, *evidence.web)))
+    # A document id of the evidence is a citation: "AMZ-B00LKZCHW8 is a teething necklace" repeats what the catalog calls the
+    # product, not a code from the message. An id the catalog does not have is in no evidence, and stays a code.
+    echoed = echoed_tokens(every_text, user_text, " ".join([*(item_text(i) for i in (*evidence.catalog, *evidence.web)),
+                                                             *(c.doc_id.lower() for c in evidence.catalog)]))
     if echoed:
         issues.append(Issue(code="echoed_token", severity="block",
                             message=f"The draft repeats '{echoed[0]}' from the shopper's message; codes, links and addresses that are not in the evidence are never repeated."))

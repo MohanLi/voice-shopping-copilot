@@ -85,6 +85,9 @@ class RouteDecision(BaseModel):
     pressed: SkipJsonSchema[list[int]] = Field(default_factory=list, description="Positions of on-screen products that a new product request names "
                                                "only in a sentence pressing a claim ('you said the Safari one was on sale, right?'). The reply "
                                                "says what the sources state about each; none of them is what the request is about")
+    named_ids: SkipJsonSchema[list[str]] = Field(default_factory=list, description="Catalog document ids the message names ('pull up "
+                                                 "AMZ-B00HEZ0APE'). Each is looked up by its id, whatever the Planner searches for, "
+                                                 "and the reply says what it is")
 
 
 class SecondLook(BaseModel):
