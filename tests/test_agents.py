@@ -1023,7 +1023,8 @@ def test_for_a_child_under_three_the_rule_is_said_even_when_nothing_is_recommend
     nothing = AnswerDraft(recommendations=[], abstain=True, spoken="I could not find a marble run for an eighteen-month-old.")
     answer = build_answer(nothing, Evidence(), Constraints(product="marble run", age_years=1.5), RouteDecision(intent="product_search", safety="caution"),
                           max_words=42, grounded_by="llm+critic", revisions=0)
-    assert answer.kind == "abstain" and answer.notes[0] == policy.UNDER_3_NOTE and answer.spoken.endswith(SPOKEN_UNDER_3_ONLY)
+    assert answer.kind == "abstain" and answer.notes[0] == policy.UNDER_3_NOTE
+    assert answer.spoken.endswith(f"{SPOKEN_UNDER_3_ONLY} I can look for toys labelled for that age instead.")      # the rule, then a way forward
     older = build_answer(nothing, Evidence(), Constraints(product="marble run", age_years=6), RouteDecision(intent="product_search"),
                          max_words=42, grounded_by="llm+critic", revisions=0)
     assert policy.UNDER_3_NOTE not in older.notes and SPOKEN_UNDER_3_ONLY not in older.spoken
@@ -1213,6 +1214,8 @@ def test_an_abstention_for_a_child_under_three_names_the_closest_product_labelle
     assert answer.kind == "abstain" and closest(answer) == "Manhattan Toy Playful Pony Wooden Toddler Activity Center"      # the best-ranked one
     assert answer.spoken == ("I could not find a marble run for an eighteen-month-old in the catalog. For a child under three I only suggest toys "
                              "labelled for that age; the closest is Manhattan Toy Playful Pony Wooden Toddler Activity Center, at $49.89.")
+    # The draft named no way forward, so the fixed one stands on screen; aloud there was no time left for it (run 11).
+    assert answer.text.count("I can look for toys labelled for that age instead.") == 1
     assert estimate_seconds(answer.spoken, 1.2) <= 15.0
     assert "- $49.89 (catalog, Jan 2020). Listed for 1 year to 3 years; it may not be the kind of product you asked for. [AMZ-C1]" in answer.text
     assert [c.ref for c in answer.citations] == ["C1"]
@@ -1228,11 +1231,11 @@ def test_an_abstention_for_a_child_under_three_names_the_closest_product_labelle
     cited = built(nothing.model_copy(update={"sources": ["C2"]}))
     assert closest(cited) == "PlayGo Roll'N Chime Walk & Push Along Toy" and "PlayGo Roll'N Chime Walk & Push Along Toy, at $14.98" in cited.spoken
     own = built(nothing.model_copy(update={"sources": ["C2"], "spoken": "I could not find a marble run for him; the closest toddler toy is the PlayGo walker at $14.98."}))
-    assert closest(own) == "PlayGo Roll'N Chime Walk & Push Along Toy" and own.spoken.count("closest") == 1 and own.spoken.endswith(SPOKEN_UNDER_3_ONLY)
+    assert closest(own) == "PlayGo Roll'N Chime Walk & Push Along Toy" and own.spoken.count("closest") == 1 and own.spoken.endswith(f"{SPOKEN_UNDER_3_ONLY} I can look for toys labelled for that age instead.")
     # The model stated the rule itself: only the alternative is added. No room to say it: the rule is said and the alternative is on screen.
     told = built(nothing.model_copy(update={"spoken": "There is no marble run for a child under three in the catalog."}))
     assert told.spoken == ("There is no marble run for a child under three in the catalog. The closest one labelled for that age is Manhattan Toy "
-                           "Playful Pony Wooden Toddler Activity Center, at $49.89.")
+                           "Playful Pony Wooden Toddler Activity Center, at $49.89. I can look for toys labelled for that age instead.")
     wordy = built(nothing.model_copy(update={"spoken": "I could not find a marble run that the catalog lists for an eighteen-month-old child, and nothing "
                                                        "with marbles or other small parts can be suggested for him at all."}))
     assert wordy.spoken.endswith(SPOKEN_UNDER_3_ONLY) and closest(wordy)
@@ -2680,7 +2683,7 @@ async def test_the_fallback_runs_once_and_an_abstention_after_it_stands(agent_en
     assert "LIVE WEB RESULTS: none retrieved (a live web search was made and returned nothing)" in prompts[1]
     assert 'and a live web search for "garden hose suitable for a small yard" returned no listing either.' in prompts[1]
     assert len(prompts) == 2 and result.answer.kind == "abstain" and result.answer.table == [] and policy.WEB_FALLBACK_SCREEN not in result.answer.notes
-    assert result.answer.spoken == "I could not find a garden hose. Neither the catalog nor a live web search turned one up."
+    assert result.answer.spoken == "I could not find a garden hose. Neither the catalog nor a live web search turned one up. I can look for a similar product instead."
     assert next(e for e in result.trace if e["node"] == "widen")["status"] == "warn"
 
 
@@ -3942,3 +3945,54 @@ def test_a_follow_up_question_carries_no_statement_and_live_results_are_not_repo
     assert "search_not_made" in {i.code for i in check_draft(reported, not_searched, Constraints())}
     searched = Evidence(catalog=[item], searched=["rag.search", "web.search"])
     assert "search_not_made" not in {i.code for i in check_draft(reported, searched, Constraints())}
+
+
+# ============================================================ run 11: a recall that was not said, and an offer a breath too long
+def test_an_answer_that_found_nothing_says_the_recall_and_a_shorter_offer_when_the_full_one_does_not_fit() -> None:
+    """Run 11. Turn 15: "I could not confirm a sale on the Aqua Beads Mega Set. A listing from Example Toys shows $18.99, but a
+    recall notice says the set was recalled in 2023 because its beads can expand if swallowed, so I cannot recommend it for your
+    daughter." The first sentence and the offer of other bead kits were said; the recall was on screen only. Turn 13: the offer
+    "I can look for other hoverboards for a six-year-old instead." did not fit after a fixed sentence and was not said at all."""
+    from voiceshop.agents.finalize import shorter_offer, whole_sentences
+
+    sale = "I could not confirm a sale on the Aqua Beads Mega Set."
+    recall = ("A listing from Example Toys shows $18.99, but a recall notice says the set was recalled in 2023 because its beads can expand if "
+              "swallowed, so I cannot recommend it for your daughter.")
+    route = RouteDecision(intent="product_search", constraints=Constraints(product="Aqua Beads Mega Set", wants_current_info=True))
+    draft = AnswerDraft(abstain=True, spoken=f"{sale} {recall}", follow_up_question="I can look for other jewelry-making bead kits for a daughter's birthday instead.")
+    answer = build_answer(draft, Evidence(), route.constraints, route, max_words=42, grounded_by="llm+critic", revisions=0)
+    assert answer.spoken.startswith(recall) and "recalled in 2023" in answer.spoken and estimate_seconds(answer.spoken) / 1.2 <= 15.0
+    assert sale in answer.text and recall in answer.text                                   # the screen has the whole statement
+    # The opening gives way to the recall only in an answer that found nothing, and only when the recall is what would be dropped.
+    assert whole_sentences(f"{sale} {recall}", [], 15.0, 42) == [sale]
+    assert whole_sentences(f"{sale} {recall}", [], 15.0, 42, recall_first=True) == [recall]
+    assert whole_sentences(f"{sale} It costs $18.99 at Example Toys.", [], 15.0, 42, recall_first=True) == [sale, "It costs $18.99 at Example Toys."]
+    # A recall sentence too long to be said at all: the first sentence stays and the recall is said in fixed words.
+    long_recall = recall[:-1] + ", and the notice asks owners to stop using the set at once and to contact the maker for a refund of the full price."
+    fixed = build_answer(draft.model_copy(update={"spoken": f"{sale} {long_recall}"}), Evidence(), route.constraints, route, max_words=42,
+                         grounded_by="llm+critic", revisions=0)
+    assert "recall" in fixed.spoken.lower() and estimate_seconds(fixed.spoken) / 1.2 <= 15.0
+
+    assert shorter_offer("I can look for other hoverboards for a six-year-old instead.") == "I can look for other hoverboards instead."
+    assert shorter_offer("I can look for other toddler toys with bead runs instead.") == "I can look for other toddler toys instead."
+    assert shorter_offer("I can look for other hoverboards instead.") is None
+    assert shorter_offer("I can look for toys labelled for that age instead.") is None and shorter_offer("I can look for other toys suitable for toddlers instead.") is None
+    hover = RouteDecision(intent="product_search", constraints=Constraints(product="Zentrix Hoverboard Pro"))
+    none_found = AnswerDraft(abstain=True, follow_up_question="I can look for other hoverboards for a six-year-old instead.",
+                             spoken="The Zentrix Hoverboard Pro is not among my catalog results, and no live web listing turned it up, so I cannot give a price or stock status for it.")
+    said = build_answer(none_found, Evidence(), hover.constraints, hover, max_words=42, grounded_by="llm+critic", revisions=0, preface=["no_unconfirmed"])
+    assert said.spoken.endswith("I can look for other hoverboards instead.") and estimate_seconds(said.spoken) / 1.2 <= 15.0
+    assert "I can look for other hoverboards for a six-year-old instead." in said.text
+    whole = build_answer(none_found, Evidence(), hover.constraints, hover, max_words=42, grounded_by="llm+critic", revisions=0)
+    assert whole.spoken.endswith("I can look for other hoverboards for a six-year-old instead.")       # with room, the whole offer
+    # A draft that names no way forward, or one the frame does not take, still ends on one; an answer about a product on screen does
+    # not ("I can look for a similar product" after "the listing states no rating" would answer a question nobody asked).
+    for nothing in (None, "", "I can look for the Hover-1 Chrome at $199 instead."):
+        bare = build_answer(none_found.model_copy(update={"follow_up_question": nothing}), Evidence(), hover.constraints, hover, max_words=42,
+                            grounded_by="llm+critic", revisions=0)
+        assert bare.spoken.endswith("I can look for a similar product instead.") and bare.text.count("I can look for a similar product instead.") == 1, nothing
+    on_screen = RouteDecision(intent="follow_up", refers_to=[1], constraints=Constraints(product="Safari puzzle"))
+    detail = AnswerDraft(abstain=True, spoken="The listing for the Safari puzzle does not state a rating or a review count.")
+    assert "similar product" not in build_answer(detail, Evidence(), on_screen.constraints, on_screen, max_words=42, grounded_by="llm+critic", revisions=0).text
+    asks = none_found.model_copy(update={"follow_up_question": "Do you have a link to the listing?"})
+    assert build_answer(asks, Evidence(), hover.constraints, hover, max_words=42, grounded_by="llm+critic", revisions=0).spoken.endswith("Do you have a link to the listing?")

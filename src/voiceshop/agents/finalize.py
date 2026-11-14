@@ -431,6 +431,8 @@ def all_declined_said(preface: list[str] | None, before: list[str], spoken: str,
 _OFFER_STATED = re.compile(r"^I\s+(?:can|could)\s+(?:also\s+)?(?:look\s+for|search\s+for|find\s+you|show\s+you|check\s+for)\s+(?P<what>.+?)[.!]?$", re.I)
 _OFFER_ASKED = re.compile(r"^(?:would\s+you\s+like|do\s+you\s+want|shall\s+I|should\s+I)\b(?:\s+me)?(?:\s+to)?\s+"
                           r"(?:see|look\s+for|look\s+at|find|browse|search\s+for)\s+(?P<what>.+?)\?$", re.I)
+OFFER_SIMILAR = "I can look for a similar product instead."
+OFFER_FOR_THE_AGE = "I can look for toys labelled for that age instead."
 _NOT_A_KIND = re.compile(r"[$\d?!.;:\"]|^(?:the|this|that|it|them|one)\b", re.I)
 _AN_AGE = re.compile(r"\b\d{1,2}(?:\s*-\s*|\s+)(?:year|month)s?(?:\s*-\s*|\s+)old\b", re.I)      # the shopper's own figure, the only one a kind may carry
 MAX_OFFER_WORDS = 10
@@ -457,7 +459,26 @@ def offer_instead(text: str | None) -> str | None:
     return f"I can look for {what} instead."
 
 
-def whole_sentences(text: str, around: list[str], max_seconds: float, max_words: int, *, keep_prices: bool = False) -> list[str]:
+_OFFER_FOR = re.compile(r"^(I can look for .+?)\s+(?:for|with|under|in|that|to|at)\s.+\sinstead\.$")
+_RECALLED = re.compile(r"\brecall", re.I)
+
+
+_HEAD_NEEDS_ITS_TAIL = re.compile(r"\b(?:label+ed|listed|made|meant|rated|safe|suitable|suited|designed|intended|recommended|sold|priced)$", re.I)
+
+
+def shorter_offer(offer: str) -> str | None:
+    """``offer`` without what the kind of product is for or with ("... other hoverboards instead."); None when it has no such part.
+
+    Not when the words before that part need it ("toys labelled for that age"), and not for the two fixed offers.
+    """
+    match = _OFFER_FOR.match(offer)
+    if match is None or offer in (OFFER_SIMILAR, OFFER_FOR_THE_AGE) or _HEAD_NEEDS_ITS_TAIL.search(match[1]):
+        return None
+    return f"{match[1]} instead."
+
+
+def whole_sentences(text: str, around: list[str], max_seconds: float, max_words: int, *, keep_prices: bool = False,
+                    recall_first: bool = False) -> list[str]:
     """The sentences of ``text``, from the first, that can be said together with ``around`` inside the time limit.
 
     Trailing sentences give way one at a time; the first is always kept, and kept whole. Only a first sentence that
@@ -470,12 +491,20 @@ def whole_sentences(text: str, around: list[str], max_seconds: float, max_words:
     A sentence that states a recall gives way last of all, after the price. (A replay of the third live run: "I would not
     buy it. A safety notice says it was recalled in 2023 ... One listing shows $18.99 ..." was three sentences for the
     time of two; the price was kept and the reply said aloud not to buy the set without saying why. The price is on screen.)
+
+    With ``recall_first`` (an answer that found nothing to recommend) the recall is kept before the first sentence too.
+    ("I could not confirm a sale on the Aqua Beads Mega Set. A listing from Example Toys shows $18.99, but a recall notice
+    says the set was recalled in 2023 because its beads can expand if swallowed, so I cannot recommend it for your
+    daughter." The two did not fit, the first was kept, and the recall was on screen only: run 11, turn 15.)
     """
     kept = split_sentences(" ".join((text or "").split()))
     while len(kept) > 1 and not fits(" ".join([*around, *kept]), max_seconds, MAX_SPEED):
         later = range(1, len(kept))
         no_recall = [i for i in later if not _RECALL_SAID.search(kept[i])]
         plain = [i for i in no_recall if not (keep_prices and dollars_in(kept[i]))]
+        if recall_first and not no_recall and not _RECALL_SAID.search(kept[0]):
+            kept.pop(0)                                       # only the recall is left to drop: the opening gives way to it
+            continue
         kept.pop((plain or no_recall or list(later))[-1])
     if kept and not fits(kept[0], max_seconds, MAX_SPEED):
         kept = [trim_spoken(kept[0], max_words)]
@@ -661,9 +690,14 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
     # An answer that found nothing has no choice to narrow: what stands there is an offer of what to look for next, and
     # it is said as a statement in a fixed frame (``offer_instead``).
     offer = offer_instead(draft.follow_up_question) if abstained else None
-    question = offer or " ".join(s for s in split_sentences((draft.follow_up_question or "").strip()) if s.rstrip().endswith("?")) or None
+    asked = " ".join(s for s in split_sentences((draft.follow_up_question or "").strip()) if s.rstrip().endswith("?")) or None
+    if abstained and not offer and not asked and not about_screen:
+        # Nothing was found and the draft names no way forward (two replays of eight left the field empty, or filled it with
+        # what the frame does not take): the reply still ends on one, in the words of the fixed template.
+        offer = OFFER_FOR_THE_AGE if under_three else OFFER_SIMILAR
+    question = offer or asked
     if question and abstained and draft.spoken.strip().endswith("?"):
-        question = None                                      # the statement already ends by asking; a second question would only repeat it
+        question, offer = None, None                         # the statement already ends by asking; a second question would only repeat it
     before = said_before(preface, draft.spoken, max_seconds)                              # what was declined is said first
     if len(pressed) == 1 and pressed[0][2]:
         # One claim about one product: what the sources state about it is said in place of "I can only confirm what my sources
@@ -673,7 +707,8 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
             before = specific
     # The model's sentences are kept whole or not at all. (They used to be cut at a word count as well, which left
     # "... at a catalog price." and "... no live listing was found, so I." in the spoken reply of a live check.)
-    spoken = " ".join(whole_sentences(draft.spoken, before, max_seconds, max_words, keep_prices=constraints.wants_current_info))
+    spoken = " ".join(whole_sentences(draft.spoken, before, max_seconds, max_words, keep_prices=constraints.wants_current_info,
+                                      recall_first=abstained))
     if abstained and under_three:
         # The reason nothing of that kind was suggested, in fixed words, with the closest product for that age if there is
         # one. Further sentences of the model's statement give way to it; when all of it cannot be said in time, the
@@ -706,15 +741,23 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
         if question and question.lower() not in " ".join(parts).lower() and fits(" ".join([*before, *parts, question]), max_seconds, COMFORT_SPEED):
             parts.append(question)
         spoken = " ".join(parts)
+    if abstained and _RECALLED.search(draft.spoken) and not _RECALLED.search(spoken) and fits(" ".join([*before, spoken, SPOKEN_RECALL]), max_seconds, MAX_SPEED):
+        spoken = f"{spoken} {SPOKEN_RECALL}".strip()         # the statement names a recall and its sentence could not be said: the fixed one is
     before = all_declined_said(preface, before, spoken, max_seconds)
-    if abstained and question and question.lower() not in spoken.lower() and fits(" ".join([*before, spoken, question]), max_seconds, MAX_SPEED):
+    if abstained and offer and not fits(" ".join([*before, spoken, offer]), max_seconds, MAX_SPEED):
+        # The kind without what it is for, when that is what fits: "I can look for other hoverboards for a six-year-old
+        # instead." was nine hundredths of a second too long after a fixed sentence (run 11, turn 13). The screen has it whole.
+        said_offer = shorter_offer(offer)
+    else:
+        said_offer = question
+    if abstained and said_offer and said_offer.lower() not in spoken.lower() and fits(" ".join([*before, spoken, said_offer]), max_seconds, MAX_SPEED):
         # An answer that found nothing ends with its way forward, aloud as on screen. ("The Zentrix Hoverboard Pro nine
         # thousand isn't in my catalog, and no brand called Zentrix is carried. My live web search found nothing either."
         # The offer of a scooter or a ride-on toy for a seven-year-old was on screen only, and three jurors of four found
         # no alternative named: run 8, turn 13.) It gives way only when the reply would run over its time at the fastest
         # rate that is used: in run 9 a fixed sentence stood in front, the question was left out at the unhurried rate,
         # and what was said ended on "I have no current price or stock status for it". A declined part comes before it.
-        spoken = f"{spoken} {question}".strip()
+        spoken = f"{spoken} {said_offer}".strip()
 
     # ---- on-screen text
     lines: list[str] = []
