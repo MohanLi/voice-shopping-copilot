@@ -346,14 +346,15 @@ def web_fallback_calls(deps: Deps, constraints: Constraints, records: list[ToolR
     Nothing is returned when the search may not be made or would add nothing:
 
     * it has been made in this turn already: once a turn, whoever made it;
-    * live search is switched off, or the Router found no product to search for;
+    * live search is switched off, or nothing says what to search for: the Router named no product and the Planner
+      searched the catalog for none (:func:`searched_the_catalog_for`);
     * the product is for a child under three: a web result is never recommended for that age, because a listing has
       nothing to check its suitability against;
     * a web search of this turn failed (a failing service is reported, not called again), or the web has already been
       asked for listings of this product (a ``web_only`` plan, the look-up of a named brand, the agent's own search);
     * the safety policy does not allow the query.
     """
-    product = " ".join((constraints.product or "").split())
+    product = " ".join((constraints.product or "").split()) or searched_the_catalog_for(records)
     if not product or not deps.web_available or any(r.origin == "fallback" for r in records):
         return []
     if constraints.age_years is not None and constraints.age_years < 3:
@@ -368,6 +369,23 @@ def web_fallback_calls(deps: Deps, constraints: Constraints, records: list[ToolR
         return []
     made = {call_key(r.tool, r.arguments) for r in records}
     return [call for call in ((s.tool, step_arguments(s)) for s in steps) if call_key(*call) not in made]
+
+
+def searched_the_catalog_for(records: list[ToolRecord]) -> str:
+    """What the Planner searched the catalog for, in its own words, when the Router named no product.
+
+    "... so just treat the stainless-steel cleaner the same way and tell me which one is verified in the catalog" came back
+    from the Router as a product request with no product in it. The Planner searched the catalog for "stainless steel
+    cleaner", the best match was a hose clamp, and the two rules that then ask the live web had nothing to ask it for:
+    "I could not find a stainless-steel cleaner verified in the catalog", with the web one call away (run 20, turn 17:
+    the required search was not made, six jurors of six; none of four found the request answered). A look-up by a
+    catalog id is not such a search.
+    """
+    for record in records:
+        query = " ".join(str(record.arguments.get("query") or "").split())
+        if record.tool == "rag.search" and record.origin == "plan" and query and not catalog_ids(query):
+            return query[:160]
+    return ""
 
 
 PRICE_LOOKUPS = 2
