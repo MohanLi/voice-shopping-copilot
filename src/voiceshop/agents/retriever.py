@@ -593,10 +593,34 @@ def pressed_products(route: RouteDecision | None, shown: list[dict[str, Any]] | 
     They are not searched for and no agent is shown them: the turn is about another product. What the sources state about
     them is said by code (``finalize.claim_statements``), from the record that was on screen.
     """
-    if route is None or route.intent != "product_search" or not route.pressed or earlier is None:
+    if route is None or route.intent not in ("product_search", "follow_up") or not route.pressed or earlier is None:
         return []
     refs = [str((shown or [])[p - 1].get("ref")) for p in route.pressed if 0 < p <= len(shown or [])]
     return [item for ref in refs if (item := earlier.get(ref)) is not None]
+
+
+CLAIMED_BY_ID = "the product shown earlier that the message states something about, by its catalog id"
+
+
+def claimed_earlier(route: RouteDecision | None, constraints: Constraints, deps: Deps) -> list[tuple[str, dict[str, Any]]]:
+    """The look-up, by catalog id, of the products of earlier lists that the message presses a claim about (``RouteDecision.pressed_earlier``).
+
+    The record of what the conversation has shown is not evidence, so what the reply states about such a product is what
+    this call returns. It is made apart from the planned searches: the turn is about another product, and a puzzle
+    found by its id must not count as "the catalog has something close" to a request for a LEGO set. The call carries
+    what a look-up by id always carries (planner.id_lookup): the budget and the age, which the search reports on, and
+    the safety exclusions, which it applies.
+    """
+    if route is None or not route.pressed_earlier or not deps.rag_available:
+        return []
+    from voiceshop.agents.planner import enforce_constraints
+
+    ids = list(dict.fromkeys(str(entry.get("doc_id")).upper() for entry in route.pressed_earlier if entry.get("doc_id")))
+    if not ids:
+        return []
+    lookup = enforce_constraints(PlanStep(tool="rag.search", purpose=CLAIMED_BY_ID, query=" ".join(ids)),
+                                 constraints.model_copy(update={"brand": None, "category": None, "materials": []}))
+    return [("rag.search", step_arguments(lookup))]
 
 
 def make_retriever_node(deps: Deps):  # type: ignore[no-untyped-def]
@@ -663,6 +687,19 @@ def make_retriever_node(deps: Deps):  # type: ignore[no-untyped-def]
             # A product found again by this turn's search is in the evidence already, under a new handle; it is not kept twice.
             found = {c.doc_id for c in evidence.catalog} | {w.url for w in evidence.web}
             evidence = evidence.model_copy(update={"shown_earlier": [i for i in pressed if (i.doc_id if isinstance(i, CatalogItem) else i.url) not in found]})
+        claimed = claimed_earlier(route, constraints, deps)
+        if claimed:
+            # Looked up under handles of their own, and kept where no agent reads: code states what the look-up says (finalize.pressed_claims).
+            side = EvidenceBuilder()
+            side.reserve(evidence)
+            if earlier is not None:
+                side.reserve(earlier)
+            await _run_calls(deps, side, claimed, origin="claim", round_no=0)
+            wanted = {str(entry.get("doc_id")).upper() for entry in route.pressed_earlier}        # type: ignore[union-attr]
+            found = {c.doc_id.upper() for c in evidence.catalog}
+            again = [c for c in side.catalog.values() if c.doc_id.upper() in wanted and c.doc_id.upper() not in found]
+            evidence = evidence.model_copy(update={"shown_earlier": [*evidence.shown_earlier, *again]})
+            builder.records.extend(side.records)
         failed = [r for r in builder.records if not r.ok]
         summary = (f"{len(builder.records)} tool call(s): {len(evidence.catalog)} catalog product(s), {len(evidence.web)} web result(s)"
                    + (f" | {len(failed)} failed" if failed else "") + (f" | constraints loosened: {', '.join(evidence.relaxed)}" if evidence.relaxed else "")

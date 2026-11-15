@@ -85,6 +85,11 @@ class RouteDecision(BaseModel):
     pressed: SkipJsonSchema[list[int]] = Field(default_factory=list, description="Positions of on-screen products that a new product request names "
                                                "only in a sentence pressing a claim ('you said the Safari one was on sale, right?'). The reply "
                                                "says what the sources state about each; none of them is what the request is about")
+    pressed_earlier: SkipJsonSchema[list[dict[str, Any]]] = Field(default_factory=list, description="Catalog products shown earlier in this "
+                                                                  "conversation, no longer on screen, that the message names only in a "
+                                                                  "sentence pressing a claim, as they were remembered and with that sentence "
+                                                                  "('claim'). Each is looked up again by its id, and the reply says what "
+                                                                  "the look-up states on the point")
     named_ids: SkipJsonSchema[list[str]] = Field(default_factory=list, description="Catalog document ids the message names ('pull up "
                                                  "AMZ-B00HEZ0APE'). Each is looked up by its id, whatever the Planner searches for, "
                                                  "and the reply says what it is")
@@ -260,8 +265,8 @@ class ToolRecord(BaseModel):
     tool: str
     arguments: dict[str, Any]
     ok: bool
-    # who decided on the call: the Planner, the Retriever model, the web-fallback rule, or the price look-up rule
-    origin: Literal["plan", "agent", "fallback", "price"] = "plan"
+    # who decided on the call: the Planner, the Retriever model, the web-fallback rule, the price look-up rule, or the rule for a claim about a product shown earlier
+    origin: Literal["plan", "agent", "fallback", "price", "claim"] = "plan"
     round: int = 0
     n_results: int = 0
     duration_ms: float = 0.0

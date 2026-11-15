@@ -199,7 +199,9 @@ _AGE_CLAIM = re.compile(r"\bages?\b|\byears?[\s-]olds?\b|\bmonths?[\s-]olds?\b|\
 _BARE_AMOUNT = re.compile(
     r"(?:\b(?:was|is|were|are)|'s)\s+(?:only\s+|just\s+|about\s+|around\s+|like\s+|maybe\s+)?"
     r"(?:\d+(?:\.\d+)?|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty)"
-    r"(?![-\w])(?=\s*(?:[,.;:!?]|$|(?:now|today|yesterday|earlier|before|last\s+\w+|each|flat|tops|max|or\s+so|and\s+change|something|right|so|but|though|then)\b))", re.I)
+    r"(?![-\w])(?=\s*(?:[,.;:!?]|$|(?:now|today|yesterday|earlier|before|last\s+\w+|each|flat|tops|max|or\s+so|and\s+change|something|right|so|but|though|then"
+    # "The Safari one's six at the store now, right?" (the sixth live run, turn 10): a place where things are sold makes the number a price
+    r"|online|in[-\s]store|(?:at|in|from)\s+(?:the\s+|my\s+|your\s+|a\s+)?(?:stores?|shops?|mall|checkout|register|counter|target|walmart|amazon|costco|kohl'?s|walgreens|cvs))\b))", re.I)
 _AGE_TALK = re.compile(r"\bages?\b|\byears?\b|\bmonths?\b|\bolds?\b|\band\s+up\b|\d\s?\+|\b(?:toddlers?|bab(?:y|ies)|infants?|kids?|child(?:ren)?|boys?|girls?|sons?"
                        r"|daughters?|nephews?|nieces?|grand\w+|twins?)\b", re.I)
 _STANDS_FOR_A_PRODUCT = {"one", "it", "that", "this", "set", "puzzle", "kit", "toy", "game", "thing", "item", "product", "pack", "box", "price"}
@@ -848,27 +850,35 @@ def named_by_id(route: RouteDecision | None, evidence: Evidence, rows: list[Cata
 
 def pressed_claims(route: RouteDecision | None, evidence: Evidence, shown: list[dict[str, Any]] | None,
                    asked: str | None) -> list[tuple[CatalogItem | WebItem, str, str]]:
-    """For each product on screen that a new request presses a claim about: the product, the sentence for the screen, the one to say.
+    """For each product that a request presses a claim about and is not about: the product, the sentence for the screen, the one to say.
 
-    The product is the record that was on screen (``Evidence.shown_earlier``), or this turn's own result when the search
-    found the same product again. At most two are answered; a third would crowd out the answer to the request.
+    A product on screen (``RouteDecision.pressed``) is the record that was on screen (``Evidence.shown_earlier``), or this
+    turn's own result when the search found the same product again. A product of an earlier list
+    (``RouteDecision.pressed_earlier``) is what this turn's look-up by its id returned. At most two are answered; a third
+    would crowd out the answer to the request.
     """
-    if route is None or route.intent != "product_search" or not route.pressed or not shown:
+    if route is None or route.intent not in ("product_search", "follow_up"):
         return []
     from voiceshop.agents.router import claims_by_position
 
-    sentences = claims_by_position(asked or "", shown)
     out: list[tuple[CatalogItem | WebItem, str, str]] = []
-    for position in route.pressed[:2]:
-        if not 0 < position <= len(shown):
+    sentences = claims_by_position(asked or "", shown) if route.pressed and shown else {}
+    for position in route.pressed[:2] if shown else []:
+        if not 0 < position <= len(shown or []):
             continue
-        entry = shown[position - 1]
+        entry = (shown or [])[position - 1]
         again = next((c for c in evidence.catalog if entry.get("doc_id") and c.doc_id == entry.get("doc_id")), None) \
             or next((w for w in evidence.web if not entry.get("doc_id") and entry.get("url") and w.url == entry.get("url")), None)
         item = again or next((i for i in evidence.shown_earlier if i.ref == entry.get("ref")), None)
         stated = claim_statement(item, sentences.get(position, ""), evidence) if item is not None else None
         if item is not None and stated is not None:
             out.append((item, *stated))
+    for record in route.pressed_earlier[:2 - len(out)]:
+        doc_id = str(record.get("doc_id") or "").upper()
+        looked_up = next((i for i in [*evidence.shown_earlier, *evidence.catalog] if isinstance(i, CatalogItem) and i.doc_id.upper() == doc_id), None)
+        stated = claim_statement(looked_up, str(record.get("claim") or ""), evidence) if looked_up is not None else None
+        if looked_up is not None and stated is not None:
+            out.append((looked_up, *stated))
     return out
 
 

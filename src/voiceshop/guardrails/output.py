@@ -42,7 +42,10 @@ _UNSPEAKABLE = re.compile(r"https?://|www\.|\[[CW]\d+\]|\b[CW]\d+\b|AMZ-[A-Z0-9]
 _SECRET = re.compile(r"\bsk-[A-Za-z0-9_-]{16,}|\bAIza[0-9A-Za-z_-]{20,}|\b[A-Fa-f0-9]{32,}\b|api[_-]?key\s*[:=]", re.I)
 _BUDGET_WORDS = re.compile(r"\b(?:budget|over|above|more\s+than|exceeds?|higher|pricier|beyond|limit|too\s+expensive)\b", re.I)
 # A superlative is a statement about the other products too, and the table next to it shows whether it holds.
-_CHEAPEST = re.compile(r"\b(?:cheapest|lowest[-\s]priced?|lowest\s+(?:price|cost)|least\s+expensive|most\s+affordable)\b", re.I)
+# "The lowest catalog price of the three wood puzzles I found", said of $9.99 one row above $7.99, passed because a word stood
+# between "lowest" and "price" (run 19, turn 1; four jurors of ten: contradicts the sources).
+_CHEAPEST = re.compile(r"\b(?:cheapest|lowest[-\s]priced?|lowest\s+(?:(?:catalog|listed|list|live|current|web|store|retail|asking|overall|total)\s+){0,2}(?:price|cost)"
+                       r"|least\s+expensive|most\s+affordable)\b", re.I)
 _TOP_RATED = re.compile(r"\b(?:highest|best|top)[-\s]rated\b|\bhighest\s+(?:star\s+)?rating\b", re.I)
 # A search returns a few products, never every one. "The highest-rated eco option under $15" and "the largest LEGO piece count
 # within your budget" were each true of the rows beside them and read as statements about everything there is: four jurors of six
@@ -122,8 +125,10 @@ def superlative_without_scope(text: str) -> str | None:
     for sentence in split_sentences(" ".join((text or "").split())):
         said = asserted(_SUPERLATIVE, sentence)
         if said and not _SCOPED.search(sentence):
+            # "Of the ones shown", not "of the ones I found": a search finds more than an answer shows, and "the largest LEGO set I
+            # found", said of 484 pieces, stood next to a result of 790 that was sold out and not shown (run 19, turn 10).
             return (f"'{said.group(0)}' is said without saying of what. A search returns a few products, not every one there is: write "
-                    f"'{said.group(0)} of the ones I found' or 'of the three', or leave the word out.")
+                    f"'{said.group(0)} of the ones shown' or 'of the three', and only if it is true of them, or leave the word out.")
     return None
 
 
@@ -207,6 +212,20 @@ def denies_the_shoppers_amount(text: str, amount: float, user_text: str | None) 
     if figure is None:
         return False
     return bool(re.search(_DENIES + figure, text, re.I) or re.search(figure + _YOURS, text, re.I) or re.search(r"\b(?:you|your)\b[^.;!?$]{0,25}" + figure, text, re.I))
+
+
+_CLAUSE_OF_A_REPLY = re.compile(r"[.;!?]\s+|,\s+(?:and|but|while|whereas|though|although|yet)\s+", re.I)
+
+
+def states_elsewhere(spoken: str, state: str) -> bool:
+    """Does the reply state this stock status in a clause of its own, next to the one that says a listing does not state it?
+
+    "The Mercari listing states no stock status, and its maker's site lists it out of stock" says what the source says. It was
+    sent back twice for not naming melissaanddoug.com, and the template took its place without the rating that had been asked
+    for (the sixth live run, turn 3). The name of the site is on screen with the citation; what must not be passed over is
+    the status. "It does not say whether it is in stock" is not such a clause: it denies, and the words are in the denial.
+    """
+    return bool(state) and any(state in clause.lower() and not _NOT_STATED.search(clause) for clause in _CLAUSE_OF_A_REPLY.split(spoken))
 
 
 def closer_to_the_amount(text: str | None, ref: str, draft: AnswerDraft, evidence: Evidence, constraints: Constraints) -> str | None:
@@ -941,8 +960,9 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
             continue
         for web in evidence.web:
             source = re.sub(r"\.(?:com|org|net|co\.uk)$", "", (web.source or "").lower())
-            if web.availability and not web.flagged and (web.ref in about or web.matched_ref in about) and source and source not in draft.spoken.lower():
-                state = str(web.availability).replace("_", " ")
+            state = str(web.availability or "").replace("_", " ")
+            if web.availability and not web.flagged and (web.ref in about or web.matched_ref in about) and source and source not in draft.spoken.lower() \
+                    and not states_elsewhere(draft.spoken, state):
                 issues.append(Issue(code="availability_overlooked", severity="revise", where="spoken",
                                     message=f"The spoken sentence says the stock status is not stated, but {web.ref} ({web.source}) states "
                                             f"\"{state}\" for this product. Say what that source states, and name the source."))

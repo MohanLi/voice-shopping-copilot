@@ -671,7 +671,10 @@ def make_critic_node(deps: Deps):  # type: ignore[no-untyped-def]
                 left = [i for i in check_draft(fixed, evidence, constraints, max_words=budget, total_seconds=settings.tts_max_seconds,
                                                spoken_after=[*before, *after], user_text=state.get("user_text"), focus=focus_refs(state),
                                                settled=settled_question(state), also_asked=also_asked, asked_names=names)
-                        if i.severity in ("block", "revise")]
+                        # What no longer binds the model's draft after a revision does not bind its repair either. A sentence cut at
+                        # a clause was refused for "no materials are stated" on the same draft, and the template replaced an answer
+                        # whose one fault was two words too many (the sixth live run, turn 22).
+                        if i.severity in ("block", "revise") and i.code not in ADVISORY_AFTER_REVISION]
                 # Name, price and source is the shortest sentence there is. When even that is too long for the time the
                 # declined parts and a safety sentence leave, the template's would be too: its sentence is built the same
                 # way. So the model's products and reasons are kept with the rebuilt sentence, and the reply is cut to time

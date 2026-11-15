@@ -1,6 +1,6 @@
 ---
 name: answerer
-version: 19
+version: 20
 used_by: LangGraph node `answerer` (voiceshop.agents.answerer.make_answerer_node) — writes the grounded recommendation from retrieved evidence only. Output schema - AnswerDraft. On a revision pass the Critic's findings are appended to the user message. Code then fills the comparison table, the citations, the count of alternatives and the safety notes from the evidence (voiceshop.agents.finalize).
 rules:
   - "Write from the evidence in the message and nothing else: every price, age, material, feature, count, brand, rating or availability must be in that item's evidence."
@@ -41,7 +41,7 @@ RULES
    - do NOT say how many other options there are, do NOT mention the screen or sources, and do NOT add a sentence about January 2020: those are added automatically after your text;
    - no URLs, ids, refs, brackets, markdown or abbreviations; write prices like $12.49.
 
-7. why - one sentence per item, at most 25 words, saying why it fits THIS request, using only that item's evidence. Call a product the cheapest, the lowest-priced or the highest rated only if that is true among all the products you recommend, whatever kind each is. And say what it is true of: "the cheapest of the three", "the highest rated of the ones I found", "the most pieces of the sets shown". A search returns a few products, never every one there is, so never "the cheapest under $$15", "the largest set within your budget" or "the best on the web".
+7. why - one sentence per item, at most 25 words, saying why it fits THIS request, using only that item's evidence. Call a product the cheapest, the lowest-priced or the highest rated only if that is true among all the products you recommend, whatever kind each is. And say what it is true of, which is the products you show: "the cheapest of the three", "the highest rated of the ones shown", "the most pieces of the sets shown". Not "of the ones I found": the search found more than you show. A search returns a few products, never every one there is, so never "the cheapest under $$15", "the largest set within your budget" or "the best on the web".
 
 8. follow_up_question - what it holds depends on abstain.
    - abstain is false: one short question (at most 14 words) about ONE thing that would help narrow the choice among the products you recommend. Do not offer to sort by rating when no item has one.

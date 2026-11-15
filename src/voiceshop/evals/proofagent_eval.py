@@ -189,9 +189,30 @@ def _web_chunk(item: WebItem, detail: bool = False, *, brief: bool = False, tell
     cautions = list(item.cautions) + [c for cs in item.cautions_elsewhere.values() for c in cs]
     if cautions:
         bits.append("cautions " + ", ".join(dict.fromkeys(cautions)))
-    if item.snippet and item.kind != "shopping" and not brief:
-        bits.append(_passage(item.snippet, 220 if detail else 100, telling))
+    text = _own_text(item)
+    if text and item.kind != "shopping" and not brief:
+        bits.append(_passage(text, 220 if detail else 100, telling))
+    elif not brief and (detail or _quotes(telling, text, item.delivery)):
+        # A listing the reply rests on is shown with its own words, as a page is. "The listing says only 3 are left in stock" and
+        # "484 pieces in 35 colours with a storage box" were both the listings' words; the rows said "limited" and nothing of
+        # pieces, and ten jurors of ten marked the first as contradicting the sources (run 19, turn 10).
+        if text:
+            bits.append("listing text: " + _passage(text, 150, telling))
+        if item.delivery and item.delivery not in text:
+            bits.append("delivery line: " + " ".join(item.delivery.split())[:70])
     return "; ".join(bits)
+
+
+def _own_text(item: WebItem) -> str:
+    """The text of a result that is its own. A live shopping result has none: the tool writes one line from the store, the
+    price and the delivery ("Sold by Target · $4.99 · Free delivery"), and the row states the first two already."""
+    text = " ".join((item.snippet or "").split())
+    return "" if item.kind == "shopping" and text.startswith("Sold by ") else text
+
+
+def _quotes(telling: Callable[[str], bool] | None, *texts: str | None) -> bool:
+    """Does the reply use a word that it can only have from one of these texts?"""
+    return telling is not None and any(telling(w) for text in texts for w in set(_WORDS_OF_A_REPLY.findall((text or "").lower())))
 
 
 _WORDS_OF_A_REPLY = re.compile(r"[a-z0-9][a-z0-9\-]{5,}|[a-z]*\d[a-z0-9\-]*")
@@ -261,20 +282,24 @@ def retrievals(result: TurnResult, *, budget_chars: int = JURY_FIELD_CHARS - 10)
     said = reply_text(result)
     items: list[CatalogItem | WebItem] = [*evidence.catalog, *evidence.web, *evidence.shown_earlier]
     earlier = {i.ref for i in evidence.shown_earlier}
+    looked_up = {ref for record in result.tool_log for ref in record.refs}                # of those, the ones a call of this turn returned
     about_cited = {ref for i in items if i.ref in cited and isinstance(i, WebItem) for ref in i.described_by}
     product_words = {w for i in items if i.ref in cited for w in _WORDS_OF_A_REPLY.findall(i.title.lower())}
-    seen_in: Counter[str] = Counter(w for i in items if isinstance(i, WebItem) for w in set(_WORDS_OF_A_REPLY.findall(f"{i.title} {i.snippet}".lower())))
+    seen_in: Counter[str] = Counter(w for i in items if isinstance(i, WebItem)
+                                    for w in set(_WORDS_OF_A_REPLY.findall(f"{i.title} {i.snippet} {i.delivery or ''}".lower())))
+    said_words = set(_WORDS_OF_A_REPLY.findall(said))
 
     def telling(word: str) -> bool:
-        """A word the reply can only have from one page or two: not a word of a cited product's name, and in few results."""
-        return word in said and word not in product_words and seen_in[word] <= 2
+        """A word the reply can only have from one page or two: not a word of a cited product's name, and in few results.
+        A word of the reply, not a run of its letters: "3" is in every reply that states a price of $13.99."""
+        return word in said_words and word not in product_words and seen_in[word] <= 2
 
     def rests_on(item: CatalogItem | WebItem) -> int:
         """How directly the reply rests on an item it does not cite: 0 to 3, the steps 2 to 5 above."""
         if not isinstance(item, WebItem):
             return 3
         quoted = any(name in said for name in _store_names(item.source, product_words)) or (item.price is not None and f"${item.price:.2f}" in said) \
-            or any(telling(w) for w in set(_WORDS_OF_A_REPLY.findall(item.snippet.lower())))
+            or _quotes(telling, item.snippet, item.delivery)
         same_product = item.matched_ref in cited or item.ref in about_cited
         return 0 if quoted and same_product else 1 if quoted else 2 if same_product else 3
 
@@ -292,7 +317,8 @@ def retrievals(result: TurnResult, *, budget_chars: int = JURY_FIELD_CHARS - 10)
         else:
             row = {"source": f"{item.ref} {item.source or 'web'} ({item.kind})", "chunk": _web_chunk(item, detail, brief=brief, telling=telling)}
         if item.ref in earlier:
-            row["chunk"] = "From the list shown earlier in this conversation, not a result of this turn's search: " + row["chunk"]
+            row["chunk"] = ("Shown earlier in this conversation and looked up again this turn by its catalog id: " if item.ref in looked_up
+                            else "From the list shown earlier in this conversation, not a result of this turn's search: ") + row["chunk"]
         return row
 
     def size_of(row: dict[str, Any]) -> int:
@@ -533,7 +559,7 @@ CODE_RULES = (
     "are on screen. A not-found reply ends \"I can look for <a kind of product> instead.\"",
     "Grounding. Every table cell and citation is copied from tool results by code: a catalog product is cited by "
     "its document id, a live result by its URL, its store or site and the time it was retrieved. Code does the price arithmetic. When a "
-    "request for another product presses a claim about one on screen, code states what its record says on the point. "
+    "request presses a claim about another product, on screen or shown earlier, code states what its record says. "
     "A product named by its catalog id is looked up by that id and code states what it is; an id the catalog lacks is not repeated.",
     "Search. The budget, age and brand the shopper stated are sent as filters whatever a model wrote. When too few products meet them the "
     "catalog tool loosens some (never a stated age range or a safety exclusion) and marks what each product misses, which the reply "

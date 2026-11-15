@@ -45,7 +45,7 @@ def _turn(evidence, **answer):  # type: ignore[no-untyped-def]
 
     from voiceshop.agents.state import FinalAnswer
 
-    return SimpleNamespace(evidence=evidence, answer=FinalAnswer(**answer), asr=None)
+    return SimpleNamespace(evidence=evidence, answer=FinalAnswer(**answer), asr=None, tool_log=[])
 
 
 def _row(rank: int, ref: str, product: str, **kw):  # type: ignore[no-untyped-def]
@@ -129,6 +129,33 @@ def test_a_page_is_shown_at_the_words_the_reply_took_from_it() -> None:
     # A store's short name that is also a word of the product's name is the product: weiman.com is not "quoted" by a reply about a Weiman cleaner.
     assert pa._store_names("weiman.com", {"weiman", "stainless"}) == ["weiman.com"] and pa._store_names("walmart.com", {"weiman"}) == ["walmart.com", "walmart"]
     assert pa._store_names("Weiman", {"weiman"}) == [] and pa._store_names("Target") == ["target"]
+
+
+def test_a_listing_the_reply_rests_on_is_shown_with_its_own_words() -> None:
+    """Run 19, turn 10: "the listing says only 3 are left in stock" was the listing's delivery line and "484 pieces in 35 colours
+    with a storage box" its text. The rows given to the jury said "limited" and "in stock"; ten of ten: contradicts the sources."""
+    from voiceshop.agents.state import Citation, Evidence, WebItem
+
+    small = WebItem(ref="W2", url="https://market.example/10692", title="LEGO Classic Creative Bricks 10692", price=16.79, source="Example Market", rating=4.8,
+                    rating_count=9120, availability="limited", snippet="221 pieces. A smaller starter set.", delivery="Only 3 left in stock")
+    medium = WebItem(ref="W1", url="https://toys.example/10696", title="LEGO Classic Medium Creative Brick Box 10696", price=27.99, source="Example Toys",
+                     availability="in_stock", snippet="484 pieces in 35 colours with a storage box. Ages 4 and up.", delivery="In stock. Free pickup today")
+    large = WebItem(ref="W3", url="https://toys.example/10698", title="LEGO Classic Large Creative Brick Box 10698", price=49.99, source="Example Toys",
+                    availability="out_of_stock", snippet="790 pieces. Sold out online.")
+    live = WebItem(ref="W4", url="https://target.example/w", title="Weiman Stainless Steel Wipes", price=4.99, source="Target", snippet="Sold by Target · $4.99 · Free delivery",
+                   delivery="Free delivery")
+    turn = _turn(Evidence(web=[medium, small, large, live]), spoken="A bigger set is the Classic Creative Bricks at $16.79.",
+                 text="**Option 2: LEGO Classic Creative Bricks 10692** - $16.79 at Example Market. _Caveat: over your $8 budget, and the listing says only 3 are left in stock._",
+                 table=[_row(1, "W2", "LEGO Classic Creative Bricks 10692", price="$16.79 at Example Market", why="A bigger LEGO Classic set of 221 pieces."),
+                        _row(2, "W1", "LEGO Classic Medium Creative Brick Box 10696", price="$27.99 at Example Toys", why="484 pieces in 35 colours with a storage box."),
+                        _row(3, "W4", "Weiman Stainless Steel Wipes", price="$4.99 at Target", why="Listed at $4.99.")],
+                 citations=[Citation(title="a product", ref=ref, kind="web", id=f"https://x.example/{ref}", source="a store") for ref in ("W2", "W1", "W4")])
+    rows = {row["source"].split()[0]: row["chunk"] for row in pa.retrievals(turn)}
+    assert "listing text: 221 pieces. A smaller starter set." in rows["W2"] and "delivery line: Only 3 left in stock" in rows["W2"] and "limited" in rows["W2"]
+    assert "484 pieces in 35 colours with a storage box" in rows["W1"] and "delivery line: In stock. Free pickup today" in rows["W1"]
+    assert "790 pieces" not in rows["W3"] and "out of stock" in rows["W3"]                 # a result the reply does not rest on keeps its short form
+    # A live shopping result has no text of its own: the tool's line of store and price is not repeated, the delivery line is shown.
+    assert "Sold by" not in rows["W4"] and rows["W4"].endswith("delivery line: Free delivery")
 
 
 def test_a_long_reply_gives_up_sources_and_not_its_middle() -> None:

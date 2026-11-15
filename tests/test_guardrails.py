@@ -680,8 +680,13 @@ def test_a_product_is_not_called_the_cheapest_or_the_highest_rated_next_to_one_t
     assert len(issues("The cheapest of the three and rated 4.6 stars.")) == 1 and len(issues("The most affordable scrub brush here.")) == 1
     [rating] = issues("Rated 4.6 stars.", "The best-rated brush here, a two pack at $4.79.")
     assert rating.where == "W3" and "W1 in the same answer is rated 4.6" in rating.message
+    # A word between "lowest" and "price" (run 19, turn 1: "the lowest catalog price of the three wood puzzles I found", one row above a lower one).
+    assert len(issues("At $6.49, the lowest listed price of the three brushes I found.")) == 1
+    assert len(issues("The lowest current price of the brushes shown, $6.49.")) == 1
+    assert issues("A comfort handle, and not the lowest listed price here.") == []
     # True, or not claimed: nothing to fix.
     assert issues("The highest rated of the three, 4.6 stars from 1,840 shoppers, at $6.49.", "The cheapest listed, a two pack at $4.79.") == []
+    assert issues("Rated 4.6 stars.", "The lowest listed price of the three, a two pack at $4.79.") == []
     assert issues("Not the cheapest here, but rated 4.6 stars by 1,840 shoppers.") == []
     # "The cheapest that fits" is not contradicted by a cheaper product that the same answer says does not fit.
     assert issues("The cheapest full-size brush, at $6.49.", caveat="a narrow grout brush, not a general scrub brush") == []

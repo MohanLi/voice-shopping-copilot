@@ -442,7 +442,8 @@ def _why(item: CatalogItem | WebItem, constraints: Constraints) -> str:
     return (text[0].upper() + text[1:] + ".") if text else "Matches the request."
 
 
-_CLAUSE = re.compile(r"[,;]\s+(?=(?:and|so|but|while|whereas|though|although|yet)\s)|;\s+")
+# ", with a 4.5 rating from 2,100 shoppers" and ", which states no stock status" can go as well: what stands before them is a sentence.
+_CLAUSE = re.compile(r"[,;]\s+(?=(?:and|so|but|while|whereas|though|although|yet|with|which)\s)|;\s+")
 # What is kept must still be a sentence: "Both the Safari puzzle, the first on screen." is not one.
 _HAS_VERB = re.compile(r"\b(?:is|are|was|were|has|have|had|costs?|lists?|listed|fits?|suits?|does|do|did|can|cannot|could|comes?|states?|"
                        r"shows?|says?|gives?|reach(?:es)?|offers?|includes?|needs?|found|find)\b", re.I)
