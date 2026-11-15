@@ -29,7 +29,10 @@ main() {
 
   git pull --ff-only "$bundle" main
   echo
-  git log --oneline | head -3
+  # Not `git log | head -3`: under pipefail a git stopped by head is a failed pipeline. Once the history was longer
+  # than a pipe holds, this script exited 141 after a pull that had worked, and `mac_pull.sh && <the series>` never
+  # started the series (15 November).
+  git log --oneline -3
   echo
   echo "Up to date. Publish with: git push"
 }
