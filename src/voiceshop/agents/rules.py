@@ -448,15 +448,25 @@ _HAS_VERB = re.compile(r"\b(?:is|are|was|were|has|have|had|costs?|lists?|listed|
                        r"shows?|says?|gives?|reach(?:es)?|offers?|includes?|needs?|found|find)\b", re.I)
 
 def shorter_by_clauses(text: str) -> list[str]:
-    """A sentence that is too long, cut at a clause, the longest version first: "A, so B, and C." -> ["A, so B.", "A."].
+    """A spoken text that is too long, cut at a clause, the longest version first: "A, so B, and C." -> ["A, so B.", "A."].
 
-    Only the last sentence is cut, and only where a conjunction or a semicolon starts a new clause, so that what is
-    left is still a sentence. Nothing is returned for a text without such a place.
+    A cut is made only where a conjunction or a semicolon starts a new clause, so that what is left is still a sentence;
+    nothing is returned for a text without such a place. The last sentence is cut first. A text of several sentences is
+    then also offered with its first sentence cut and the others as they are: the length that is judged is the first
+    sentence's, which is the one said for certain, and a cut in the last one never shortened it. ("The Weiman listing at
+    Home Depot does not state whether it is fragrance-free; it is listed at $8.97 as a Stone & Tile Floor Cleaner. The
+    Branch Basics cleaner is stated to be fragrance-free, at $4.00." had no version that fitted, and the sentence built
+    from names and prices in its place said nothing about what was asked: a replay of the sixth live run's turn 30, and
+    the reply that turn got.)
     """
     text = " ".join((text or "").split())
     head, sep, last = text.rpartition(". ")
     cuts = [m.start() for m in _CLAUSE.finditer(last)]
-    return [f"{head}{sep}{last[:cut].rstrip(' ,;')}." for cut in reversed(cuts) if _HAS_VERB.search(last[:cut])]
+    out = [f"{head}{sep}{last[:cut].rstrip(' ,;')}." for cut in reversed(cuts) if _HAS_VERB.search(last[:cut])]
+    first, _, rest = text.partition(". ")
+    if rest:
+        out += [f"{first[:cut].rstrip(' ,;')}. {rest}" for cut in reversed([m.start() for m in _CLAUSE.finditer(first)]) if _HAS_VERB.search(first[:cut])]
+    return list(dict.fromkeys(out))
 
 
 def recommendation_for(item: CatalogItem | WebItem, constraints: Constraints) -> Recommendation:

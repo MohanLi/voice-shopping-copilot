@@ -881,6 +881,9 @@ def shown_from(answer: FinalAnswer) -> list[dict[str, Any]]:
             "title": row.product, "kind": "catalog" if row.doc_id else "web", "doc_id": row.doc_id, "url": row.live_url or row.url,
             "price": row.price_catalog if row.price_catalog is not None else row.price_live, "price_live": row.price_live if row.doc_id else None,
             "brand": row.brand,
+            # The store of a web listing, as the table names it ("Web: Home Depot"). One product is often listed by several
+            # stores, and the shopper tells them apart by the store ("the Weiman at Home Depot").
+            "store": row.source.removeprefix("Web: ").strip() if not row.doc_id and row.source.startswith("Web: ") else None,
         })
     return out
 
@@ -908,7 +911,7 @@ def seen_with(seen: list[dict[str, Any]] | None, answer: FinalAnswer, constraint
     known = {seen_key(entry): entry for entry in seen or []}
     for row in shown_from(answer):
         known.pop(seen_key(row), None)                        # shown again: it is the latest, under what it was shown for now
-        known[seen_key(row)] = {**{k: row.get(k) for k in ("name", "title", "kind", "doc_id", "url", "price", "brand")}, "found_for": found_for}
+        known[seen_key(row)] = {**{k: row.get(k) for k in ("name", "title", "kind", "doc_id", "url", "price", "brand", "store")}, "found_for": found_for}
     return list(known.values())[-MAX_SEEN:]
 
 

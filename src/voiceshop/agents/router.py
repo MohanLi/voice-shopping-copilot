@@ -201,8 +201,11 @@ _POINTS_AT_SCREEN = re.compile(r"\b(?:that|this)\s+one\b|\b(?:those|these)\s+(?:
 # A request to say what a pasted text says ("can you sum it up in one line", "just pull out what matters"), and the text itself.
 _ASKS_FOR_GIST = re.compile(
     r"\bsum(?:\s+(?:it|this|that|them))?\s+up\b|\bsummar(?:y|ise|ize|ies)\b|\bthe\s+gist\b|\btl;?dr\b|\bpull\s+out\s+what\s+matters\b|\bboil\s+(?:it|this)\s+down\b"
-    r"|\bwhat\s+(?:does|did)\s+(?:it|this|that|the\s+(?:review|text|message|post|comment))\s+(?:actually\s+)?say\b|\bwhat\s+(?:do|should)\s+(?:you|i)\s+make\s+of\b"
-    r"|\b(?:is|was)\s+(?:it|this|that|the\s+review)\s+legit\b|\bcan'?t\s+tell\s+if\s+it'?s\s+legit\b", re.I)
+    r"|\bwhat\s+(?:does|did)\s+(?:it|this|that|the\s+(?:review(?:er)?|text|message|post|comment|note|email|label))\s+(?:actually\s+)?say\b|\bwhat\s+(?:do|should)\s+(?:you|i)\s+make\s+of\b"
+    r"|\b(?:is|was)\s+(?:it|this|that|the\s+review)\s+legit\b|\bcan'?t\s+tell\s+if\s+it'?s\s+legit\b"
+    # "give me the short version of this review ... what the reviewer says about streaks and scent" (the sixth live run, turn 21)
+    r"|\b(?:short|shorter|quick|brief)\s+version\b|\bin\s+a\s+nutshell\b"
+    r"|\bwhat\s+(?:it|this|that|(?:the|this|that)\s+(?:review(?:er)?|text|message|post|comment|note|email|label|writer|author))\s+(?:actually\s+)?(?:says|said|is\s+saying)\b", re.I)
 _QUOTED = re.compile(r'["\u201c]([^"\u201c\u201d]{20,700})["\u201d]')
 _ASKS_SOMETHING = re.compile(r"\?|\b(?:tell\s+me|show\s+me|let\s+me\s+know|check|compare|find|look\s+up|what|which|how|where|when|is\s+(?:it|that|this|there)"
                              r"|does\s+(?:it|that|this)|do\s+(?:they|you)|can\s+you|could\s+you|i\s+need|i\s+want|i'?d\s+like)\b", re.I)
@@ -567,6 +570,19 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
 _THE_CHILD = re.compile(r"\b(?:him|her|he|she|son|daughter|baby|toddler|infant|kid|child|grand(?:son|daughter|child)|niece|nephew|little\s+one)\b", re.I)
 
 
+def another_product_than_listed(earlier: Constraints, listed: Constraints) -> bool:
+    """Is the request in force about another product than the list on screen was found for?
+
+    A request that narrows the one before keeps its words or adds to them ("puzzle", "wooden jigsaw puzzle"). Two products of
+    one kind share the word for the kind and are two products all the same: the list on screen had been found for a
+    "stainless steel cleaner"; a question about a "Grout Pro grout cleaner" found nothing and showed no list; and the next
+    comparison of two cleaners on screen was searched for as "fragrance-free Grout Pro grout cleaner", because "cleaner" is
+    in both names (the sixth live run, turns 24 and 26; and turn 30, "Weiman grout cleaner Home Depot").
+    """
+    now, then = _name_words(earlier.product), _name_words(listed.product)
+    return bool(now) and (not then or not (now <= then or then <= now))
+
+
 def constraints_in_force(route: RouteDecision, text: str, earlier: Constraints | None, listed: Constraints | None) -> Constraints | None:
     """What a follow-up inherits: the request in force, or, for a question about products on screen, what that list was found for.
 
@@ -576,7 +592,7 @@ def constraints_in_force(route: RouteDecision, text: str, earlier: Constraints |
     three is kept all the same when the message speaks of the child ("would the first one be all right for him?"): the
     rule for small children is not dropped on a guess about who is meant.
     """
-    if not route.refers_to or listed is None or earlier is None or not names_another_product(earlier, listed):
+    if not route.refers_to or listed is None or earlier is None or not another_product_than_listed(earlier, listed):
         return earlier
     if earlier.age_years is not None and earlier.age_years < 3 and _THE_CHILD.search(text):
         return listed.model_copy(update={"age_years": earlier.age_years, "recipient": earlier.recipient})
@@ -841,6 +857,13 @@ def recalled_products(request: str, route: RouteDecision, seen: list[dict[str, A
     'add this under Deferred, word for word: "Once Example Hardware confirms the BristlePro price, send the final pick
     ..."' recalled the BristlePro brush and searched for it, in a turn that asked nothing about it (run 15, turn 23).
 
+    One product listed by several stores is one product. Live search returns the same cleaner at Target, at Walmart and at
+    Home Depot, under one name, and "the Weiman at Home Depot ... you told me that earlier" named none of them while every
+    word of each name was also a word of another's: the search that followed was for a "Weiman grout cleaner", after the
+    request then in force (the sixth live run, turn 30). Listings whose names have the same words do not take each other's
+    words away. Of them the one whose store the request names is meant, else the one that stood highest in its list; and
+    while one of them is on screen the name means that one, and nothing is recalled.
+
     What is returned is the record (finalize.seen_with), latest first, at most two. It is not evidence. The catalog
     product is looked up again by its id and the web listing by the name it was shown under (planner.normalise_plan),
     so what the reply states is this turn's tool result, as everywhere else.
@@ -854,19 +877,26 @@ def recalled_products(request: str, route: RouteDecision, seen: list[dict[str, A
     on_screen = {seen_key(entry) for entry in shown or []}
     words = {seen_key(entry): _name_words(str(entry.get("title") or entry.get("name") or "")) for entry in [*seen, *(shown or [])]}
     said = {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", _QUOTED.sub(" ", request).lower())}
-    out: list[dict[str, Any]] = []
+    named: dict[frozenset[str], tuple[bool, dict[str, Any]]] = {}     # by the words of the name: is its store named, and the record
     for entry in reversed(seen):
         key = seen_key(entry)
-        if not key or key in on_screen:
+        if not key or key in on_screen or not words[key]:
+            continue
+        name = words[key]
+        if any(k in on_screen and w == name for k, w in words.items()):
             continue
         found_for = entry.get("found_for") or {}
         kind = _name_words(" ".join(str(v) for k in ("product", "category") if (v := found_for.get(k))))
         kind |= _name_words(" ".join(str(v) for k in ("materials", "must_have") for v in found_for.get(k) or []))
-        others = set().union(*(w for k, w in words.items() if k != key)) if len(words) > 1 else set()
-        telling = {w for w in words[key] - others - kind - _QUALITY_WORDS if len(w) > 3}
-        if telling & said:
-            out.append({**entry, "named_by": sorted(telling & said)})
-    return out[:MAX_RECALLED]
+        others = set().union(*(w for k, w in words.items() if k != key and w != name)) if len(words) > 1 else set()
+        telling = {w for w in name - others - kind - _QUALITY_WORDS if len(w) > 3}
+        if not telling & said:
+            continue
+        store = _name_words(str(entry.get("store") or ""))
+        at_store = bool(store) and store <= said
+        if frozenset(name) not in named or not named[frozenset(name)][0]:
+            named[frozenset(name)] = (at_store, {**entry, "named_by": sorted(telling & said)})
+    return [entry for _, entry in named.values()][:MAX_RECALLED]
 
 
 def asks_for_another_kind(request: str | None, earlier: Constraints | None, shown: list[dict[str, Any]] | None) -> bool:
@@ -891,7 +921,8 @@ def with_recalled(request: str, recalled: list[dict[str, Any]]) -> str:
     """``request`` followed by which earlier products it means, for the agents that search and write."""
     if not recalled:
         return request
-    names = " and ".join(f'"{str(entry.get("title") or entry.get("name"))[:120]}"' for entry in recalled)
+    names = " and ".join(f'"{str(entry.get("title") or entry.get("name"))[:120]}"' + (f' (shown at {entry["store"]})' if entry.get("store") else "")
+                         for entry in recalled)
     return (f"{request} [The shopper means {'a product' if len(recalled) == 1 else 'products'} shown earlier in this conversation: {names}. "
             "It is looked up again; answer about it from this turn's evidence.]")
 

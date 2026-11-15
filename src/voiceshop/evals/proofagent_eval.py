@@ -76,6 +76,10 @@ def eval_dir() -> Path:
 
 
 # ------------------------------------------------------------------- what the jury is shown
+# What the harness keeps of each field of a turn when it writes the jury's prompt (its agents/juror.py and context_budget.py):
+# the retrievals are cut to 2,000 characters; a reply to a share of the transcript budget, 3,333 characters in a 30-turn run.
+JURY_FIELD_CHARS = 2000
+JURY_ANSWER_CHARS = 3300
 def short_url(url: str | None) -> str:
     """A long tracking URL shortened for reading; the full link stays in the turn record."""
     if not url:
@@ -103,9 +107,18 @@ def render_answer(result: TurnResult) -> str:
             lines.append(f"{row.rank}. {row.product[:90]} | {row.price} | {row.rating} | {row.ingredients} | {row.source} | {short_url(row.citation)}")
     if answer.citations:
         lines.append("SOURCES:")
-        for c in answer.citations:
+        # The harness keeps JURY_ANSWER_CHARS of a reply and cuts the rest out of its middle, where the caveats on screen
+        # stand. The list of sources is the part that can be shortened without hiding a statement: every link is in the table.
+        room = JURY_ANSWER_CHARS - len("\n".join(lines))
+        for n, c in enumerate(answer.citations):
             where = "private catalog document" if c.kind == "catalog" else f"live web result, {c.source or 'web'}"
-            lines.append(f"[{c.ref}] {short_url(c.id)} ({where}{', as of ' + c.as_of if c.as_of else ''})")
+            line = f"[{c.ref}] {short_url(c.id)} ({where}{', as of ' + c.as_of if c.as_of else ''})"
+            left = len(answer.citations) - n
+            if n and room - len(line) - 1 < (40 if left > 1 else 0):
+                lines.append(f"(and {left} more, listed on screen)")
+                break
+            lines.append(line)
+            room -= len(line) + 1
     return "\n".join(lines)
 
 
@@ -153,58 +166,156 @@ def _catalog_chunk(item: CatalogItem, detail: bool = False) -> str:
     return "; ".join(bits)
 
 
-def _web_chunk(item: WebItem, detail: bool = False) -> str:
-    bits = [item.title[:80]]
+def _web_chunk(item: WebItem, detail: bool = False, *, brief: bool = False, telling: Callable[[str], bool] | None = None) -> str:
+    """One web result as the jury sees it. ``brief`` (a result the reply does not rest on) keeps what identifies it and what
+    it warns of; ``detail`` gives its text more room, and ``telling`` (is this a word the reply took from a page?) moves that
+    room to where such words stand."""
+    bits = [item.title[:50 if brief else 80]]
     if item.price is not None:
         bits.append(f"${item.price:.2f} at {item.source or 'web'}")
     elif item.source:
         bits.append(f"{item.source}, no price stated")
-    if item.rating is not None:
+    if item.matched_ref:
+        bits.append(f"a listing of {item.matched_ref}")
+    if item.rating is not None and not brief:
         bits.append(f"rating {item.rating:g}" + (f" ({item.rating_count:,})" if item.rating_count else "") + (f" on its own page at {item.rating_from}" if item.rating_from else ""))
     if item.availability:
-        bits.append(item.availability)
+        bits.append(item.availability.replace("_", " "))
     stated = list(item.claims) + [c for cs in item.claims_elsewhere.values() for c in cs]
-    if stated:
+    if stated and not brief:
         bits.append("states " + ", ".join(dict.fromkeys(stated)))
     if item.flagged:
         bits.append("instruction-like text removed by the tool")
     cautions = list(item.cautions) + [c for cs in item.cautions_elsewhere.values() for c in cs]
     if cautions:
         bits.append("cautions " + ", ".join(dict.fromkeys(cautions)))
-    if item.snippet and item.kind != "shopping":
-        bits.append(item.snippet[:220 if detail else 100])
+    if item.snippet and item.kind != "shopping" and not brief:
+        bits.append(_passage(item.snippet, 220 if detail else 100, telling))
     return "; ".join(bits)
 
 
-def retrievals(result: TurnResult, *, budget_chars: int = 1800) -> list[dict[str, Any]]:
-    """The evidence of the turn, the cited items first, compact enough to fit the jury's prompt."""
+_WORDS_OF_A_REPLY = re.compile(r"[a-z0-9][a-z0-9\-]{5,}|[a-z]*\d[a-z0-9\-]*")
+
+
+def _passage(text: str, limit: int, telling: Callable[[str], bool] | None = None) -> str:
+    """``limit`` characters of a result's text: the stretch that holds the most words the reply took from it, else its start.
+
+    A page's text is longer than the room it gets. "A page for the same product lists ingredients including water, coconut oil
+    and C13-15 alkane" was true of the page and stood beyond the hundredth character of its text; five jurors of six marked
+    the sentence as contradicting the sources (the sixth live run, turn 26).
+    """
+    text = " ".join(text.split())
+    if len(text) <= limit or telling is None:
+        return text[:limit]
+    hits = [(m.start(), m.group(0)) for m in _WORDS_OF_A_REPLY.finditer(text.lower()) if telling(m.group(0))]
+    best, held = 0, len({w for at, w in hits if at < limit})
+    for at, _ in hits:
+        start = min(text.rfind(" ", 0, max(0, at - limit // 4)) + 1, len(text) - limit + 1)
+        holds = len({w for where, w in hits if start <= where < start + limit - 1})
+        if holds > held:
+            best, held = start, holds
+    return text[:limit] if best == 0 else "…" + text[best:best + limit - 1]
+
+
+def _store_names(source: str | None, product_words: set[str] = frozenset()) -> list[str]:  # type: ignore[assignment]
+    """How a reply may name a store or a site: as it is written, and a site without its ending ("walmart.com", "walmart").
+
+    Not a form that is a word of a cited product's name: "weiman" in a reply about a Weiman cleaner is the product, not
+    the site weiman.com and not a store called Weiman.
+    """
+    name = (source or "").strip().lower()
+    stem = re.sub(r"\.(?:com|org|net|co\.uk|io|us|shop|store)$", "", name)
+    return [n for n in dict.fromkeys([name, stem]) if len(n) >= 4 and n not in product_words]
+
+
+def reply_text(result: TurnResult) -> str:
+    """Everything the shopper is told this turn, lower-cased: aloud, on screen, and in the cells of the table."""
+    answer = result.answer
+    cells = [cell for row in answer.table for cell in (row.price, row.rating, row.ingredients, row.source, row.why, row.caveat or "")]
+    return " ".join([answer.spoken or "", answer.text or "", *answer.notes, *cells]).lower()
+
+
+def retrievals(result: TurnResult, *, budget_chars: int = JURY_FIELD_CHARS - 10) -> list[dict[str, Any]]:
+    """The evidence of the turn as the jury is given it: what the reply rests on first, and as much of the rest as the harness keeps.
+
+    The harness keeps 2,000 characters of a turn's retrievals (its agents/juror.py), and a turn with live search returns ten
+    to seventeen results. The order therefore decides what a juror can check a sentence against:
+
+    1. the cited items, and a product shown earlier that the reply states something about;
+    2. results about a cited product that the reply quotes: it names the store or the site, states that listing's price, or
+       uses a word that only that page's text has;
+    3. other results the reply quotes;
+    4. the other listings and pages of the cited products, which may say something else about them and stay in view for that;
+    5. the rest of what the searches returned, in a short form.
+
+    Until the sixth live run the order after the cited items was the order of the searches. "Walmart's listing shows it out
+    of stock" was stated from the ninth result of that turn; the list ended at the seventh; eleven jurors of twelve marked the
+    sentence as contradicting the sources, and six of six as overstated (turn 4).
+    """
     evidence: Evidence | None = result.evidence
     if evidence is None:
         return []
     cited = [row.ref for row in result.answer.table if row.why] or [row.ref for row in result.answer.table]      # the rows the answer is about
     cited += [c.ref for c in result.answer.citations if c.ref not in cited]                # an abstention cites without a table
+    cited += [ref for row in result.answer.table for ref in row.support_refs if ref not in cited]   # the pages a row shows statements from
+    said = reply_text(result)
     items: list[CatalogItem | WebItem] = [*evidence.catalog, *evidence.web, *evidence.shown_earlier]
+    earlier = {i.ref for i in evidence.shown_earlier}
+    about_cited = {ref for i in items if i.ref in cited and isinstance(i, WebItem) for ref in i.described_by}
+    product_words = {w for i in items if i.ref in cited for w in _WORDS_OF_A_REPLY.findall(i.title.lower())}
+    seen_in: Counter[str] = Counter(w for i in items if isinstance(i, WebItem) for w in set(_WORDS_OF_A_REPLY.findall(f"{i.title} {i.snippet}".lower())))
+
+    def telling(word: str) -> bool:
+        """A word the reply can only have from one page or two: not a word of a cited product's name, and in few results."""
+        return word in said and word not in product_words and seen_in[word] <= 2
+
+    def rests_on(item: CatalogItem | WebItem) -> int:
+        """How directly the reply rests on an item it does not cite: 0 to 3, the steps 2 to 5 above."""
+        if not isinstance(item, WebItem):
+            return 3
+        quoted = any(name in said for name in _store_names(item.source, product_words)) or (item.price is not None and f"${item.price:.2f}" in said) \
+            or any(telling(w) for w in set(_WORDS_OF_A_REPLY.findall(item.snippet.lower())))
+        same_product = item.matched_ref in cited or item.ref in about_cited
+        return 0 if quoted and same_product else 1 if quoted else 2 if same_product else 3
+
     # A product shown earlier that the reply states something about (a claim the shopper pressed) comes right after the first row:
     # the list is cut to a size, and the record behind a sentence of the reply must not be what is cut.
-    earlier = {i.ref for i in evidence.shown_earlier}
-    items.sort(key=lambda i: (0.5 if i.ref in earlier else cited.index(i.ref) if i.ref in cited else len(cited) + 1))
-    out: list[dict[str, Any]] = []
-    used = 0
-    for item in items:
-        detail = item.ref in cited[:3] or item.ref in earlier
+    rank = {i.ref: (0.5, 0) if i.ref in earlier else (cited.index(i.ref), 0) if i.ref in cited else (len(cited) + 1, rests_on(i)) for i in items}
+    items.sort(key=lambda i: rank[i.ref])
+    def row_for(item: CatalogItem | WebItem, brief: bool) -> dict[str, Any]:
+        named = item.ref in cited or item.ref in earlier
+        detail = item.ref in cited[:3] or item.ref in earlier or (rank[item.ref][1] == 0 and not named)
         if isinstance(item, CatalogItem):
             row: dict[str, Any] = {"source": f"{item.ref} {item.doc_id}", "chunk": _catalog_chunk(item, detail)}
             if item.rerank_score is not None:
                 row["score"] = round(float(item.rerank_score), 2)
         else:
-            row = {"source": f"{item.ref} {item.source or 'web'} ({item.kind})", "chunk": _web_chunk(item, detail)}
+            row = {"source": f"{item.ref} {item.source or 'web'} ({item.kind})", "chunk": _web_chunk(item, detail, brief=brief, telling=telling)}
         if item.ref in earlier:
             row["chunk"] = "From the list shown earlier in this conversation, not a result of this turn's search: " + row["chunk"]
-        size = len(json.dumps(row))
-        if out and used + size > budget_chars:
-            break
-        out.append(row)
-        used += size
+        return row
+
+    def size_of(row: dict[str, Any]) -> int:
+        return len(json.dumps(row)) + 2                                                    # and the separator before the next row
+
+    out: list[dict[str, Any]] = []
+    shortened: list[tuple[int, CatalogItem | WebItem]] = []
+    used = 2                                                                               # the brackets of the list
+    for item in items:
+        rest = isinstance(item, WebItem) and item.ref not in cited and item.ref not in earlier and rank[item.ref][1] == 3
+        for brief in ((True,) if rest else (False, True) if isinstance(item, WebItem) else (False,)):
+            row = row_for(item, brief)
+            if not out or used + size_of(row) <= budget_chars:
+                if brief:
+                    shortened.append((len(out), item))
+                out.append(row)
+                used += size_of(row)
+                break
+    for at, item in shortened:                                                             # room left over goes back to the short rows, in order
+        full = row_for(item, False)
+        if used - size_of(out[at]) + size_of(full) <= budget_chars:
+            used += size_of(full) - size_of(out[at])
+            out[at] = full
     return out
 
 

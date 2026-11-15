@@ -188,6 +188,27 @@ def _explained(amount: float, prices: list[float], constraints: Constraints, dif
                for a, b in combinations(known, 2))
 
 
+_DENIES = r"(?:\bnot|\bno|n't|\bnever|\bneither|\bnor|\brather\s+than|\binstead\s+of|\bcannot|\bwithout)\b[^.;!?$]{0,45}"
+_YOURS = r"[^.;!?$]{0,12}\b(?:you|your)\b"
+
+
+def denies_the_shoppers_amount(text: str, amount: float, user_text: str | None) -> bool:
+    """An amount of the shopper's own message that the reply repeats in order to deny it, or as theirs.
+
+    "The Target listing for the Weiman cleaner shows $4.99, not $3.49": the shopper had said that Target dropped it to $3.49,
+    and $3.49 is the price of nothing in the evidence, which is the point of the sentence. The rule against prices that are in
+    no source sent the draft back twice and the template took its place (the sixth live run, turn 21). A sentence that puts the
+    shopper's amount forward as a price ("it is $3.49 now") is still sent back: only a denial, or "the $3.49 you mentioned",
+    passes, and no other amount may stand between the denying word and this one.
+    """
+    if not user_text or not any(abs(amount - said) <= 0.011 for said in dollars_in(user_text)):
+        return False
+    figure = rf"\$\s?{int(amount)}(?:\.{round((amount - int(amount)) * 100):02d})?(?![\d.]*\d)" if amount == round(amount, 2) else None
+    if figure is None:
+        return False
+    return bool(re.search(_DENIES + figure, text, re.I) or re.search(figure + _YOURS, text, re.I) or re.search(r"\b(?:you|your)\b[^.;!?$]{0,25}" + figure, text, re.I))
+
+
 def closer_to_the_amount(text: str | None, ref: str, draft: AnswerDraft, evidence: Evidence, constraints: Constraints) -> str | None:
     """What to send back when ``text`` calls the product ``ref`` the closest to an amount and another row of the answer is closer, else None.
 
@@ -354,6 +375,59 @@ def _name_stems(text: str) -> set[str]:
             continue
         out.add(word[:-1] if word.endswith("s") and not word.endswith("ss") and len(word) > 3 else word)
     return out
+
+
+_WORD_OF_A_MESSAGE = re.compile(r"[A-Za-z0-9][A-Za-z0-9'\-]*")
+_CAPITAL_BUT_NO_NAME = frozenset("i i'm i'd i've i'll ok okay".split())
+
+
+def names_asked(text: str | None, product: str | None) -> list[str]:
+    """The product names a request holds: runs of capitalised words or model numbers in the shopper's message that are also
+    words of what the Router says is wanted (``product``).
+
+    "... can you tell me the Zentrix Hoverboard Pro nine thousand specs next to it?", asked about a Safari puzzle in the same
+    breath: the Router wrote both names into one request, both were searched for, the puzzle was found and answered, and the
+    reply never said that no hoverboard of that name is in the sources (the sixth live run, turn 13: none of six jurors found
+    the unsureness stated, none a way forward). A kind of product is not a name ("a wooden puzzle"), and a word that is only
+    capitalised because a sentence begins with it is not one either; a message typed without capitals names nothing here,
+    and is answered as before.
+    """
+    wanted = _name_stems(product or "")
+    if not text or not wanted:
+        return []
+    names: list[str] = []
+    run: list[str] = []
+    proper = False                                             # the run holds a word that is capitalised inside a sentence, or a model number
+    end = 0
+
+    def close() -> None:
+        nonlocal run, proper
+        name = " ".join(run)
+        if proper and _name_stems(name) & wanted and name not in names:
+            names.append(name)
+        run, proper = [], False
+
+    for found in _WORD_OF_A_MESSAGE.finditer(text):
+        word, gap = found.group(0), text[end:found.start()]
+        first = not text[:found.start()].strip(" \t\"'“”‘’([") or bool(re.search(r"[.!?:;\n]", gap))
+        model = any(c.isdigit() for c in word) and any(c.isalpha() for c in word)
+        capital = word[0].isupper() and word.lower() not in _CAPITAL_BUT_NO_NAME
+        if run and (gap.strip() or not (capital or model or word.isdigit())):
+            close()
+        if capital or model or (run and word.isdigit()):
+            run.append(word)
+            proper = proper or model or (capital and not first)
+        end = found.end()
+    close()
+    return names
+
+
+def names_not_found(names: Sequence[str], evidence: Evidence) -> list[str]:
+    """Of the names a request holds, those that no title of the evidence carries whole: a word of four letters or more is in none."""
+    titles = [item.title.lower() for item in [*evidence.catalog, *evidence.web]]
+    words = set().union(*(_name_stems(title) for title in titles)) if titles else set()
+    joined = " ".join(re.sub(r"[^a-z0-9 ]", "", title) for title in titles).replace(" ", "")
+    return [name for name in names if any(len(w) >= 4 and w not in words and w not in joined for w in _name_stems(name))]
 
 
 def found_all_the_same(text: str, evidence: Evidence, besides: Sequence[str] = ()) -> tuple[str, CatalogItem | WebItem] | None:
@@ -561,7 +635,7 @@ def settled_by_prices(asked: str | None, on_screen: list[str], evidence: Evidenc
 def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints, *, max_words: int = 42,
                 max_seconds: float | None = None, spoken_after: list[str] | None = None, total_seconds: float | None = None,
                 user_text: str | None = None, focus: list[str] | None = None, settled: tuple[bool, str] | None = None,
-                also_asked: str | None = None) -> list[Issue]:
+                also_asked: str | None = None, asked_names: Sequence[str] = ()) -> list[Issue]:
     """All rule-based findings for one draft.
 
     ``focus`` lists the handles of on-screen products a follow-up refers to: their prices may be stated next to a
@@ -653,7 +727,7 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
             continue
         text = f"{rec.why} {rec.caveat or ''}"
         for amount in dollars_in(text):
-            if not _explained(amount, all_prices, constraints):
+            if not _explained(amount, all_prices, constraints) and not denies_the_shoppers_amount(text, amount, user_text):
                 issues.append(Issue(code="ungrounded_price", severity="revise", where=rec.ref,
                                     message=f"${amount:.2f} is stated for {rec.ref} but is not a price of it or of any other product this answer is about."))
         if asserted(_RATING_TALK, text) and not _has_rating(item):
@@ -785,7 +859,7 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
             continue
         for amount in dollars_in(text):
             # "four dollars cheaper" is allowed between recommended items; over everything retrieved, some pair would explain almost any figure
-            if not _explained(amount, all_prices, constraints, differences=bool(items)):
+            if not _explained(amount, all_prices, constraints, differences=bool(items)) and not denies_the_shoppers_amount(text, amount, user_text):
                 issues.append(Issue(code="ungrounded_price", severity="revise", where=where,
                                     message=f"${amount:.2f} in the {where} text is not a price of {of_what}."))
         about_products = without_shoppers_text(text, user_text)      # what a pasted review says is not a rating of a product
@@ -881,15 +955,18 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
     # "Compare the Barnyard puzzle with the Melissa & Doug Farm Animals one. I need price, piece count ..." The search found no
     # such puzzle, and three replays of four answered about the Barnyard puzzle alone (replays of the fifth run in the workspace,
     # turn 26). The words that name the other product, and that no product of the answer carries, have to appear in the reply.
-    if also_asked:
-        answered_words = set().union(*(_name_stems(i.title) for i in answered)) if answered else set()
-        its_own = _name_stems(also_asked) - answered_words
-        every = " ".join([draft.spoken, draft.abstain_reason or "", *(f"{r.why} {r.caveat or ''}" for r in draft.recommendations)])
+    # A new request is held to the same for a product it names that the search did not return (``asked_names``: names_asked
+    # without what names_not_found finds in the evidence; the sixth live run, turn 13).
+    answered_words = set().union(*(_name_stems(i.title) for i in answered)) if answered else set()
+    every = " ".join([draft.spoken, draft.abstain_reason or "", *(f"{r.why} {r.caveat or ''}" for r in draft.recommendations)])
+    for name in [also_asked, *asked_names] if also_asked else asked_names:
+        its_own = _name_stems(name) - answered_words
         if its_own and not its_own & _name_stems(every):
             issues.append(Issue(code="asked_product_unmentioned", severity="revise", where="spoken",
-                                message=f"The shopper also asked about \"{also_asked}\", and the reply does not mention it. If the search returned "
-                                        "it, state the facts asked for; if not, say in the spoken text that it was not found, and name a result "
-                                        "that carries part of its name if there is one."))
+                                message=f"The shopper {'also ' if name == also_asked else ''}asked about \"{name}\", and the reply does not mention it. "
+                                        "If the search returned it, state the facts asked for; if not, say in the spoken text that it was not found, "
+                                        "and name a result that carries part of its name if there is one."))
+            break
 
     # ---- "none was found" is not said of something the search returned
     presented = [i.ref for i in answered]
