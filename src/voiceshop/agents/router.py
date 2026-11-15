@@ -204,6 +204,27 @@ _OF_A_PRICE = re.compile(r"\bsales?\b|\bdiscount\w*|\bdeals?\b|\bclearance\b|\bm
                          r"|\b\d+(?:\.\d+)?\s*(?:dollars?|bucks?)\b|\bcheaper\b|\bprice\s+(?:drop|cut)\w*", re.I)
 
 
+# What is left of a message when its claim is set aside may still be about the product of the claim: "Okay, so the second one,
+# the Barnyard, is in stock at Mercari, right? Just tell me what it costs today." The second sentence asks about "it", and the
+# first says what "it" is. Then the claim is part of a question about that product, and nothing is set aside.
+_ASKS_ABOUT_IT = re.compile(
+    r"\b(?:what|how\s+much|how\s+many|where|when|why|whether|does|do|did|is|was|are|were|can|will|would)\s+(?:[\w']+\s+){0,2}?(?:it|they|that\s+one|this\s+one)\b"
+    r"|\b(?:its|their)\s+\w+|\b(?:about|for|of|on)\s+(?:it|them)\b|\b(?:it|they)\s+(?:costs?|sells?|comes?|ships?|has|have|is|are|was|were|will|would|goes|go)\b", re.I)
+# A request for products, as opposed to a question about one: "just show me something close to eight", "what else do you have".
+_WANTS_SOMETHING_ELSE = re.compile(
+    r"\b(?:show|find|get|give|recommend|suggest|pick)\s+(?:me\s+)?(?:something|anything|another|a\s+different|others?|some|a\s+few|one\s+that|ones\s+that|what\s+you"
+    r"|the\s+(?:best|closest|cheapest|nearest)|a\s+(?:good|better|cheaper|similar)\s+(?:one|option))\b"
+    r"|\bsomething\s+(?:else|close|closer|cheaper|similar|different|under|around|near|anyway)\b|\bwhat\s+else\b|\b(?:any|other)\s+(?:options?|ones|choices?|alternatives?)\b"
+    r"|\banother\s+(?:one|option)\b", re.I)
+
+
+# What is left has to hold the request. In "Going back to the Safari puzzle you ranked first for my four year old. Can you confirm
+# that's still your top pick, and check the live web for a stainless-steel cleaner under fifteen dollars?" the request stands
+# in the sentence with the claim, and what is left asks for nothing (the sixth live run, turn 17).
+_ASKS_FOR_A_PRODUCT = re.compile(r"\?|\b(?:show|find|get|give|recommend|suggest|pick|check|compare|search|look)\b|\b(?:wants?|needs?|looking\s+for|i'?d\s+like"
+                                 r"|what|which|any|do\s+you\s+have|is\s+there|are\s+there)\b", re.I)
+
+
 def presses_a_claim(sentence: str) -> bool:
     """Does a sentence state something for the assistant to agree with, or to take as given?"""
     return bool(_WANTS_AGREEMENT.search(sentence) or _TAG_QUESTION.search(sentence) or (_HEARSAY.search(sentence) and _OF_A_PRICE.search(sentence)))
@@ -290,9 +311,9 @@ def claim_about_screen(text: str, shown: list[dict[str, Any]] | None) -> tuple[l
     sentences = split_sentences(" ".join((text or "").split()))
     claims = [s for s in sentences if presses_a_claim(s)]
     rest = " ".join(s for s in sentences if s not in claims)
-    if not claims or len(rest.split()) < 3:
+    if not claims or len(rest.split()) < 3 or not _ASKS_FOR_A_PRODUCT.search(rest):
         return [], text
-    if named_on_screen(rest, shown) or rules._REFERS.search(rest) or _POINTS_AT_SCREEN.search(rest):
+    if named_on_screen(rest, shown) or rules._REFERS.search(rest) or _POINTS_AT_SCREEN.search(rest) or _ASKS_ABOUT_IT.search(rest):
         return [], text
     positions = [p for p in claims_by_position(text, shown) if 0 < p <= len(shown)]
     return positions, (rest if positions else text)
@@ -351,7 +372,7 @@ def claims_about_earlier(text: str, seen: list[dict[str, Any]] | None, shown: li
     sentences = split_sentences(" ".join((text or "").split()))
     claims = [s for s in sentences if presses_a_claim(s)]
     rest = " ".join(s for s in sentences if s not in claims)
-    if not claims or len(rest.split()) < 3:
+    if not claims or len(rest.split()) < 3 or _ASKS_ABOUT_IT.search(rest) or not _ASKS_FOR_A_PRODUCT.search(rest):
         return [], text
 
     def words_of(part: str) -> set[str]:
@@ -408,7 +429,11 @@ def claims_by_position(text: str, shown: list[dict[str, Any]] | None) -> dict[in
     for sentence in split_sentences(" ".join((text or "").split())):
         if not presses_a_claim(sentence):
             continue
-        ordinal = [(rules._ORDINALS[m.group(1).lower()] if rules._ORDINALS[m.group(1).lower()] > 0 else len(shown or [])) for m in rules._REFERS.finditer(sentence)]
+        # "The second one's non-toxic, right?" points at a place in the list. "Can you confirm that's still your top pick?" does
+        # not: "your top pick" says what something is, and the something was a puzzle shown sixteen turns earlier. The reply
+        # opened with the price of the grout brush that stood first on screen (the sixth live run, turn 17).
+        ordinal = [(rules._ORDINALS[m.group(1).lower()] if rules._ORDINALS[m.group(1).lower()] > 0 else len(shown or [])) for m in rules._REFERS.finditer(sentence)
+                   if not re.search(r"\b(?:your|my|our|a|an|still|as)\s+(?:\w+\s+)?$", sentence[:m.start()], re.I)]
         for position in dict.fromkeys([*named_alone(sentence, shown), *ordinal]):
             out[position] = f"{out[position]} {sentence}" if position in out else sentence
     return out
@@ -702,10 +727,11 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
         # something close to eight ... The Safari one was six ninety nine on sale, right?" The Router called it a question about
         # the third product, the reply gave that product's price among the new results and said nothing of a sale (run 17, turn
         # 10: none of four jurors found the unsureness stated; run 18, turn 10, the same with "the Jumbo one was six last week").
-        # Only when the list is pointed at by the claim alone: the turn is then the new search, and code says what the sources
-        # state about the product.
+        # Only when the list is pointed at by the claim alone and the rest asks for products ("show me something close"): the
+        # turn is then the new search, and code says what the sources state about the product. "... the Barnyard, is in stock at
+        # Mercari, right? Just tell me what it costs today" asks about the Barnyard, and stays the question about it that it is.
         pressed, rest = claim_about_screen(text, shown)
-        if pressed and set(route.refers_to) <= set(pressed):
+        if pressed and set(route.refers_to) <= set(pressed) and _WANTS_SOMETHING_ELSE.search(rest):
             route.pressed, route.refers_to = pressed, []
             if "no_unconfirmed" not in route.say:
                 route.say = ["no_unconfirmed", *route.say][:MAX_SAY]                                    # type: ignore[assignment]

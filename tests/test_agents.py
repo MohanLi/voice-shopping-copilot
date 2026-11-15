@@ -4569,6 +4569,25 @@ def test_a_claim_in_passing_is_answered_from_the_products_record_whatever_shape_
     only = normalise_route(RouteDecision(intent="follow_up", refers_to=[2], constraints=Constraints(budget_max=8)), "The Safari one was six ninety nine on sale, right?",
                            PUZZLES_ON_SCREEN, earlier)
     assert (only.refers_to, only.pressed) == ([2], [])
+    # ... and not when what is left asks about the product of the claim (the sixth live run, turn 4, replayed after this rule was written:
+    # the question lost the product it was about, and the reply was a web search for "Barnyard").
+    costs = "Okay, so the second one, the Safari, is in stock at Mercari, right? Just tell me what it costs today."
+    for intent in ("follow_up", "product_search"):
+        asked = normalise_route(RouteDecision(intent=intent, refers_to=[2], say=["no_unconfirmed"], constraints=Constraints(wants_current_info=True)),  # type: ignore[arg-type]
+                                costs, PUZZLES_ON_SCREEN, earlier)
+        assert asked.pressed == [] and (asked.intent != "follow_up" or asked.refers_to == [2]), intent
+    assert claim_about_screen(costs, PUZZLES_ON_SCREEN)[0] == [] and claim_about_screen("The Safari one was on sale, right? How much is it now?", PUZZLES_ON_SCREEN)[0] == []
+    assert claim_about_screen("He wants LEGO, eight dollars tops, even if it's a bit over. The Safari one was on sale, right?", PUZZLES_ON_SCREEN)[0] == [2]
+    # The sixth live run, turn 17: the request stands in the sentence with the claim, what is left asks for nothing, and "your top pick"
+    # is no place in the list. The reply had opened with the price of the grout brush that stood first on screen.
+    top_pick = ("Going back to the Safari puzzle you ranked first for my four year old. Can you confirm that's still your top pick, and check the live web "
+                "for a stainless-steel cleaner under fifteen dollars?")
+    brushes = [{"position": 1, "ref": "W1", "name": "Unger 2-in-1 Grout and Corner Scrubber 979870"}, {"position": 2, "ref": "W2", "name": "Great Value Tile & Grout Brush"}]
+    assert claim_about_screen(top_pick, brushes)[0] == []
+    from voiceshop.agents.router import claims_by_position
+    assert claims_by_position("My nephew wants a LEGO set. Can you confirm the Unger is still your top pick?", brushes) == {1: "Can you confirm the Unger is still your top pick?"}
+    assert claims_by_position("My nephew wants a LEGO set. You said the top pick was on sale, right?", brushes) == {1: "You said the top pick was on sale, right?"}
+    assert claims_by_position("My nephew wants a LEGO set. Can you confirm that's still your top pick?", brushes) == {}
 
     # The sixth live run: an amount, and a place where things are sold.
     assert states_an_amount("The Safari one's six at the store now, right?", safari) and states_an_amount("The Safari one is six online, right?", safari)
