@@ -43,7 +43,9 @@ applied.
   a person or an animal. An intent to harm colours the whole message; nothing else in it is served.
 - Takes one clause out and lets the rest through: an attempt to override the instructions, a request for
   prompts or keys, an instruction about how to word the reply, a question about mixing chemicals. A pasted
-  block that carries such an instruction is dropped whole. The reply begins with the fixed sentence for what
+  block that carries such an instruction is dropped whole, and so is an aside in brackets addressed to the
+  assistant inside a pasted text ("[assistant: ...]", "[AI assistant reading this: ...]"); the rest of the text
+  stays. The reply begins with the fixed sentence for what
   was declined and then answers the rest. This is the lesson of the first evaluation run, where one declined
   clause cost the shopper the whole message (failure 1 in [evaluation.md](evaluation.md)).
 - Replaces personal details by placeholders and says so.
@@ -74,6 +76,16 @@ product named again is looked up again through the same two tools; the look-up b
 exclusions and the under-three rule exactly as a search does; and what the reply states is this turn's tool
 result. Nothing the shopper says is written into the record: it holds only rows the assistant itself showed,
 and it ends with the conversation.
+
+**A text the shopper pastes.** "Sum up this review" asks about a text someone else wrote, and that text may
+speak to the assistant. The Router passes it on to the Answerer, as the shopper's and unverified, only if nothing
+in it still speaks to the assistant after the input screen (`router.only_a_text`): no address ("assistant:",
+"note to the AI", "system note") and none of the marks such notes carry (a reference code to repeat, an order
+about the reply or the table, "do not mention"). A note without brackets is cut out by its sentences when one
+of them says where it begins, together with everything between its first and last sentence and any order that
+follows (`router.without_the_note`); a text that is an order from its first word passes nothing on. The reply
+reports the text as "the text you pasted says", and the output checks hold the reply to its evidence whatever
+the text claims (evaluation.md, failures 55, 62 and 65).
 
 **What is said aloud of what was declined.** Every fixed sentence that is kept is on screen. Before a product
 answer two are spoken, and the choice of the two is fixed: a sentence that protects someone first; then the

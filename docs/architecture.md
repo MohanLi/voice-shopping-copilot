@@ -288,7 +288,9 @@ reply is written from it.
    the Router takes for one about the conversation, pointing at nothing on screen, may name such a product
    without more. A new product request, and a question about products on screen, have to point back in so many
    words ("earlier", "again", "you showed"). Words inside a quotation do not count: they are a text to be
-   written down.
+   written down. And a word counts only where the message uses it as a name (`router.used_as_names`): six
+   letters or more, a digit, a capital inside a sentence, or a short word after "the", "that" or "my". "Walk me
+   through how you picked it" recalls no "Walk & Push Along Toy" (failure 64); "that walk toy" does.
 2. **Looking it up again.** A catalog product is looked up by its id, on the path of the section above
    (`planner.id_lookup`), with the safety exclusions and the under-three rule in force. A web listing is
    searched for by the title it was shown under, with no budget of a later request applied
@@ -299,6 +301,13 @@ reply is written from it.
 4. **What it is called.** The Answerer is told which evidence handle is meant, and that another product with a
    similar name is not. The row on screen is labelled "Shown earlier"; an answer with no row for the product
    states it by code. No catalog id is spoken of, because the shopper named none.
+5. **A claim made about it in passing.** "My nephew wants a big LEGO set ... And the Barnyard one was half off,
+   right?", two requests after the puzzle had left the screen: the request is the LEGO set, and the claim is
+   about a product of the record. Such a product is looked up again by its id in a call of its own
+   (`retriever.claimed_earlier`) and kept where no agent reads it, so that a puzzle does not count as the
+   catalog's answer to a request for LEGO. Code states what the look-up returned on the point of the claim
+   ("The Barnyard Wooden Jigsaw Puzzle is $7.99 in the catalog, with no sale stated"), as it does for a product
+   still on screen (evaluation.md, failures 35 and 60). A web listing has no id and gets the declining sentence alone.
 
 What this does not do: it finds a product again, and it does not know the conversation. "You put it at the top
 of the list, right?" is not checked against where the product stood, and "the first brush", said after the

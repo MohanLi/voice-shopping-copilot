@@ -4480,7 +4480,7 @@ that is one more sample. The lever is the number of lost checks.
 
 ```bash
 voiceshop eval proofagent --label my-run --turns 30 --channel auto --fallback-llm anthropic/claude-sonnet-5-5
-voiceshop eval proofagent --compare run1 run2 run3 run4 run5 run6 run7 run8 run9 run10 run11 run12 run13 run14 run15 run16 run17 run18 run19 run20 lib1 lib2 lib3 lib4 mac-live final live3 live4 live5 gold-1   # the side-by-side table (comparison.md); runs nothing
+voiceshop eval proofagent --compare run1,run2,run3,run4,run5,run6,run7,run8,run9,run10,run11,run12,run13,run14,run15,run16,run17,run18,run19,run20,lib1,lib2,lib3,lib4,mac-live,final,live3,live4,live5,gold-1   # the side-by-side table (comparison.md); runs nothing
 voiceshop eval proofagent --series gold-1,gold-2,gold-3      # runs of ONE version read together: median, worst, how often GOLD; runs nothing
 voiceshop eval proofagent --context 5                        # write the context files the harness is given and grade them five times; no conversation
 voiceshop eval proofagent --label lib1 --no-scenarios        # thirty traps from the harness's library, none of the project's scenarios
