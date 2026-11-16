@@ -372,7 +372,7 @@ def with_what_was_asked_for(draft: AnswerDraft, evidence: Evidence, constraints:
 
 def template_answer(state: TurnState, evidence: Evidence, constraints: Constraints, weak: float | None) -> AnswerDraft:
     """The answer built by code from the evidence, with the row for the product that states what was asked for (a search only)."""
-    draft = rules.answer(evidence, constraints, weak, focus_refs(state), focus_labels(state), searched_tools(state))
+    draft = rules.answer(evidence, constraints, weak, focus_refs(state), focus_labels(state), searched_tools(state), asked=state.get("user_text"))
     route: RouteDecision | None = state.get("route")
     first = evidence.get(draft.recommendations[0].ref) if draft.recommendations else None
     if route is not None and isinstance(first, CatalogItem) and first.doc_id.upper() in route.named_ids and draft.spoken.startswith("My top pick is "):
@@ -522,13 +522,16 @@ REPAIRED = {
     "reason_rebuilt": "A reason that called a product the cheapest or the highest rated, wrongly, was rebuilt from that product's evidence",
     "asked_product_shown": "The product the spoken sentence is about was added to the answer",
     "spoken_shortened": "The spoken sentence was shortened at a clause",
+    "origin_said": "The sentence about where the product is made was written by code from the result that states it",
+    "fit_said": "A verdict on which product suits the child's age was replaced by what the listings state of each: ages, pieces and price",
+    "size_word_dropped": "A word for the size of pieces, which no listing states, was taken out",
     "spoken_rebuilt": "The spoken sentence was rebuilt from the evidence (name, price, source)",
     "note_dropped": "The conflict note was dropped (conflicts found by code are still shown)",
 }
 
 
 def kept_by_code(draft: AnswerDraft, blocking: list[Issue], evidence: Evidence, constraints: Constraints,
-                 focus: list[str] | None = None) -> list[tuple[str, AnswerDraft]]:
+                 focus: list[str] | None = None, labels: dict[str, str] | None = None) -> list[tuple[str, AnswerDraft]]:
     """Repairs that keep the model's spoken sentence, tried before the sentence is rebuilt from name, price and source.
 
     A rebuilt sentence is grounded and often no longer answers the question. In the second live run it replaced two
@@ -539,6 +542,8 @@ def kept_by_code(draft: AnswerDraft, blocking: list[Issue], evidence: Evidence, 
 
     * The sentence is about a product on screen that the answer does not show: that product is added to the answer.
     * The sentence is only too long: it is cut at a clause, the longest version first.
+    * The sentence says where the product is made wrongly (``origin_misstated``): its sentences about that give way to the
+      one code writes from the result that states it, and the rest of the sentence, the rating it gives, stays.
     * A reason on screen calls a product the cheapest or the highest rated and the answer's own table says otherwise:
       that one reason is written by code from the product's evidence. Everything else stays.
     * The draft abstains and lists products as well, twice. When its sentence says that something was not found, for a
@@ -562,8 +567,55 @@ def kept_by_code(draft: AnswerDraft, blocking: list[Issue], evidence: Evidence, 
         recs = [rules.recommendation_for(item, constraints).model_copy(update={"caveat": rec.caveat})
                 if rec.ref in wrong and (item := evidence.get(rec.ref)) is not None else rec for rec in draft.recommendations]
         return [("reason_rebuilt", draft.model_copy(update={"recommendations": recs}))]
+    if codes == {"piece_size_unstated"}:
+        # "Fewer, chunkier pieces", said twice: the size word goes, and "chunky" stays where the listing's own name says it.
+        sized = re.compile(r"(?:\bthe\s+)?\b(?:largest|biggest|larger|bigger|smallest|smaller|chunkiest|chunkier|thickest|thicker)\s+"
+                           r"((?:wooden\s+|puzzle\s+)?pieces)\b(?:\s+(?:of|among)\s+the\s+(?:[\w-]+\s+){0,2}?(?:shown|here|on\s+screen|listed))?", re.I)
+
+        def plain(text: str, item: CatalogItem | WebItem | None) -> str:
+            chunky = item is not None and "chunky" in item.title.lower()
+            return re.sub(r",\s+(?=pieces\b)", " ", sized.sub(lambda m: ("chunky " if chunky else "") + m.group(1), text))
+
+        def named(sentence: str) -> CatalogItem | WebItem | None:
+            # The product a spoken sentence is about, when it names one of the answer's products and no other.
+            items = [item for rec in draft.recommendations if (item := evidence.get(rec.ref)) is not None]
+            words = [({w for w in re.findall(r"[a-z]{4,}", item.title.lower())} - {"wooden", "puzzle", "chunky", "jigsaw", "melissa", "pieces"}, item) for item in items]
+            said = set(re.findall(r"[a-z]{4,}", sentence.lower()))
+            hits = [item for name, item in words if name & said]
+            return hits[0] if len(hits) == 1 else None
+
+        from voiceshop.speech.text import split_sentences
+
+        spoken = " ".join(plain(s, named(s)) for s in split_sentences(draft.spoken))
+        recs = [rec.model_copy(update={"why": plain(rec.why, evidence.get(rec.ref))}) for rec in draft.recommendations]
+        return [("size_word_dropped", draft.model_copy(update={"spoken": spoken, "recommendations": recs}))]
+    if codes == {"fit_unstated"}:
+        # A verdict on which product suits the child's age, twice: the sentence and the reasons that give it are written by code
+        # from the listings' ages, pieces and prices, for every product compared.
+        update: dict[str, Any] = {}
+        if any(i.where == "spoken" for i in blocking):
+            said = rules.fit_comparison([item for ref in focus or [] if (item := evidence.get(ref)) is not None], labels or {}, constraints.age_years)
+            if said is None:
+                return []
+            update["spoken"] = said
+        wrong = {i.where for i in blocking} - {"spoken"}
+        if wrong:
+            update["recommendations"] = [rules.recommendation_for(item, constraints).model_copy(update={"caveat": rec.caveat})
+                                         if rec.ref in wrong and (item := evidence.get(rec.ref)) is not None else rec for rec in draft.recommendations]
+        return [("fit_said", draft.model_copy(update=update))]
     if any(i.where != "spoken" for i in blocking):
         return []
+    if codes == {"origin_misstated"}:
+        # Where it is made, said wrongly twice: the sentences about it give way to the one code writes from the result that states it.
+        from voiceshop.guardrails.output import _ORIGIN_TALK, origin_statement
+        from voiceshop.speech.text import split_sentences
+
+        refs = {*(focus or []), *(rec.ref for rec in draft.recommendations)}
+        said = origin_statement(refs, evidence)
+        places = {w.origin.lower().removeprefix("the ") for w in evidence.web if w.origin}
+        if said:
+            kept = [s for s in split_sentences(draft.spoken) if not _ORIGIN_TALK.search(s) and not any(p in s.lower() for p in places)]
+            return [("origin_said", draft.model_copy(update={"spoken": " ".join([*kept, said])}))]
     if codes == {"spoken_about_another_product"}:
         shown = {rec.ref for rec in draft.recommendations}
         asked = [item for ref in (focus or []) if ref not in shown and (item := evidence.get(ref)) is not None]
@@ -576,7 +628,7 @@ def kept_by_code(draft: AnswerDraft, blocking: list[Issue], evidence: Evidence, 
 
 
 def rebuilt_by_code(draft: AnswerDraft, blocking: list[Issue], evidence: Evidence, constraints: Constraints, focus: list[str] | None = None,
-                    labels: dict[str, str] | None = None) -> AnswerDraft | None:
+                    labels: dict[str, str] | None = None, asked: str | None = None) -> AnswerDraft | None:
     """The draft with its spoken sentence (and conflict note) rebuilt from the evidence, or None when that would not resolve the findings.
 
     A draft used to be replaced whole by the template as soon as one finding survived the
@@ -595,7 +647,7 @@ def rebuilt_by_code(draft: AnswerDraft, blocking: list[Issue], evidence: Evidenc
     about = [item for ref in (focus or []) if (item := evidence.get(ref)) is not None]      # a follow-up: the on-screen products it refers to
     update: dict[str, Any] = {}
     if any(i.where == "spoken" for i in blocking):
-        update["spoken"] = rules.spoken_from_evidence(about if len(about) > 1 else items, constraints, labels=labels, focused=bool(about))
+        update["spoken"] = rules.spoken_from_evidence(about if len(about) > 1 else items, constraints, labels=labels, focused=bool(about), asked=asked)
     if any(i.where == "conflict_note" for i in blocking):
         update["conflict_note"] = None
     return draft.model_copy(update=update)
@@ -662,8 +714,9 @@ def make_critic_node(deps: Deps):  # type: ignore[no-untyped-def]
             verdict = "fallback"
             binding = [i for i in blocking if i.code not in ADVISORY_AFTER_REVISION]
             # Repairs by code, the gentlest first; the first whose result passes every rule is kept.
-            repairs = [] if from_template else [*kept_by_code(draft, binding, evidence, constraints, focus_refs(state)),
-                                                ("spoken_rebuilt", rebuilt_by_code(draft, binding, evidence, constraints, focus_refs(state), focus_labels(state)))]
+            repairs = [] if from_template else [*kept_by_code(draft, binding, evidence, constraints, focus_refs(state), focus_labels(state)),
+                                                ("spoken_rebuilt", rebuilt_by_code(draft, binding, evidence, constraints, focus_refs(state), focus_labels(state),
+                                                                                   asked=state.get("user_text")))]
             for how, fixed in repairs:
                 if fixed is None:
                     continue
@@ -680,7 +733,7 @@ def make_critic_node(deps: Deps):  # type: ignore[no-untyped-def]
                 # way. So the model's products and reasons are kept with the rebuilt sentence, and the reply is cut to time
                 # where every reply is, when it is assembled. (A replay of the second live run, turn 30: three declined
                 # parts, a product with magnets, and the template took over an answer with nothing else wrong.)
-                if how == "spoken_rebuilt" and left and all(i.code == "spoken_too_long" for i in left):
+                if how in ("spoken_rebuilt", "fit_said", "origin_said") and left and all(i.code == "spoken_too_long" for i in left):
                     left = []
                 if not left:                                  # the rest of the model's answer passed: keep it
                     for issue in blocking:

@@ -184,6 +184,8 @@ def _web_chunk(item: WebItem, detail: bool = False, *, brief: bool = False, tell
     stated = list(item.claims) + [c for cs in item.claims_elsewhere.values() for c in cs]
     if stated and not brief:
         bits.append("states " + ", ".join(dict.fromkeys(stated)))
+    if item.origin and not brief:
+        bits.append(f"states the country of origin: {item.origin}")
     if item.flagged:
         bits.append("instruction-like text removed by the tool")
     cautions = list(item.cautions) + [c for cs in item.cautions_elsewhere.values() for c in cs]

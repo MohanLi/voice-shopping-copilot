@@ -19,9 +19,11 @@ Usage:
     --first K      start at turn K (default 1); the turns before the ones shown give the conversation its context
     --show T,T     the turns to print (default: the last)
     --any-turn     a search may also be answered from an earlier turn's record when that fits its query better
+    --page T:REF=TEXT  give result REF of turn T this page text (repeatable): a live run keeps none, and a fix that reads page
+                   text can only be replayed with a line of it written back, such as what the jury was shown
     -v             print the findings that are only notes, and the text on screen
 
-What it cannot show: a search the recorded turn did not make returns nothing here, and a page's text is empty.
+What it cannot show: a search the recorded turn did not make returns nothing here, and a page's text is empty unless given.
 """
 from __future__ import annotations
 
@@ -55,7 +57,19 @@ def like(call: dict[str, Any], query: str) -> float:
     return SequenceMatcher(None, str(call["arguments"].get("query")).lower(), query.lower()).ratio()
 
 
-def recorded_results(rows: dict[int, dict[str, Any]], turn: int, kind: str, query: str, any_turn: bool) -> list[dict[str, Any]] | None:
+def pages_given() -> dict[tuple[int, str], str]:
+    """The page texts given with --page T:REF=TEXT, by (turn, ref)."""
+    out: dict[tuple[int, str], str] = {}
+    for n, arg in enumerate(sys.argv):
+        if arg == "--page" and n + 1 < len(sys.argv) and ":" in sys.argv[n + 1] and "=" in sys.argv[n + 1]:
+            where, text = sys.argv[n + 1].split("=", 1)
+            turn, ref = where.split(":", 1)
+            out[(int(turn), ref.strip())] = text
+    return out
+
+
+def recorded_results(rows: dict[int, dict[str, Any]], turn: int, kind: str, query: str, any_turn: bool,
+                     pages: dict[tuple[int, str], str] | None = None) -> list[dict[str, Any]] | None:
     """What the recorded call of this kind with the most similar query returned; None when the record has no such call."""
     best, where = None, turn
     for t in (range(turn, 0, -1) if any_turn else [turn]):
@@ -67,7 +81,8 @@ def recorded_results(rows: dict[int, dict[str, Any]], turn: int, kind: str, quer
     if best is None:
         return None
     web = {w["ref"]: w for w in (rows[where]["result"].get("evidence") or {}).get("web", [])}
-    return [{k: (w.get(k) if w.get(k) is not None else ("" if k == "snippet" else None)) for k in KEEP} for ref in best["refs"] if (w := web.get(ref))]
+    given = pages or {}
+    return [{k: (given.get((where, ref)) or w.get(k) or "") if k == "snippet" else w.get(k) for k in KEEP} for ref in best["refs"] if (w := web.get(ref))]
 
 
 async def main() -> None:
@@ -79,6 +94,7 @@ async def main() -> None:
     first = int(option("--first", "1"))
     show = {int(x) for x in option("--show", str(last)).split(",")}
     verbose, any_turn = "-v" in sys.argv, "--any-turn" in sys.argv
+    pages = pages_given()
     rows = load(run)
 
     async with Assistant() as assistant:
@@ -90,7 +106,7 @@ async def main() -> None:
             if tool != "web.search":
                 return await real(tool, arguments)
             kind, query = arguments.get("kind") or "shopping", str(arguments.get("query"))
-            found = recorded_results(rows, now["turn"], kind, query, any_turn)
+            found = recorded_results(rows, now["turn"], kind, query, any_turn, pages)
             asked.append((query[:50], kind, None if found is None else len(found)))
             results = found or []
             if arguments.get("price_max") is not None:

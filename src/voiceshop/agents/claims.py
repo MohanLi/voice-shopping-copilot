@@ -68,6 +68,29 @@ def stated_cautions(text: str) -> list[str]:
     return [name for name, pattern in _CAUTION_RULES if pattern.search(text or "")]
 
 
+# Where a product is made, as a page states it: "Country of Origin. China.", "Made in the USA", "manufactured in Germany".
+# Only a country named after the words counts ("made in minutes" names none). The grounding scenario asks "where is it
+# made?" in most runs, and a reseller's page often gives it in its item details (series 2-1 and 2-3, turn 3): the line
+# is shown with the page it comes from, so that the answer can say whose statement it is.
+_COUNTRIES = (r"(?i:China|Taiwan|Hong\s+Kong|Vietnam|Viet\s+Nam|India|Indonesia|Thailand|Malaysia|Philippines|Cambodia|Bangladesh|Sri\s+Lanka|Pakistan"
+              r"|(?:South\s+)?Korea|Japan|Germany|France|Italy|Spain|Portugal|Poland|Czech\s+Republic|Netherlands|Belgium|Denmark|Sweden|Switzerland"
+              r"|Austria|Ireland|Turkey|Israel|Egypt|United\s+Kingdom|Great\s+Britain|England|Scotland|Canada|Mexico|Brazil|Peru|Chile|Colombia"
+              r"|Australia|New\s+Zealand|United\s+States(?:\s+of\s+America)?)|U\.?K\.?|U\.?S\.?A\.?|U\.S\.|US|America")      # "US", "UK": capitals only
+_ORIGIN = re.compile(r"(?i:\b(?:country(?:\s*/\s*region)?\s+of\s+(?:origin|manufacture)|(?:made|manufactured|produced|assembled|crafted)\s+in))"
+                     rf"[\s:.\-\u2013\u2014]*(?i:is\s+)?(?i:the\s+)?(?P<place>{_COUNTRIES})(?![A-Za-z])")
+
+
+def stated_origin(text: str) -> str | None:
+    """The country a text says a product is made in, as the text names it ("China", "the USA"), or None."""
+    found = _ORIGIN.search(" ".join((text or "").split()))
+    if found is None:
+        return None
+    place = found.group("place")
+    place = place[:-1] if place.endswith(".") and place.count(".") == 1 else place        # "Made in USA." ends a sentence
+    place = place.title() if place.islower() or (place.isupper() and len(place) > 3 and "." not in place) else place      # "made in china", "MADE IN CHINA"
+    return f"the {place}" if re.fullmatch(r"U\.?S\.?A?\.?|US|U\.?K\.?|United\s+\w+(?:\s+of\s+America)?", place) else place
+
+
 def asked_qualities(wishes: list[str]) -> list[str]:
     """The broad qualities a shopper's wording asks for ("eco friendly", "green") as keys of ``RELATED``."""
     text = " ".join(wishes or [])

@@ -13,17 +13,18 @@ reply as it is spoken. Stretches in which nothing changes on screen are cut shor
 the two-CPU build workspace, which is slower than the laptop the system is built for (a median turn of 13.5 s
 against 8.4 s). Made by [`frontend/e2e/demo.cjs`](frontend/e2e/demo.cjs).*
 
-> **Status (15 November 2026): the final code was run three times against live web search and certified GOLD,
+> **Status (16 November 2026): the code of 15 November was run three times against live web search and certified GOLD,
 > GOLD and SILVER (97.8%, 98.1%, 96.6%). The system runs end to end and has been evaluated thirty-three times with ProofAgent:
 > twenty times in the build workspace, nine times on a laptop against live web search, and four times with
 > attacks from the harness's own library in place of the project's scenarios.**
 > Built and tested: data pipeline, hybrid retrieval, the MCP server, the agents, speech in and out, the API, the
-> web UI, and the evaluation with its scorecards and seventy failure analyses
+> web UI, and the evaluation with its scorecards and seventy-six failure analyses
 > ([docs/evaluation.md](docs/evaluation.md)). Runs 15 to 18, the first code with a record of the products a
 > conversation has shown, were GOLD four times at 97 to 99%. The first run of that code against live search was
 > SILVER at 95%, and runs 19 and 20, with what it showed fixed, SILVER at 96.5% and 93.5%: each met
 > kinds of message no earlier run had sent. The evaluation document says what decided each run, and what changed after it.
-> The final code is one commit, `edd2f53`, measured as it is: the four failures its third run found are written up and not fixed. Not done: a jury
+> That code is one commit, `edd2f53`. What its three runs lost and could be fixed I have fixed since (failures 67 to 76) and checked on
+> replays of the recorded conversations; no jury has seen those fixes yet, and the next series is for that. Not done: a jury
 > of another model family (the harness's own report asks for one), a rehearsal of the demonstration by voice (it is
 > scripted in [docs/demo-script.md](docs/demo-script.md)), a run with a second model provider, and a container image.
 > [PROGRESS.md](PROGRESS.md) is the build log; [docs/objectives.md](docs/objectives.md) lists every requirement
@@ -106,7 +107,7 @@ voiceshop voice question.m4a         # voice in, voice out; the reply is kept in
 voiceshop mcp tools                  # what the agents discover on the MCP server
 voiceshop eval retrieval             # the retrieval benchmark below
 voiceshop eval proofagent --label my-run --fallback-llm anthropic/claude-sonnet-5-5   # the ProofAgent evaluation below (15 min, $0.50 to $0.90)
-python -m pytest tests -q            # 738 tests, about a minute, no key or network needed
+python -m pytest tests -q            # 743 tests, about a minute, no key or network needed
 ```
 
 `LLM_MODEL=fake:rules` runs every agent on rules only (no key, no cost); `LLM_MODEL=ollama:<model>` or any other
@@ -126,7 +127,7 @@ an unsafe request, and the assignment's own example), then thirteen attacks the 
 Thirty-three runs: twenty in the build workspace against recorded search results, so that they can be compared, nine on the
 laptop against live web search with the real speech models, and four in which thirty attacks from the harness
 library took the place of the scenarios. Each run was followed by fixes for what it found
-([scorecards, how a run is scored, stage-by-stage attribution and seventy failure analyses](docs/evaluation.md)).
+([scorecards, how a run is scored, stage-by-stage attribution and seventy-six failure analyses](docs/evaluation.md)).
 
 In the build workspace, against recorded search results, so that runs can be compared. Runs 1 to 6:
 
@@ -270,7 +271,9 @@ How to read them:
   room to spare and came closest on Hallucination Resistance, on sentences that said more than their sources
   ("suits a four-year-old best"). The SILVER run lost two library traps whose ordinary half went unanswered, a
   pasted review with a note headed "ASSISTANT NOTE" and a template to fill in with a product's name, and two
-  replies about what live pages state. Either pair alone would have made it GOLD. The code was left as measured.
+  replies about what live pages state. Either pair alone would have made it GOLD. After the series I fixed what the
+  three runs lost that could be fixed, these four among it (the template one on about half of the replays); the
+  next series measures that code.
 - **The library-only runs are the counterweight.** With the scenarios taken out, earlier code scored 93 to 95%
   three times without a certificate, and the code of runs 16 to 18 97% and SILVER: five metrics at 99 to 100%, Task Success
   between 63 and 82%. The attacker builds those conversations around products that neither the catalog nor the
@@ -287,7 +290,7 @@ How to read them:
   dollars" was heard as "no weight under $12", and the first budget was used. In the fourth, "we have a
   toddler", said about a cleaner, set an age, and the rule that protects children under three from unsuitable
   toys removed every cleaner for thirteen turns. Parts that are each right and do not fit together are what
-  most of the seventy failures have in common.
+  most of the seventy-six failures have in common.
 
 Every failure is written up with what was observed, at which stage, why, what was changed and what the next
 run showed; the ones still open are named, not hidden in the average. Run 4 and the live runs are on the
@@ -366,7 +369,7 @@ notebooks/      01_data_ingestion.ipynb: the data work, executed, every count ch
 | the dataset, what was cleaned, what was refused | [docs/data.md](docs/data.md), [the notebook](notebooks/01_data_ingestion.ipynb) |
 | retrieval: stages, filters, two benchmarks, limits | [docs/retrieval.md](docs/retrieval.md) |
 | the MCP server and its two tool schemas | [docs/mcp.md](docs/mcp.md) |
-| the evaluation: thirty-three runs, seventy failures | [docs/evaluation.md](docs/evaluation.md) |
+| the evaluation: thirty-three runs, seventy-six failures | [docs/evaluation.md](docs/evaluation.md) |
 | every prompt, and the node, agent or tool that uses it | [prompts/README.md](prompts/README.md) |
 | safety: risks, layers, tests, what is not covered | [docs/safety.md](docs/safety.md) |
 | shopping assistants that exist, and what was taken from them | [docs/related-work.md](docs/related-work.md) |

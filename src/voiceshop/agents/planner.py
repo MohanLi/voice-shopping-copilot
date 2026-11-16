@@ -84,6 +84,10 @@ def enforce_constraints(step_: PlanStep, constraints: Constraints) -> PlanStep:
         base["price_max"] = constraints.budget_max
     if constraints.budget_min is not None:
         base["price_min"] = constraints.budget_min
+    else:
+        # A minimum is the shopper's to state. "Even if it's over eight dollars" became a search from $8 in the Planner's own
+        # filters, and the $7.99 puzzle that had been the top pick dropped out (replays of series 2-3, turn 10).
+        base.pop("price_min", None)
     if constraints.age_years is not None:
         base["age_years"] = constraints.age_years
     if constraints.brand and not base.get("brand"):

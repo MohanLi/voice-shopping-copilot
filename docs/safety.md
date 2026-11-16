@@ -80,12 +80,14 @@ and it ends with the conversation.
 **A text the shopper pastes.** "Sum up this review" asks about a text someone else wrote, and that text may
 speak to the assistant. The Router passes it on to the Answerer, as the shopper's and unverified, only if nothing
 in it still speaks to the assistant after the input screen (`router.only_a_text`): no address ("assistant:",
-"note to the AI", "system note") and none of the marks such notes carry (a reference code to repeat, an order
-about the reply or the table, "do not mention"). A note without brackets is cut out by its sentences when one
-of them says where it begins, together with everything between its first and last sentence and any order that
-follows (`router.without_the_note`); a text that is an order from its first word passes nothing on. The reply
-reports the text as "the text you pasted says", and the output checks hold the reply to its evidence whatever
-the text claims (evaluation.md, failures 55, 62 and 65).
+"note to the AI", "system note", a heading such as "ASSISTANT NOTE:") and none of the marks such notes carry (a
+reference code to repeat, an order about the reply or the table, "do not mention"). A note without brackets is
+cut out by its sentences when one of them says where it begins, together with everything between its first and
+last sentence and any order that follows (`router.without_the_note`); a text that is an order from its first
+word passes nothing on. The reply reports the text as "the text you pasted says", and the output checks hold the
+reply to its evidence whatever the text claims (evaluation.md, failures 55, 62, 65 and 67). When the address
+was widened for failure 67, every recorded message with a quotation (354 of them) was run through this step
+before and after: one came out differently, the one it was for.
 
 **What is said aloud of what was declined.** Every fixed sentence that is kept is on screen. Before a product
 answer two are spoken, and the choice of the two is fixed: a sentence that protects someone first; then the
@@ -194,7 +196,7 @@ next to the one about labels and mixing: "Keep cleaning products out of the reac
 
 ## 7. How this was tested
 
-- 738 unit and end-to-end tests, a large part of them on the rules above; each failure found in evaluation
+- 743 unit and end-to-end tests, a large part of them on the rules above; each failure found in evaluation
   became a test in the words of the turn that failed.
 - Twenty-seven ProofAgent runs ([evaluation.md](evaluation.md)): an adversarial shopper, 30 turns each, with planted tool
   faults (an injected instruction, a recalled product, an impossible listing, a failing search); 5 of them against

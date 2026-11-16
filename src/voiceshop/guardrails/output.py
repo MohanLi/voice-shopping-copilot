@@ -105,6 +105,37 @@ def all_asserted(pattern: re.Pattern[str], text: str) -> list[re.Match[str]]:
 
 
 _MOST_PIECES = re.compile(r"\b(?:largest|biggest)\b|\bmost\s+pieces\b|\bhighest\s+piece\s+count\b|\bpieces,?\s+the\s+most\s+(?:of|among|within|under)\b", re.I)
+# A listing states an age range and a number of pieces; none states which product suits an age best or how big its pieces are.
+# "The Safari chunky puzzle suits a four-year-old best", of two puzzles both listed for age four (series 2-2, turn 2: five jurors of
+# six, overstated; the comparison scenario lost on it in five of the ten runs before), and "with the largest pieces of the options
+# shown" (series 2-2, turn 8: six of six).
+_WHO_IT_SUITS = (r"(?:(?:\w+[-\s])?(?:year|month)s?[-\s]olds?|toddlers?|child(?:ren)?|kids?|him|her|them|boys?|girls?|sons?|daughters?|nephews?|nieces?"
+                 r"|grand(?:son|daughter|child)s?)")
+_SUITS_BEST = re.compile(
+    rf"\b(?:suits?|suited\s+(?:to|for)|fits?)\s+(?:(?:a|an|your|his|her|the|my)\s+)?{_WHO_IT_SUITS}\b[^.;!?]{{0,30}}?\b(?:best|better|most)\b"
+    r"|\b(?:suits?|fits?)(?:\s+[\w-]+){0,3}?\s+(?:best|better)\b"          # "the Safari puzzle suits best" (a replay of series 2-1, turn 2)
+    rf"|\b(?:best|better)[-\s]suited\b"
+    rf"|\b(?:best|better)\s+(?:choice|pick|option|fit|match)\b"
+    rf"|\b(?:best|better)\s+for\s+(?:(?:a|an|your|his|her|the|my)\s+)?{_WHO_IT_SUITS}\b", re.I)
+_PIECE_SIZE = re.compile(r"\b(?:largest|biggest|larger|bigger|smallest|smaller|chunkiest|chunkier|thickest|thicker)\s+(?:wooden\s+|puzzle\s+)?pieces\b", re.I)
+_AGE_SPAN = re.compile(r"(?P<lo>\d+(?:\.\d+)?)\s*(?P<lu>months?|years?)?\s*(?:to|-|–)\s*(?P<hi>\d+(?:\.\d+)?)\s*(?P<hu>months?|years?)", re.I)
+_AGE_UP = re.compile(r"(?P<lo>\d+(?:\.\d+)?)\s*(?P<lu>months?|years?)\s*(?:and\s+up|and\s+older|\+)", re.I)
+
+
+def listed_for(item: CatalogItem | WebItem, years: float) -> bool:
+    """Whether a catalog product's age label includes an age ("2 years to 4 years" and "3-5 years" include 4)."""
+    label = (item.age_label or "") if isinstance(item, CatalogItem) else ""
+
+    def months(value: str, unit: str | None) -> float:
+        return float(value) * (1 if (unit or "year").lower().startswith("month") else 12)
+
+    if (span := _AGE_SPAN.search(label)) is not None:
+        low, high = months(span.group("lo"), span.group("lu") or span.group("hu")), months(span.group("hi"), span.group("hu"))
+    elif (up := _AGE_UP.search(label)) is not None:
+        low, high = months(up.group("lo"), up.group("lu")), float("inf")
+    else:
+        return False
+    return low - 1e-9 <= years * 12 <= high + 1e-9
 
 
 def pieces_of(item: CatalogItem | WebItem) -> int | None:
@@ -306,6 +337,87 @@ def materials_overlooked(text: str, item: WebItem, evidence: Evidence) -> str | 
             return (f"The text says no materials or ingredients are stated for {item.ref}, but {page.ref} ({page.source}), a page about a product of "
                     f"this name, says: \"{page.snippet[:180]}\" Report that as what that page states (\"a page about it describes it as ...\"), "
                     "or leave out the sentence that nothing is stated.")
+    return None
+
+
+# Where a product is made. "No source I have states where it is made" stood next to a page about the puzzle that gave "Country
+# of Origin. China." (series 2-3, turn 3: eight jurors of eleven, contradicted); "no source states where it is made; a listing from
+# limolin gives China as the country of origin" said both, and of the wrong result: the page that gave it was eBay's (series 2-1,
+# turn 3: six of six, overstated). The country is said as the statement of the result that gives it, and "no source" only when
+# no result about the product gives one.
+_ORIGIN_TALK = re.compile(r"\bwhere\b[^.;!?]{0,40}\b(?:made|manufactured|produced)\b|\bcountry\s+of\s+(?:origin|manufacture)\b"
+                          r"|\b(?:made|manufactured|produced)\s+in\b|\borigin\b", re.I)
+_NO_SOURCE = re.compile(r"\bno\s+(?:[\w'-]+\s+){0,2}(?:sources?|listings?|pages?|results?)\b|\bnone\s+of\s+(?:my|the|these|its)\b"
+                        r"|\bmy\s+sources\s+(?:do|did|does)\s+not\b|\bmy\s+sources\s+(?:don't|didn't|doesn't)\b|\bnot\s+stated\s+(?:anywhere|by\s+any)\b"
+                        r"|\bnothing\s+(?:I|in\s+my)\b|\bcould(?:\s+not|n't)\s+find\b|\bneither\b", re.I)
+_GENERIC_SOURCE_WORDS = frozenset({"com", "www", "shop", "store", "the", "seller", "sellers", "booth", "media", "inc", "llc", "co", "net", "org", "official"})
+
+
+def source_names(item: WebItem) -> set[str]:
+    """The words a reply may name a result by: its store ("limolin", "eBay - armornumber") and its site ("ebay" for ebay.com)."""
+    from voiceshop.agents.reconcile import site_label
+
+    words = {w for w in re.findall(r"[a-z0-9]+", (item.source or "").lower()) if len(w) > 2 and w not in _GENERIC_SOURCE_WORDS}
+    label = site_label(item)
+    return words | ({label} if label and label != "google" and len(label) > 2 else set())
+
+
+def results_about(refs: set[str], evidence: Evidence, named: bool = False) -> list[WebItem]:
+    """The web results about the products ``refs``: those products themselves, their listings, and the pages that describe those;
+    with ``named``, also the pages about a product of the same name, which no match ties to them ("Safari Animals Wooden Chunky
+    Puzzle" on eBay, for the catalog's "Safari Wooden Chunky Puzzle")."""
+    from voiceshop.agents.reconcile import same_name
+
+    found = {w.ref for w in evidence.web if w.ref in refs or (w.matched_ref and w.matched_ref in refs)}
+    found |= {page for w in evidence.web if w.ref in found for page in w.described_by}
+    if named:
+        titles = [item.title for ref in refs if (item := evidence.get(ref)) is not None]
+        found |= {w.ref for w in evidence.web if w.kind != "shopping" and any(same_name(WebItem(ref="", url="", title=title), w) for title in titles)}
+    return [w for w in evidence.web if w.ref in found and not w.flagged]
+
+
+def origin_statement(refs: set[str], evidence: Evidence) -> str | None:
+    """The sentence code says about where the products ``refs`` are made, from the result that gives it; None when none does."""
+    matched = {w.ref for w in results_about(refs, evidence)}
+    stating = [w for w in results_about(refs, evidence, named=True) if w.origin]
+    if not stating:
+        return None
+    first = min(stating, key=lambda w: w.ref not in matched)
+    who = f"The {first.source} listing" if first.kind == "shopping" and first.source else f"A page on {first.source or 'the web'}"
+    about = "" if first.ref in matched else " about a product of this name"
+    return f"{who}{about} gives {first.origin} as the country of origin; the other listings do not say where it is made."
+
+
+def origin_misstated(text: str, refs: set[str], evidence: Evidence, whole: str | None = None) -> str | None:
+    """A message when ``text`` says no source states where a product is made while a result about it does, or gives the country as the
+    statement of a result that does not give it; None otherwise. ``whole`` is the whole reply: a sentence that one listing does
+    not say is right when another sentence of the reply gives the country with the result that states it."""
+    from voiceshop.speech.text import split_sentences
+
+    matched = {w.ref for w in results_about(refs, evidence)}
+    stating = [w for w in results_about(refs, evidence, named=True) if w.origin]
+    if not stating or not text:
+        return None
+    low = (whole or text).lower()
+    first = min(stating, key=lambda w: w.ref not in matched)       # a result tied to the product before one that only bears its name
+    whose = "a result about this product" if first.ref in matched else f"a page about a product of this name (\"{first.title[:70]}\")"
+    for sentence in split_sentences(" ".join(text.split())):
+        if not _ORIGIN_TALK.search(sentence) or not _NOT_STATED.search(sentence):
+            continue
+        if _NO_SOURCE.search(sentence) or not any(w.origin.lower().removeprefix("the ") in low for w in stating):
+            return (f"The text says that where it is made is not stated, but {first.ref} ({first.source}), {whose}, gives "
+                    f"{first.origin} as the country of origin. Say which result states it and which does not, each by its store or site "
+                    f"(\"{first.source} gives {first.origin} as the country of origin; the other listings do not say\"), and never \"no source\".")
+    everyone = [w for w in evidence.web if not w.flagged]
+    for clause in _CLAUSE_OF_A_REPLY.split(" ".join(text.split())):
+        for w in stating:
+            if w.origin.lower().removeprefix("the ") not in clause.lower():
+                continue
+            named = {other.ref for other in everyone for name in source_names(other) if re.search(rf"\b{re.escape(name)}\b", clause, re.I)}
+            givers = {g.ref for g in stating if g.origin == w.origin}
+            if named and not named & givers:
+                return (f"{w.origin} is given as the country of origin by {w.ref} ({w.source}), and the text says it of another result. "
+                        f"Name the result that states it: \"{w.source} gives {w.origin} as the country of origin\".")
     return None
 
 
@@ -841,6 +953,23 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
                                     message=f"The spoken sentence calls a product the cheapest at ${min(said):.2f}, but {lowest[0]} in the same answer costs "
                                             f"${lowest[1]:.2f}. Give the word to the right product, say how the two differ, or leave it out."))
 
+    # ---- which product suits an age best, and how big pieces are, are stated by no listing (_SUITS_BEST, _PIECE_SIZE)
+    for where, text in (("spoken", draft.spoken), *((rec.ref, rec.why) for rec in draft.recommendations)):
+        if (size := asserted(_PIECE_SIZE, text or "")) is not None:
+            issues.append(Issue(code="piece_size_unstated", severity="revise", where=where,
+                                message=f"'{size.group(0)}': no listing gives the size of a product's pieces, only how many there are. "
+                                        "Say what the listing states (\"8 chunky wooden pieces\") instead."))
+        # Only where products on screen are compared: "my best pick for your nephew" leads a new search, and is the recommendation itself.
+        best = asserted(_SUITS_BEST, text or "") if constraints.age_years is not None and len(focus or []) >= 2 else None
+        best = None if best is not None and re.search(r"\b(?:budget|price|cost|limit)\b", best.group(0), re.I) else best      # "fits your budget best"
+        compared_now = [item for ref in focus or [] if (item := evidence.get(ref)) is not None]
+        fitting = [item for item in compared_now if listed_for(item, constraints.age_years)] if best is not None and constraints.age_years is not None else []
+        if best is not None and len(fitting) >= 2:
+            listed = "; ".join(f"{item.ref} is listed for {item.age_label}" for item in fitting[:3] if isinstance(item, CatalogItem))
+            issues.append(Issue(code="fit_unstated", severity="revise", where=where,
+                                message=f"'{best.group(0)}': no listing says which product suits a {constraints.age_years:g}-year-old better ({listed}). "
+                                        "Say that both are listed for that age, how they differ (pieces, price, picture), and which suits which preference."))
+
     # ---- nothing is reported from a search that was not made
     if evidence.searched is not None and "web.search" not in evidence.searched and "web.search" not in evidence.failed_tools and not evidence.web:
         for where, text in [("spoken", draft.spoken), ("conflict_note", draft.conflict_note or ""),
@@ -970,6 +1099,14 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
         else:
             continue
         break
+
+    # ---- where a product is made is said as the statement of the result that gives it (origin_misstated)
+    whole = " ".join([draft.spoken, draft.conflict_note or "", draft.abstain_reason or "", *(f"{rec.why} {rec.caveat or ''}" for rec in draft.recommendations)])
+    for where, text in (("spoken", draft.spoken), ("abstain_reason", draft.abstain_reason or ""),
+                        *((rec.ref, f"{rec.why} {rec.caveat or ''}") for rec in draft.recommendations)):
+        if (wrong := origin_misstated(text, about, evidence, whole)) is not None:
+            issues.append(Issue(code="origin_misstated", severity="revise", where=where, message=wrong))
+            break
 
     # ---- a product the question names besides the ones on screen is not passed over
     # "Compare the Barnyard puzzle with the Melissa & Doug Farm Animals one. I need price, piece count ..." The search found no

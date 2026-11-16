@@ -223,6 +223,7 @@ class WebItem(BaseModel):
     price_per_oz: float | None = Field(default=None, description="Price per ounce, worked out by code from an amount the title states, for products that are used up")
     claims: list[str] = Field(default_factory=list, description="Claims stated in this result's own title or snippet")
     cautions: list[str] = Field(default_factory=list, description="Cautions stated in this result's own text")
+    origin: str | None = Field(default=None, description="The country this result's own text says the product is made in (claims.stated_origin)")
     described_by: list[str] = Field(default_factory=list, description="Other web results (refs) whose text is about this same product")
     claims_elsewhere: dict[str, list[str]] = Field(default_factory=dict, description="Claims stated by those results: ref -> claims")
     cautions_elsewhere: dict[str, list[str]] = Field(default_factory=dict, description="Cautions stated by those results: ref -> cautions")

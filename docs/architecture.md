@@ -93,7 +93,12 @@ The free text the model does write (the reasons and the spoken sentence) is chec
 (`guardrails/output.py`: every dollar amount must be a price of a product the answer is about, a price above the
 budget is said to be above it, no availability without a live source, no rating that is not in the evidence, no unsupported sensitive claim, a recall notice
 must be said, no code or link copied from the shopper's message, speakable text, time budget), then by a model
-critic that lists findings with the evidence it compared against.
+critic that lists findings with the evidence it compared against. Some rules check what a reply says is *absent*:
+"not stated" is sent back when a result about the product states the stock status, the materials or the country
+of origin, and a country is said as the statement of the result that gives it. Where products on screen are
+compared, a verdict that one suits the child's age better, which no listing states, is sent back when both are
+listed for that age, and so is a size for pieces. When a follow-up asks about the price or stock at a store the
+shopper names, the sentence code writes in a repair says what was not found there (`rules.template_lead`).
 
 ### When the catalog has nothing suitable: the web fallback
 

@@ -99,7 +99,7 @@ voiceshop serve                      # leave it running; open http://127.0.0.1:8
 | Spoken replies within 15 seconds: 100% in every run | every `scorecard.md` |
 | Median turn on the laptop 6.0 to 10.8 s over the nine live runs | `scorecard.md` of `mac-live`, `final`, `live3` to `live5`, `gold-1`, `series2-1` to `series2-3` |
 | A turn costs about $0.003; a 30-turn evaluation run cost $0.42 to $2.29 with its jury | the same scorecards |
-| 738 tests, about a minute, no key or network | `python -m pytest tests -q` |
+| 743 tests, about a minute, no key or network | `python -m pytest tests -q` |
 
 ## Questions to expect
 

@@ -223,6 +223,10 @@ def _web_block(item: WebItem, related: list[str] | None = None, any_pack: bool =
         lines.append("  snippet: " + item.snippet[:MAX_SNIPPET_CHARS])
     if item.claims or item.cautions:
         lines.append("  stated in this result: " + "; ".join(x for x in [", ".join(item.claims), ", ".join(item.cautions)] if x))
+    if item.origin:
+        # Said of this result alone, with its site: "a listing from limolin gives China" was said of the page on eBay that
+        # gave it (series 2-1, turn 3), and "no source states where it is made" next to that page (series 2-3, turn 3).
+        lines.append(f"  country of origin stated in this result{f' ({item.source})' if item.source else ''}: {item.origin}")
     for ref in item.described_by:
         said = "; ".join(x for x in [", ".join(item.claims_elsewhere.get(ref, [])), ", ".join(item.cautions_elsewhere.get(ref, []))] if x)
         page = (own_pages or {}).get(ref)

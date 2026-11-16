@@ -106,6 +106,25 @@ def named_on_screen(text: str, shown: list[dict[str, Any]] | None) -> list[int]:
     return [i for i, words in enumerate(names, 1) if {w for w in words - shared if len(w) > 3} & said]
 
 
+_THE_STORES_ONE = re.compile(r"\bthe\s+(?P<store>[a-z0-9][\w&'.-]*(?:\s+[a-z0-9][\w&'.-]*)?)\s+(?:one|listing|bottle|option|offer)\b", re.I)
+
+
+def one_by_its_store(text: str, shown: list[dict[str, Any]] | None) -> int | None:
+    """The position of the one product on screen a text calls by its store ("the iHerb one"), or None.
+
+    Only a store that sells one row on screen and is no word of any product's name: "the Koala one" is called by its name."""
+    rows = [(entry.get("position") or n, _name_words(str(entry.get("store") or "")), _name_words(str(entry.get("name") or entry.get("title") or "")))
+            for n, entry in enumerate(shown or [], 1)]
+    for found in _THE_STORES_ONE.finditer(text or ""):
+        said = _name_words(found.group("store"))
+        if not said or any(said & name for _, _, name in rows):
+            continue
+        selling = [position for position, store, _ in rows if store and store == said]
+        if len(selling) == 1:
+            return int(selling[0])
+    return None
+
+
 def named_by_two_words(text: str, shown: list[dict[str, Any]] | None) -> bool:
     """Whether a text names a product on screen by at least two words of its name ("the Galaxy Tin"). One word may be the kind
     of product ("putty"), which a request for other products of that kind also says."""
@@ -260,6 +279,8 @@ _ADDRESSES_THE_ASSISTANT = re.compile(
     # a note addressed to it, or one that claims to come from the system
     r"\b(?:note|notes|message|memo|instructions?|attention)\s+(?:to|for)\s+(?:the\s+|an?\s+|any\s+)?(?:\w+\s+){0,2}(?:assistant|ai|bot|chatbot|llm)\b"
     r"|\bsystem\s+(?:note|notice|message|prompt|override|instruction)s?\b"
+    # a note that names itself after the assistant, as a heading: "ASSISTANT NOTE: ..." (series 2-3, turn 21), "AI instructions:"
+    r"|\b(?:assistant|ai|a\.i\.|bot|chatbot|llm)\s+(?:note|notice|message|memo|instructions?|directive|override|update)s?\s*[:\-–—]"
     # the assistant spoken to: "assistant: ...", "AI: ...", "AI assistant reading this: ...", and "Assistant, ..." where a sentence begins
     r"|\b(?:assistant|chatbot|bot|llm)\s*:\s*\w|\b(?:ai|a\.i\.)\s*:\s*\w"
     r"|\b(?:ai|a\.i\.)\s+(?:(?:shopping|virtual|voice|store)\s+)?(?:assistant|agent|model|system|bot)\b[^.!?:]{0,24}:"
@@ -578,6 +599,13 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
         c.budget_max = None
     if c.budget_min is not None and (c.budget_min <= 0 or (c.budget_max is not None and c.budget_min > c.budget_max)):
         c.budget_min = None
+    from voiceshop.agents.finalize import _OVER_IS_FINE
+
+    if c.budget_min is not None and _OVER_IS_FINE.search(text):
+        # "Just tell me the best one for a four year old, even if it's over eight dollars" allows going over; it asks for nothing
+        # above eight. Read as a minimum, it searched from $8 and put "just under your $8 minimum" on screen (a replay of series
+        # 2-3, turn 10). The limit itself is the Router's to read; the minimum goes.
+        c.budget_min = None
     if c.age_years is not None and not 0 <= c.age_years <= 120:
         c.age_years = None
     # A price is a limit, never a property of the product: a mis-heard "no wait, under twelve dollars" came back as avoid=["no weight under $12"].
@@ -681,6 +709,12 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
         route.intent, route.refers_to = "out_of_scope", []
     if route.intent in ("follow_up", "compare") and len(route.refers_to) < 2:
         route.refers_to = all_on_screen(text, shown) or route.refers_to       # "both", "the two kits": every product on screen is meant
+    if route.intent in ("follow_up", "compare") and len(route.refers_to) == 1 and (by_store := one_by_its_store(text, shown)) \
+            and by_store != route.refers_to[0]:
+        # "Okay, the iHerb one sounds like the plant-based pick you mentioned, right?": iHerb sold the second row alone, and the
+        # Router took the first, whose name has "plant-based" in it; the reply was about the wrong cleaner (a replay of series
+        # 2-1, turn 30). A product called by the one store that sells it on screen is that product.
+        route.refers_to = [by_store]
     if route.intent in ("follow_up", "compare") and route.refers_to:
         # A question about products on screen is about those products. Whatever the Router put into "product" for it ("Melissa &
         # Doug bead set box dimensions", on a replay) would replace what the conversation is about, and two turns later an answer

@@ -27,7 +27,7 @@ from typing import Any
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 
 from voiceshop.agents import rules
-from voiceshop.agents.claims import stated_cautions, stated_claims
+from voiceshop.agents.claims import stated_cautions, stated_claims, stated_origin
 from voiceshop.agents.context import render_constraints
 from voiceshop.agents.deps import Deps
 from voiceshop.agents.llm_utils import log_call, render, rules_mode
@@ -222,7 +222,7 @@ class EvidenceBuilder:
                     text = f"{hit.get('title') or ''}. {hit.get('snippet') or ''}"
                     self.web[url] = WebItem(ref=self._next_ref("W"), provider=str(data.get("provider") or ""), cached=bool(data.get("cached")),
                                             kind=str(data.get("kind") or "shopping"), from_query=query,
-                                            claims=stated_claims(text), cautions=stated_cautions(text),
+                                            claims=stated_claims(text), cautions=stated_cautions(text), origin=stated_origin(text),
                                             **web_unit_prices(hit.get("title"), hit.get("price")),
                                             **{k: v for k, v in hit.items() if k in _WEB_FIELDS})
                 refs.append(self.web[url].ref)

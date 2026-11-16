@@ -637,17 +637,89 @@ def template_comparison(items: list[CatalogItem | WebItem], labels: dict[str, st
     return text[0].upper() + text[1:]
 
 
+def ages_text(label: str | None) -> str:
+    """An age label as it is said: "2 years to 4 years" -> "ages 2 to 4", "3 years and up" -> "ages 3 and up"."""
+    found = re.fullmatch(r"(\d+) years? to (\d+) years?", label or "") or re.fullmatch(r"(\d+) years? and up", label or "")
+    if found is None:
+        return f"ages {label}" if label else "no age stated"
+    return f"ages {found.group(1)} to {found.group(2)}" if found.lastindex == 2 else f"ages {found.group(1)} and up"
+
+
+def fit_comparison(items: list[CatalogItem | WebItem], labels: dict[str, str], years: float | None) -> str | None:
+    """The sentence code says when asked which of two products on screen is better for a child of an age that both are listed for.
+
+    "Compare the first and the third one. Which is better for a four year old?" was answered "the Safari chunky puzzle suits a
+    four-year-old best" (series 2-2, turn 2: five jurors of six, overstated), and on a replay the revision said "the better fit".
+    The listings state an age range, a number of pieces and a price; this sentence states those, of both."""
+    from voiceshop.agents.finalize import brief_name
+    from voiceshop.guardrails.output import listed_for, pieces_of
+
+    if years is None:
+        return None
+    fitting = [item for item in items if listed_for(item, years)]
+    if len(fitting) < 2:
+        return None
+    age = f"{years:g}-year-old" if years >= 1 else f"{round(years * 12)}-month-old"
+    parts = []
+    for item in fitting[:3]:
+        label, price, pieces = labels.get(item.ref), _best_price(item), pieces_of(item)
+        who = f"{label}, the {brief_name(item)}," if label else f"the {brief_name(item)}"
+        parts.append(f"{who} is for {ages_text(item.age_label if isinstance(item, CatalogItem) else None)}"
+                     + (f" with {pieces} pieces" if pieces else "") + (f" at ${price:.2f}" if price is not None else ""))
+    return f"{'Both' if len(fitting) == 2 else 'All three'} are listed for a {age}: " + "; ".join(parts) + "."
+
+
 def spoken_from_evidence(items: list[CatalogItem | WebItem], constraints: Constraints, *, labels: dict[str, str] | None = None,
-                         focused: bool = False, caveat: str | None = None) -> str:
-    """The spoken sentence built by code: a comparison when a follow-up is about several products, otherwise the lead about the first."""
+                         focused: bool = False, caveat: str | None = None, asked: str | None = None) -> str:
+    """The spoken sentence built by code: a comparison when a follow-up is about several products, otherwise the lead about the first.
+    ``asked`` is the shopper's message: a question about the price or the stock at a store it names is answered for that store."""
     if focused and len(items) > 1:
         return template_comparison(items[:3], labels or {})
-    return template_lead(items[0], constraints, caveat=caveat, focused=focused, label=(labels or {}).get(items[0].ref))
+    store = store_asked_about(asked) if focused and constraints.wants_current_info else None
+    return template_lead(items[0], constraints, caveat=caveat, focused=focused, label=(labels or {}).get(items[0].ref), store=store)
+
+
+# The stores a shopper names as the place of a price or of stock: "the Safari one at Walmart", "Walmart's price", "on Amazon".
+_STORES = {"walmart": "Walmart", "target": "Target", "amazon": "Amazon", "ebay": "eBay", "etsy": "Etsy", "home depot": "Home Depot",
+           "lowe's": "Lowe's", "lowes": "Lowe's", "wayfair": "Wayfair", "costco": "Costco", "best buy": "Best Buy", "macy's": "Macy's",
+           "kohl's": "Kohl's", "kohls": "Kohl's", "sam's club": "Sam's Club", "walgreens": "Walgreens", "cvs": "CVS", "iherb": "iHerb",
+           "chewy": "Chewy", "mercari": "Mercari", "kroger": "Kroger", "staples": "Staples", "michaels": "Michaels", "dollar general": "Dollar General",
+           "learning express": "Learning Express"}
+_STORE_ASKED = re.compile(r"\b(?:at|from|on|in)\s+(?:the\s+)?(?P<at>" + "|".join(re.escape(s) for s in sorted(_STORES, key=len, reverse=True))
+                          + r")\b|\b(?P<own>" + "|".join(re.escape(s) for s in sorted(_STORES, key=len, reverse=True)) + r")'s\s+(?:price|listing|site|website|page|stock)\b", re.I)
+
+
+def store_asked_about(asked: str | None) -> str | None:
+    """The store a question asks the price or the stock at, as it is usually written ("Walmart"), or None."""
+    found = _STORE_ASKED.search(asked or "")
+    return _STORES[(found.group("at") or found.group("own")).lower()] if found else None
+
+
+def sold_at(source: str | None, store: str) -> bool:
+    """Whether a listing's store is ``store``: "Walmart", "walmart.com", "Walmart - Seller" and "Learning Express Houston" are
+    their stores; "walmart.ca" is Walmart's Canadian site, with prices in another currency, and is named as itself."""
+    def words(text: str) -> list[str]:
+        found = re.findall(r"[a-z0-9]+", text.lower().replace("'", "").replace("’", ""))
+        found = found[1:] if found[:1] == ["the"] else found
+        return [w for w in found if w not in ("com", "www")]
+
+    want, seller = words(store), words((source or "").split(" - ")[0])
+    if want and seller[:len(want)] == want:                   # "Learning Express Houston"; not "walmart.ca"
+        rest = seller[len(want):]
+        return not (rest and re.fullmatch(r"ca|co|uk|de|fr|au|mx|jp|in|ie|nz", rest[0]))
+    return bool(want) and seller == ["".join(want)]           # "homedepot.com"
 
 
 def template_lead(top: CatalogItem | WebItem, constraints: Constraints, *, caveat: str | None = None, focused: bool = False,
-                  label: str | None = None) -> str:
-    """The spoken sentence about one product, built from its evidence: name, price, where the price comes from."""
+                  label: str | None = None, store: str | None = None) -> str:
+    """The spoken sentence about one product, built from its evidence: name, price, where the price comes from.
+
+    ``store`` is the store a follow-up asks the price or the stock at. "Okay, the Safari one at Walmart, is it actually in stock
+    there right now, and what's the price today?" was answered "The first one, Melissa & Doug Safari Wooden Chunky Puzzle, $9.99
+    in the catalog. I could not confirm whether it is in stock right now." No Walmart listing gave a price for it, and the
+    sentence did not say so: one juror of five found the question answered (series 2-3, turn 4). It now says what was asked
+    and not found, and what the sources do give.
+    """
     price = _best_price(top)
     live = isinstance(top, CatalogItem) and top.live is not None and top.live.price is not None
     if isinstance(top, CatalogItem):
@@ -659,10 +731,24 @@ def template_lead(top: CatalogItem | WebItem, constraints: Constraints, *, cavea
         opener = f"{label[0].upper()}{label[1:]}, "
     over = f", over your ${constraints.budget_max:g} budget" if (price is not None and constraints.budget_max is not None
                                                                   and price > constraints.budget_max + 0.005) else ""
-    lead = f"{opener}{short_name(top)}, ${price:.2f} {where}{over}." if price is not None else f"{opener}{short_name(top)}."
+    seller = (top.live.source if top.live is not None else None) if isinstance(top, CatalogItem) else top.source
+    at_store = bool(store and seller and sold_at(seller, store))
+    priced_there = at_store and (live if isinstance(top, CatalogItem) else top.price is not None)
+    if store and not priced_there:
+        named = f"{label}, {short_name(top)}" if focused and label else short_name(top)
+        given = f"; it is ${price:.2f} {where}" if price is not None and where != "in the catalog" else \
+            f"; its catalog price is ${price:.2f}" if price is not None else ""
+        lead = f"I found no current {store} price for {named}{given}{over}."
+    else:
+        lead = f"{opener}{short_name(top)}, ${price:.2f} {where}{over}." if price is not None else f"{opener}{short_name(top)}."
     if focused and constraints.wants_current_info:
         stock = top.live.availability if isinstance(top, CatalogItem) and top.live is not None else (top.availability if isinstance(top, WebItem) else None)
-        lead += f" It is listed as {stock.replace('_', ' ')}." if stock else " I could not confirm whether it is in stock right now."
+        if stock and (at_store or not store):
+            lead += f" It is listed as {stock.replace('_', ' ')}."
+        elif stock:
+            lead += f" {seller} lists it as {stock.replace('_', ' ')}; I could not confirm whether it is in stock at {store}."
+        else:
+            lead += f" I could not confirm whether it is in stock{f' at {store}' if store else ''} right now."
     backing = wish_support(top, constraints) if constraints.must_have else []
     if backing:
         lead = lead[:-1] + f", stated to be {' and '.join(backing[:2])}."
@@ -743,12 +829,13 @@ _NOTICE_LABEL = re.compile(r"^\s*(?:(?:product\s+)?(?:safety\s+)?recall(?:\s+not
 
 
 def answer(evidence: Evidence, constraints: Constraints, weak_score: float | None = None, focus: list[str] | None = None,
-           labels: dict[str, str] | None = None, searched: Iterable[str] | None = None) -> AnswerDraft:
+           labels: dict[str, str] | None = None, searched: Iterable[str] | None = None, asked: str | None = None) -> AnswerDraft:
     """The grounded template answer: every value is copied from the evidence.
 
     ``focus`` lists the handles of on-screen products a follow-up is about; the answer is then about those, and
     ``labels`` gives each its place on screen in words ("the second one"). ``searched`` names the tools that ran
-    (None when the caller does not know): an empty result is reported for those sources only.
+    (None when the caller does not know): an empty result is reported for those sources only. ``asked`` is the
+    shopper's message (``spoken_from_evidence``).
     """
     focused = [item for ref in (focus or []) if (item := evidence.get(ref)) is not None]
     withdrawn = None if focused else withdrawn_match(evidence, constraints)
@@ -778,7 +865,7 @@ def answer(evidence: Evidence, constraints: Constraints, weak_score: float | Non
         )
     recs = [Recommendation(ref=item.ref, why=_why(item, constraints), caveat=_caveat(item, constraints)) for item in chosen]
     top = chosen[0]
-    lead = spoken_from_evidence(chosen, constraints, labels=labels, focused=bool(focused), caveat=recs[0].caveat)
+    lead = spoken_from_evidence(chosen, constraints, labels=labels, focused=bool(focused), caveat=recs[0].caveat, asked=asked)
     conflict = next((c for c in evidence.conflicts if c.startswith(f"{top.ref} ")), None)      # only about the product spoken of
     return AnswerDraft(recommendations=recs, spoken=lead, conflict_note=conflict,
                        follow_up_question="Would you like the cheapest option, or more detail on one?")
