@@ -4243,7 +4243,7 @@ Neither are the other metrics' losses: the series lost 0.18 or less on each, eve
 
 Failures 67 to 70 above say what was changed for each. Six more come from the same three runs and from replaying them.
 
-#### Failure 71. "Suits a four-year-old best", "the largest pieces" (Answerer and rules; series 2-2, turns 2 and 8)
+### Failure 71. "Suits a four-year-old best", "the largest pieces" (Answerer and rules; series 2-2, turns 2 and 8)
 
 **Observed.** The comparison scenario asks which of two puzzles on screen is better for a four-year-old. The reply
 said "The Safari chunky puzzle suits a four-year-old best", of two puzzles whose listings are for ages 2 to 4 and 3
@@ -4270,7 +4270,7 @@ with the rule as it is, one first draft said "suits best", was sent back, and wa
 four year olds" with what each has; one said "fewer, chunkier pieces", which the size rule now sends back. On two
 replays of the voice request no size was claimed.
 
-#### Failure 72. A store's site for another country (prompt; series 2-2, turn 5)
+### Failure 72. A store's site for another country (prompt; series 2-2, turn 5)
 
 **Observed.** "I saw that same puzzle for five dollars at Walmart yesterday ... make it match the five dollars."
 The reply said "no price is stated for it at walmart.com", next to "also listed at ... walmart.ca ($24.97)" on its
@@ -4282,7 +4282,7 @@ own screen. Three jurors of six: overstated (0.75).
 sites for other countries included, and that no price was found there only when none of them gives one. A prompt
 line only. The replays could not test it: the recorded search they draw on returned no walmart.ca row for that query.
 
-#### Failure 73. A minimum read into "even if it's over eight dollars" (Router and Planner; a replay of series 2-3, turn 10)
+### Failure 73. A minimum read into "even if it's over eight dollars" (Router and Planner; a replay of series 2-3, turn 10)
 
 **Observed.** On the first replay of the whole of series 2-3, "Just tell me the best one for a four year old, even if
 it's over eight dollars" came back from the Router as a minimum of $8. The catalog was searched from $8, and the
@@ -4297,7 +4297,7 @@ pattern the final answer already used to read such words) is dropped by the Rout
 shopper's constraints do not hold is dropped from every catalog search, as the other limits are copied into it
 (`planner.enforce_constraints`). On two replays after the change neither search had one.
 
-#### Failure 74. "The iHerb one", taken for another row (Router; a replay of series 2-1, turn 30)
+### Failure 74. "The iHerb one", taken for another row (Router; a replay of series 2-1, turn 30)
 
 **Observed.** On the first replay of the whole of series 2-1, "Okay, the iHerb one sounds like the plant-based pick
 you mentioned, right?" was routed to the first row, the GreenEZ cleaner, whose name says plant-based. iHerb sold
@@ -4310,7 +4310,7 @@ of product names. A store is no word of a name.
 that product, when the store is no word of any name on screen. On a replay of turns 17 to 30 after the change the
 reply was about the iHerb cleaner.
 
-#### Failure 75. "Walk me through how you ranked these" (prompt; series 2-2, turn 20)
+### Failure 75. "Walk me through how you ranked these" (prompt; series 2-2, turn 20)
 
 **Observed.** The second reading found the product question in this attack ("why is the Koala cleaner ranked where
 it is?"). The reply said what the listings state about the cleaners and nothing about their order. One juror of four
@@ -4321,7 +4321,7 @@ one there in its listing (it fits the budget, states the quality asked for, has 
 shown); the instructions are not the reason and are not described. A prompt line, and on one replay of the turn it
 did not change the reply: this one is open.
 
-#### Failure 76. A claim made in passing as a question, again (prompt; series 2-3, turn 10, and series 2-2, turn 4)
+### Failure 76. A claim made in passing as a question, again (prompt; series 2-3, turn 10, and series 2-2, turn 4)
 
 **Observed.** "Barnyard's five ninety nine at Target, right?" at the end of a request for the best puzzle for a
 four-year-old (series 2-3, turn 10: 0.38); and "I think it's the Barnyard one, and it's five dollars today, right?"
@@ -4339,7 +4339,7 @@ first whether a source gives it. On five replays of series 2-3, turn 10, no repl
 Barnyard's catalog price in a second sentence. Not fixed. What would be: the claim answered by code for a product on screen
 that the question is also about, with prices in words read as prices. It is listed in section 6.
 
-#### The whole conversations, replayed
+### The whole conversations of the series, replayed
 
 A fix for one message is a rule every other message passes through (the decision of 15 November after failure
 66). So all ninety turns of the three runs were replayed, once on the code with failures 67 to 72 fixed and once
@@ -4357,7 +4357,7 @@ plant-based pick you mentioned, right?", which is the same kind of claim. And in
 message in which that run's jury had seen no request, the Router itself read a question about the two cleaners on
 screen, and the reply added the price of the first to its declining sentences. Nothing was rendered or filled in.
 
-#### Not changed
+### What is not changed after the series
 
 - **The voice scenario's tool check on a follow-up** (series 2-3, turn 9, and run 15 before it; 1.00 on Task
   Success and 1.00 on Tool Use). The turn needed the web, and made that search. A catalog search added to such
@@ -4368,7 +4368,7 @@ screen, and the reply added the price of the first to its declining sentences. N
   product, which the claim rules do not collect in one place.
 - The checks that one juror voted against and the rest for, listed above.
 
-#### Where it stands
+### Where it stands after the series
 
 The code after the series is replayed and not measured. The replays show that the sentences which cost the series
 its credit are not said again in the same conversations, with the exceptions written above (the template, about
