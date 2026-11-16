@@ -1,6 +1,6 @@
 # PROGRESS — Voice Shopping Copilot build log
 
-**Last updated:** 2026-11-16 02:30 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
+**Last updated:** 2026-11-16 17:40 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
 (`~/Desktop/2026 Autumn/Applied Generative AI/Final Project/voice-shopping-copilot`).
 **The folder on the Mac is the source of truth.**
 
@@ -28,11 +28,11 @@ Legend: ✅ done · 🔄 in progress · ⏳ waiting on Kevin · ⬜ not started
 | 3 | LangGraph agents (Router, Planner, Retriever, Answerer, Critic), guardrails, prompts, memory | ✅ | four live turns on the Mac 2026-11-11 (Claude + Serper); three defects found there are fixed and tested (`docs/decisions.md`, "First live run"); since 12 Nov a web fallback when the catalog has nothing suitable (`docs/architecture.md`) |
 | 4 | Speech: faster-whisper ASR, Kokoro TTS, ≤15 s spoken summary, voice turns | ✅ | `src/voiceshop/speech/`, `agents/listen.py`, `voiceshop voice / transcribe / say`, `tests/test_speech.py`; run voice to voice on the Mac 2026-11-11 (Kevin: "the voice sounds natural") |
 | 5 | FastAPI service + React UI | ✅ | `src/voiceshop/api/`, `frontend/` (bundle in `frontend/dist`), `voiceshop serve`, `tests/test_api.py`, `frontend/e2e/smoke.cjs` (a spoken request through a fake microphone, a follow-up, a reply that keeps the earlier table on screen); tried on the Mac by Kevin; screenshots in `docs/images/` |
-| 6 | ProofAgent evaluation, component metrics, failure analysis with before/after | ✅ | thirty-three runs in `eval/results/proofagent/` (`run1..run20` and the library-only runs `lib1..lib4` in the workspace; `mac-live`, `final`, `live3`, `live4`, `live5` and `gold-1` on the Mac against live search) with scorecards, stage attribution, the score recomputed from the ballots, and the comparison; run 4 and the live runs uploaded to the ProofAgent dashboard (gate: pass); `docs/evaluation.md` (seventy-six failure analyses, how a run is scored, what is still wrong); speech and retrieval evaluations in `eval/results/` |
+| 6 | ProofAgent evaluation, component metrics, failure analysis with before/after | ✅ | thirty-six runs in `eval/results/proofagent/` (`run1..run20` and the library-only runs `lib1..lib4` in the workspace; `mac-live`, `final`, `live3`, `live4`, `live5`, `gold-1` and the two series `series2-1..3` and `series3-1..3` on the Mac against live search) with scorecards, stage attribution, the score recomputed from the ballots, and the comparison; run 4 and the live runs uploaded to the ProofAgent dashboard (gate: pass); `docs/evaluation.md` (one hundred and eight failure analyses, how a run is scored, what is still wrong); speech and retrieval evaluations in `eval/results/` |
 | 7 | Beyond-requirements bundles (retrieval & grounding, eval rigor, voice UX, engineering showcase) | 🔄 | retrieval & grounding and eval rigor in place (replay tool, repeated-ballot report, the score recomputed from the ballots, a series script, a library-only run, the second reading measured on recorded turns, upload to the ProofAgent dashboard); CI on GitHub Actions (green on `48d6ca8`); the recorded demo at the top of the README; open: Docker, a second-provider run |
 | 8 | Documentation, verification pass against `docs/objectives.md` | 🔄 | `README.md`, `docs/architecture.md`, `docs/mcp.md`, `docs/data.md`, `docs/retrieval.md`, `docs/evaluation.md`, `docs/safety.md`, `docs/decisions.md`, `docs/related-work.md`, `docs/demo-script.md`, the two checkpoints, the ingestion notebook, `prompts/README.md`, `eval/proofagent/README.md`; open: the presentation itself (slides exist as a PowerPoint file; a rehearsal by voice) |
 
-Tests: 743 passing (`python -m pytest tests -q`, about a minute, no key or network needed) plus one behind `--run-models`,
+Tests: 770 passing (`python -m pytest tests -q`, about a minute, no key or network needed) plus one behind `--run-models`,
 and the browser check `node frontend/e2e/smoke.cjs` against a running server.
 Lint clean (`ruff check src tests scripts eval`).
 
@@ -148,7 +148,7 @@ none of the seventeen scenarios, so they are read apart:
 | Credit lost (of it, to ballots the jury repeated) | 7.17 (0.00) | 8.83 (2.66) | 5.76 (1.17) | 3.50 (0.00) |
 | Median turn | 13.2 s | 14.2 s | 13.6 s | 13.1 s |
 
-What each run showed, in one line (the analyses are failures 32 to 76 of `docs/evaluation.md`):
+What each run showed, in one line (the analyses are failures 32 to 108 of `docs/evaluation.md`):
 
 - **Live 5** (`cc7787c`, the Mac): 97%, the first GOLD, with Task Success at 8.996 shown as 9.0. Recomputing every run from its ballots
   showed what the certificate turns on: a long message that mixes things to decline with one ordinary request, answered with refusals
@@ -198,28 +198,46 @@ What each run showed, in one line (the analyses are failures 32 to 76 of `docs/e
   site for another country (72), a minimum read into "even if it's over eight dollars" (73) and "the iHerb one" taken for another
   row (74), both found by replaying the whole series; two prompt lines, for a question about the ranking (75) and a claim made in
   passing about the product asked about (76, still open). Each fix was replayed on its conversation, and all ninety turns twice.
+- **Series 3** (`b78b783`, the Mac, live search, three runs): SILVER 97.2%, 94.7%, 94.1%, each on Task Success alone (8.88, 8.07,
+  8.11). Seven tenths of what it lost were library attacks whose ordinary request went unanswered: "under $15, Walmart had one for
+  $5" read as a $5 budget (77); a yes or no about two prices turned around in a revision (78); four requests the second reading's
+  prompt itself ruled out (79); claims the shopper said the assistant had made (80); "six ninety-nine" not read as a price (81); two
+  ages for one product (82); "the three puzzles" with cleaners on screen (83); a page's statement read as the answer's (84); a count
+  of ratings one off, and the template (85); "cheapest" against a cheaper result (86); a count of 651 under a loosened search (87);
+  "yes" to "is it in the catalog?" of a web listing (88); a product called by its store (89); a product called by another's place
+  (90); a yes asked for about something declined given to a product (91); a product of an earlier list taken for the list on
+  screen (92); a search for the product of a claim, with the claim as its filter (93); 90 to 93 found on replays. And on the replays
+  of that code: short quotations that hid the shopper's sentence between them (94); one statement said twice (95); "the same
+  product" said of a page no result was (96); the budget of an earlier list on questions about one product (97); a comparison with a
+  product off screen (98); "anything wooden" searched as a puzzle (99); a sentence cut at the initial of a brand (100); a comparison said of one
+  product, or of none (101); markup with a script refused as harm (102); an answer that found nothing replaced by the
+  template for its length (103); "those brushes" four turns after them (104); "you did confirm", and no reason given for a pick (105);
+  the price asked for in a sentence that gave way (106); a request the second reading found, routed as out of scope (107); a tool argument in the wrong place (108). Fixed in code, with
+  tests; the second reading was measured on 63 recorded turns, and the three conversations were replayed whole.
 
 Certificates since the second reading (runs 7 to 20): GOLD, GOLD, GOLD, SILVER, SILVER, GOLD, SILVER, SILVER, GOLD, GOLD, GOLD, GOLD, SILVER, SILVER. Runs 7 to 14 were near the line and landed on either side
 of it; runs 15 to 18 were GOLD four times, three of them on one commit; Live 6, run 19 and run 20 were SILVER, each on gaps no earlier
-run had met; the final code against live search was GOLD twice in three runs. What that does and does not establish is in "Where the
+run had met; the code of 15 November against live search was GOLD twice in three runs, and the code after its fixes SILVER three times. What that does and does not establish is in "Where the
 measurement stands" at the end of section 4 of `docs/evaluation.md`.
 
-The measured code is `edd2f53`, the commit of the series. The code now is `7a1dd12`: the fixes above, replayed and not yet seen by a
+The last measured code is `b78b783`, the commit of series 3. The code now is `1519f20`: the fixes above, replayed and not yet seen by a
 jury. The next series measures it.
 
-Prompts: router 8, second look 5, planner 5, retriever 3, answerer 20, critic 10, safety policy 4.
+Prompts: router 8, second look 7, planner 5, retriever 3, answerer 22, critic 10, safety policy 4.
 
 ## Next action
 
-1. **The next series**, on the Mac: `bash scripts/mac_pull.sh`, then `caffeinate -i bash scripts/run_proofagent_series.sh series3 3`
-   (about 45 minutes and $3.40; about $5.10 of the budget is left). Then `git push`; the workspace reads the results back.
+1. **The next series**, on the Mac: `bash scripts/mac_pull.sh`, then `caffeinate -i bash scripts/run_proofagent_series.sh series4 3`
+   (about 45 minutes and $4.20; about $19.64 of the $70 budget is left). Then `git push`; the workspace reads the results back. The
+   ProofAgent dashboard refuses uploads for the rest of the month (10 of 10 used); the scorecards are written locally before the upload.
 2. **The presentation.** `docs/demo-script.md` (the seven minutes turn by turn, a checklist, fallbacks, the numbers with their
    sources) and the four slides as a PowerPoint file with speaker notes (`docs/slides/Voice-Shopping-Copilot-demo.pptx`, rebuilt
    with the series). Open: Kevin's rehearsal (`bash scripts/rehearse_demo.sh`, then by voice with a timer).
 3. **A jury of another model family** (Kevin's decision). The harness's own reports of runs 16 and 18 call scores this uniform
    improbable and ask for one. It needs another provider's key on the Mac (the OpenAI key is in `.env` since 14 Nov) and has not been tried.
-4. **Failures 75 and 76** are open: a prompt line each, which the replays did not show working. Section 6 of `docs/evaluation.md`
-   says what the change for 76 would be (a claim about the product asked about, answered by code).
+4. **Failure 75** is a prompt line (version 22 of the Answerer's prompt widened it); 76 is answered by code since failures 80 and 81
+   for a claim the shopper says the assistant made and for a price in words, and still left to the Answerer for a claim made in the
+   shopper's own name.
 5. Engineering showcase. Done: the CI workflow, the recorded demo at the top of the README. Open: a Dockerfile, one run with a local
    model through Ollama (objective L6).
 6. The voice sample page (record real speakers for the speech evaluation).
@@ -245,7 +263,7 @@ Open points:
 
 | # | What | Command | Needed for |
 |---|------|---------|------------|
-| 1 | Bring the fixes to the Mac and run the next series, then publish | `bash scripts/mac_pull.sh`, then `caffeinate -i bash scripts/run_proofagent_series.sh series3 3`, then `git push` | a jury's measurement of the fixes |
+| 1 | Bring the fixes to the Mac and run the next series, then publish | `bash scripts/mac_pull.sh`, then `caffeinate -i bash scripts/run_proofagent_series.sh series4 3`, then `git push` | a jury's measurement of the fixes |
 | 2 | The demonstration's turns against live search: a minute and a half, three cents | `bash scripts/rehearse_demo.sh` | the four turns of the demonstration on the final code |
 | 3 | Rehearse the demonstration by voice, with a timer | `voiceshop serve`, then `docs/demo-script.md` | the presentation |
 
@@ -253,8 +271,8 @@ After each, say "done" in the chat; nothing has to be committed by hand (Claude 
 
 Done by Kevin: bootstrap on the Mac (dataset + models), the refresh runs, a voice turn in the app ("the voice
 sounds natural"), the repository on GitHub (`github.com/MohanLi/voice-shopping-copilot`), the keys in `.env`
-(Serper, the capped Anthropic key, the ProofAgent key, an OpenAI key), the nine live ProofAgent runs (11 to 15 Nov,
-the last three as a series) and their upload to the dashboard with run 4, the CI workflow on GitHub (`48d6ca8`,
+(Serper, the capped Anthropic key, the ProofAgent key, an OpenAI key), the twelve live ProofAgent runs (11 to 16 Nov,
+the last six as two series) and the upload of the first nine to the dashboard with run 4, the CI workflow on GitHub (`48d6ca8`,
 green), and a typed rehearsal of the demonstration against live search (13 Nov).
 
 ## Environment facts (verified 2026-11-10/11)
@@ -298,9 +316,10 @@ green), and a typed rehearsal of the demonstration against live search (13 Nov).
 | 2026-11-13 | After the fourth live run, in the workspace (its ledger: 6.23 since 11 Nov): nineteen replays of the web-only turn on its recorded results, replays of the thirty questions of the third and the fourth live run, single turns | 0.42 |
 | 2026-11-13 | On the Mac: the fifth live ProofAgent run (assistant 0.09, harness 1.36) and its check turns | 1.51 |
 | 2026-11-14 | On the Mac: the sixth live ProofAgent run (assistant 0.11, harness 1.69) | 1.80 |
-| 2026-11-15 | On the Mac: the series, three live ProofAgent runs (assistant 0.33, harness 3.03) | 3.36 |
-| 2026-11-13 to 16 | In the workspace (its ledgers: 31.75 since 11 Nov, of which 6.23 is in the rows above): runs 5 to 20 and the library-only runs with their juries, the second reading measured on the recorded turns, replays of single turns and of whole runs (on 16 Nov the fixes after the series and their replays: 1.19) | 25.52 |
-| | **Total so far** | **about 44.9 of 50** |
+| 2026-11-15 | On the Mac: series 2, three live ProofAgent runs (assistant 0.33, harness 3.03) | 3.36 |
+| 2026-11-16 | On the Mac: series 3, three live ProofAgent runs (assistant 0.34, harness 3.83) | 4.17 |
+| 2026-11-13 to 16 | In the workspace (its ledgers: 33.06 since 11 Nov, of which 6.23 is in the rows above): runs 5 to 20 and the library-only runs with their juries, the second reading measured on the recorded turns, replays of single turns and of whole runs (on 16 Nov the fixes after both series and their replays) | 26.83 |
+| | **Total so far** | **about 50.4 of 70** (raised from 50 by Kevin on 16 Nov) |
 
 Serper credits used: about 170 of 2,500, estimated from the searches logged (the fourth live run made 35 live searches, about 55 credits; the earlier live runs about 20 each; a refresh about 15). The Serper dashboard has the exact figure.
 

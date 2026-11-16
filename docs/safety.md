@@ -18,6 +18,7 @@ the draft before it is spoken. The same policy text is also in the prompts
 |---|---|---|---|
 | A price, rating, material or source that no tool returned | the model returns evidence handles; code fills every table cell and citation from the evidence | `agents/finalize.py` | `tests/test_agents.py`; ProofAgent Tool Use 100% in four runs |
 | A claim in the model's own sentences that the evidence does not support | rule checks on every draft (list in section 3), then a model critic | `guardrails/output.py`, `agents/answerer.py` | `tests/test_guardrails.py`; failures 3, 4, 11 in [evaluation.md](evaluation.md) |
+| A shopper who presses a false claim ("you already confirmed it was BPA-free", "it was six ninety-nine at Terrific, right?") and is about to rely on it | code states what the product's record says, also when the shopper says the assistant made the claim and the rest of the message is about the same product; an amount no source gives is said not to be given | `agents/router.py` (`claim_about_screen`, `attributed_about_earlier`), `agents/finalize.py` (`claim_statement`) | `tests/test_agents.py`; failures 35, 76, 80 and 81 in [evaluation.md](evaluation.md) |
 | A product that is unsafe for the child it is for | under three, only products whose own listing says they suit babies or toddlers, and never a web result (the web fallback is not made for that age); safety flags from the listing are shown, and one is spoken, about the product that carries it | `retrieval/filters.py`, `guardrails/policy.py` (`FLAG_NOTES`), `agents/retriever.py` (`web_fallback_calls`), `agents/finalize.py` (`safety_notes`) | scenario 11 of the ProofAgent set; `tests/test_retrieval.py`, `tests/test_agents.py` |
 | A recalled or discontinued product | a named product looked up on the web is also searched for recall notices; a recalled product is never recommended and the notice is said first | `agents/planner.py`, `guardrails/output.py` (`recall_undisclosed`) | planted fault "Aqua Beads Mega Set"; failure 4 |
 | A dangerous request (mixing chemicals, hurting someone) | declined by fixed text before any model sees it; the ordinary rest of the message is still answered | `guardrails/input.py` | scenario 16; failures 1 and 9 |
@@ -56,7 +57,9 @@ sentences (`policy.SAY`): what it is, what it cannot do, each kind of refusal. T
 id; it cannot write one, so it cannot be talked into another wording. Code checks the choice where a wrong one
 was observed: the sentence about pictures and notes needs something to look at or to keep in the message, the
 one about advice needs a word about health, law or money, and a question about an account or a named person
-gets the sentence about personal data whatever the model chose. Restricted products (weapons, tobacco,
+gets the sentence about personal data whatever the model chose. Markup with a script in it ("onerror=", "document.cookie")
+is declined as an injection, not as harm to a person, when the message has no word of harm to a person or an animal:
+the refusal of harm ends the turn, and the shopping question beside the markup was lost to it (failure 102). Restricted products (weapons, tobacco,
 alcohol, prescription medicines, adult content) are declined here.
 
 **A second reading.** When the Router finds no product request in a message, the reply is refusals alone, and
@@ -125,17 +128,22 @@ only when the first product has them, otherwise "One of the options contains mag
 
 - a dollar amount must be a price of a product the answer is about (or the shopper's budget, or a difference of two such prices). "About" means recommended or referred to on screen. The price of one more kind of product may be stated: one the answer names, by a word that is in its title, in no other title of the evidence, and nowhere in the listings of the products the answer is about. Naming a product admits its prices and nothing else; a rating, a stock status or a claim is still checked against the products the answer is about. A price per item or per ounce counts when code worked it out from the listing's own title (`data/units.py`); a figure the model divided out itself does not;
 - nothing is called cheaper per ounce unless at least two products of the answer have a price per ounce;
-- a spoken "yes" or "no" to "is the first one cheaper than the second?" must agree with the two prices (worked out by code and given to the Answerer beforehand);
-- a rating or a review count must exist in the evidence;
+- a spoken "yes" or "no" to "is the first one cheaper than the second?" must agree with the two prices (worked out by code and given to the Answerer beforehand, also when one product has a catalog and a live price that are both on the same side of the other's); said wrongly again after a revision, the sentence is written by code with both prices;
+- a "yes" or a "no" that the shopper asked for about something declined ("tell me whether it's the same family, just a yes or no") does not open the answer about a product;
+- "is it in the catalog?" of a live web listing is not answered "yes";
+- a rating or a review count must exist in the evidence; a count that its listing does not give, said again after a revision, is copied from the listing;
+- an age range stated for a catalog product is the one its age label gives;
 - "in stock", "ships today" need a live result that says so; a catalog price is not called current;
-- a claim such as non-toxic, BPA-free or eco-friendly must be stated by a source for that product;
+- a claim such as non-toxic, BPA-free or eco-friendly must be stated by a source for that product, or be reported as the statement of a named site whose result states it ("a beautyhabit.com page describes the Peppermint version as biodegradable");
 - a recall or discontinuation that a source states must be said;
-- a product over the budget, or one that misses a constraint, must say so on screen, and a price above the budget must not be spoken without saying that it is; when every product of an answer is over the budget and the evidence has one that fits, that one is named too;
-- a question about a price gets a price or the statement that none was found, also for a product that is not recommended;
-- a product is not called the cheapest or the highest rated next to one in the same answer that beats it, in a reason or in the sentence that is spoken; "the largest" or "the most pieces" is compared with the piece count of every row;
+- a product over the budget, or one that misses a constraint, must say so on screen, and a price above the budget must not be spoken without saying that it is; when every product of an answer is over the budget and the evidence has one that fits, that one is named too, in a new search or when the message speaks of money (a question about named products that does not is answered about them);
+- a product is not said to be the same as a listing the shopper brings ("a German listing", "another page") unless a result of the turn is that listing and code matched it to the product;
+- a question about a price gets a price or the statement that none was found, also for a product that is not recommended, and in the part of the reply that is said in the time (asked once);
+- a product is not called the cheapest or the highest rated next to one in the same answer that beats it, in a reason or in the sentence that is spoken; nor the cheapest when a result of the same kind of product costs less; "the largest" or "the most pieces" is compared with the piece count of every row;
+- in a follow-up, a product called by its place in the list ("the second one") is called by its own place;
 - a superlative says what it is true of ("of the three", "of the ones I found"): a search returns a few products, not every one there is;
 - "none was found" is not said of a product whose name is in the title of a result of the same turn;
-- a second product that a comparison names is mentioned, found or not;
+- a second product that a comparison names is mentioned, found or not, also when the Router did not name it; and the sentence said for certain names each product compared (asked once);
 - the stock status is not called unstated while a live result matched to the product states it;
 - a web result is not recommended for a child under three;
 - absolute assurances are never given ("completely safe", "cures", "doctor recommended", "guaranteed to": `policy.FORBIDDEN_ASSURANCES`);

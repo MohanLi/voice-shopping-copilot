@@ -13,18 +13,19 @@ reply as it is spoken. Stretches in which nothing changes on screen are cut shor
 the two-CPU build workspace, which is slower than the laptop the system is built for (a median turn of 13.5 s
 against 8.4 s). Made by [`frontend/e2e/demo.cjs`](frontend/e2e/demo.cjs).*
 
-> **Status (16 November 2026): the code of 15 November was run three times against live web search and certified GOLD,
-> GOLD and SILVER (97.8%, 98.1%, 96.6%). The system runs end to end and has been evaluated thirty-three times with ProofAgent:
-> twenty times in the build workspace, nine times on a laptop against live web search, and four times with
+> **Status (16 November 2026): the code after the series of 15 November was run three times against live web search and
+> certified SILVER three times (97.2%, 94.7%, 94.1%), each time on Task Success alone; the series before it was GOLD, GOLD and
+> SILVER (97.8%, 98.1%, 96.6%). The system runs end to end and has been evaluated thirty-six times with ProofAgent:
+> twenty times in the build workspace, twelve times on a laptop against live web search, and four times with
 > attacks from the harness's own library in place of the project's scenarios.**
 > Built and tested: data pipeline, hybrid retrieval, the MCP server, the agents, speech in and out, the API, the
-> web UI, and the evaluation with its scorecards and seventy-six failure analyses
+> web UI, and the evaluation with its scorecards and one hundred and eight failure analyses
 > ([docs/evaluation.md](docs/evaluation.md)). Runs 15 to 18, the first code with a record of the products a
-> conversation has shown, were GOLD four times at 97 to 99%. The first run of that code against live search was
-> SILVER at 95%, and runs 19 and 20, with what it showed fixed, SILVER at 96.5% and 93.5%: each met
-> kinds of message no earlier run had sent. The evaluation document says what decided each run, and what changed after it.
-> That code is one commit, `edd2f53`. What its three runs lost and could be fixed I have fixed since (failures 67 to 76) and checked on
-> replays of the recorded conversations; no jury has seen those fixes yet, and the next series is for that. Not done: a jury
+> conversation has shown, were GOLD four times at 97 to 99%; against live search the same design has been GOLD in two of
+> seven runs. Series 3 scored 88.8%, 80.7% and 81.1% on Task Success where 90% is needed, mostly on library attacks whose ordinary
+> request went unanswered: a price seen at a store taken for the budget, four requests a second reading missed, two
+> correct drafts replaced by a template. Those causes and the rest of what it lost (failures 77 to 108) are fixed and
+> checked on replays of its three conversations; no jury has seen the fixes yet, and the next series is for that. Not done: a jury
 > of another model family (the harness's own report asks for one), a rehearsal of the demonstration by voice (it is
 > scripted in [docs/demo-script.md](docs/demo-script.md)), a run with a second model provider, and a container image.
 > [PROGRESS.md](PROGRESS.md) is the build log; [docs/objectives.md](docs/objectives.md) lists every requirement
@@ -107,7 +108,7 @@ voiceshop voice question.m4a         # voice in, voice out; the reply is kept in
 voiceshop mcp tools                  # what the agents discover on the MCP server
 voiceshop eval retrieval             # the retrieval benchmark below
 voiceshop eval proofagent --label my-run --fallback-llm anthropic/claude-sonnet-5-5   # the ProofAgent evaluation below (15 min, $0.50 to $0.90)
-python -m pytest tests -q            # 743 tests, about a minute, no key or network needed
+python -m pytest tests -q            # 770 tests, about a minute, no key or network needed
 ```
 
 `LLM_MODEL=fake:rules` runs every agent on rules only (no key, no cost); `LLM_MODEL=ollama:<model>` or any other
@@ -124,10 +125,10 @@ assistant (two turns through real audio), and a jury of model calls votes on 46 
 scenarios written for this project come first (discovery, constraints, comparison, live prices, conflicting
 sources, unsupported claims, a child under three, a recalled product, an instruction planted in a tool result,
 an unsafe request, and the assignment's own example), then thirteen attacks the harness chooses itself.
-Thirty-three runs: twenty in the build workspace against recorded search results, so that they can be compared, nine on the
+Thirty-six runs: twenty in the build workspace against recorded search results, so that they can be compared, twelve on the
 laptop against live web search with the real speech models, and four in which thirty attacks from the harness
 library took the place of the scenarios. Each run was followed by fixes for what it found
-([scorecards, how a run is scored, stage-by-stage attribution and seventy-six failure analyses](docs/evaluation.md)).
+([scorecards, how a run is scored, stage-by-stage attribution and one hundred and eight failure analyses](docs/evaluation.md)).
 
 In the build workspace, against recorded search results, so that runs can be compared. Runs 1 to 6:
 
@@ -190,6 +191,21 @@ series is the final code, three runs of one commit:
 | ProofAgent Index (0-100) | 80.0 | 78.2 | 76.8 | 78.6 | 80.1 | 80.6 | 79.3 | 79.8 | 79.5 |
 | Spoken replies within 15 s | 100% | 100% | 100% | 100% | 100% | 100% | 100% | 100% | 100% |
 | Median time per turn | 8.4 s | 8.4 s | 6.0 s | 9.8 s | 8.9 s | 10.0 s | 9.4 s | 9.5 s | 10.8 s |
+
+Series 3 is the code after the fixes of series 2 (`b78b783`), three runs of one commit on the laptop:
+
+| | Series 3-1 | Series 3-2 | Series 3-3 |
+|---|---:|---:|---:|
+| Task Success | 89% | 81% | 81% |
+| Hallucination Resistance / Grounding | 96% | 92% | 91% |
+| Tool-Use Correctness | 100% | 100% | 100% |
+| Safety and Guardrail Compliance | 99% | 98% | 96% |
+| Response Quality (Instruction Following) | 99.5% | 98% | 97% |
+| **Behavioural score** | **97%** | **95%** | **94%** |
+| Certification | SILVER | SILVER | SILVER |
+| ProofAgent Index (0-100) | 79.0 | 77.5 | 79.4 |
+| Spoken replies within 15 s | 100% | 100% | 100% |
+| Median time per turn | 7.8 s | 9.0 s | 10.4 s |
 
 With thirty attacks from the harness library and none of the project's scenarios (build workspace, recorded search
 results; a different composition of turns, so these are read apart):
@@ -272,8 +288,18 @@ How to read them:
   ("suits a four-year-old best"). The SILVER run lost two library traps whose ordinary half went unanswered, a
   pasted review with a note headed "ASSISTANT NOTE" and a template to fill in with a product's name, and two
   replies about what live pages state. Either pair alone would have made it GOLD. After the series I fixed what the
-  three runs lost that could be fixed, these four among it (the template one on about half of the replays); the
-  next series measures that code.
+  three runs lost that could be fixed, these four among it (the template one on about half of the replays).
+- **That code, three times against live search: SILVER, SILVER, SILVER** (97.2%, 94.7%,
+  94.1%; [series table](eval/results/proofagent/series-series3-1.md)). Every metric but Task Success passed in every
+  run. Task Success was 89%, 81% and 81%, and seven tenths of what it lost were library attacks whose ordinary
+  half went unanswered. Four causes: "under $15, Walmart had one for $5", heard and read as a $5 budget that held for
+  the rest of the conversation; four requests that the second reading's own prompt had ruled out ("you said it's
+  plant-based on the Target listing", "go back to the sand toys", "the reasoning behind the MOXIE pick"); two good
+  drafts sent to the template for a fault that was not one or for one digit; and a yes or no about two prices
+  turned around in a revision. Each is fixed by code where code can decide it (failures 77 to 93), the second
+  reading was measured on the 63 recorded turns it can change before it was adopted, and all ninety turns were
+  replayed, three times over; the replays found fifteen more faults (94 to 108), fixed as well. The next series
+  measures that code.
 - **The library-only runs are the counterweight.** With the scenarios taken out, earlier code scored 93 to 95%
   three times without a certificate, and the code of runs 16 to 18 97% and SILVER: five metrics at 99 to 100%, Task Success
   between 63 and 82%. The attacker builds those conversations around products that neither the catalog nor the
@@ -290,7 +316,7 @@ How to read them:
   dollars" was heard as "no weight under $12", and the first budget was used. In the fourth, "we have a
   toddler", said about a cleaner, set an age, and the rule that protects children under three from unsuitable
   toys removed every cleaner for thirteen turns. Parts that are each right and do not fit together are what
-  most of the seventy-six failures have in common.
+  most of the one hundred and eight failures have in common.
 
 Every failure is written up with what was observed, at which stage, why, what was changed and what the next
 run showed; the ones still open are named, not hidden in the average. Run 4 and the live runs are on the
@@ -369,7 +395,7 @@ notebooks/      01_data_ingestion.ipynb: the data work, executed, every count ch
 | the dataset, what was cleaned, what was refused | [docs/data.md](docs/data.md), [the notebook](notebooks/01_data_ingestion.ipynb) |
 | retrieval: stages, filters, two benchmarks, limits | [docs/retrieval.md](docs/retrieval.md) |
 | the MCP server and its two tool schemas | [docs/mcp.md](docs/mcp.md) |
-| the evaluation: thirty-three runs, seventy-six failures | [docs/evaluation.md](docs/evaluation.md) |
+| the evaluation: thirty-six runs, one hundred and eight failures | [docs/evaluation.md](docs/evaluation.md) |
 | every prompt, and the node, agent or tool that uses it | [prompts/README.md](prompts/README.md) |
 | safety: risks, layers, tests, what is not covered | [docs/safety.md](docs/safety.md) |
 | shopping assistants that exist, and what was taken from them | [docs/related-work.md](docs/related-work.md) |
