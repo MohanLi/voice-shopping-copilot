@@ -30,7 +30,7 @@ from voiceshop.agents.state import (
 )
 from voiceshop.guardrails import policy
 from voiceshop.guardrails.output import dollars_in, trim_spoken
-from voiceshop.speech.text import COMFORT_SPEED, MAX_SPEED, estimate_seconds, fits, split_sentences
+from voiceshop.speech.text import COMFORT_SPEED, MAX_SPEED, estimate_seconds, fits, lead_of, split_sentences
 
 MAX_HISTORY = 12
 SPOKEN_SAFETY: dict[str, str] = {
@@ -322,6 +322,39 @@ def claim_statement(item: CatalogItem | WebItem, pressing: str, evidence: Eviden
             f"The {brief} is ${price:.2f} {where}, with no sale stated.")
 
 
+_SAID_WORDS = re.compile(r"\$\d+(?:\.\d+)?|[a-z0-9]+(?:-[a-z0-9]+)*", re.I)
+_FRAME_WORDS = frozenset("the listing does not state that it is says say said my sources source state states stated for not and or of its "
+                         "shown earlier on screen what price rating rated stock with no any but a an to in at now catalog live web listed list "
+                         "gives give i have".split())
+_NEGATION = re.compile(r"\b(?:not|no|never|none|neither|nor|cannot)\b|n't\b", re.I)
+_CLAUSE = re.compile(r"[,;:]|\s(?:and|but|while|though|although|whereas)\s", re.I)
+
+
+def said_already(statement: str, spoken: str | None) -> bool:
+    """Does one sentence of the answer already say what a claim statement says: its figures, its words for the quality, its "not"?
+
+    The words of the statement that are not its frame ("the listing does not state that it is") and not the product's name have
+    to be in one sentence of the answer, with a word that denies when the statement denies. "The Barnyard Wooden Jigsaw Puzzle
+    listing does not state that it is non-toxic or BPA-free" is said by "The Barnyard puzzle's listing does not say it is
+    non-toxic or BPA-free"; "My sources state $7.99 for it, not $6.99" is not said by a sentence without "$6.99", and "It is
+    plant-based" says nothing of a listing that does not state it.
+    """
+    words = {w.lower() for w in _SAID_WORDS.findall(statement or "")} - _FRAME_WORDS
+    names = {x.lower() for x in re.findall(r"[A-Z][a-z]+", statement or "")}
+    content = {w for w in words if w.startswith("$") or any(ch.isdigit() for ch in w) or "-" in w or w not in names}
+    if not content:
+        return False
+    denies = bool(_NEGATION.search(statement or ""))
+    for sentence in split_sentences(" ".join((spoken or "").replace("\u2019", "'").split())):
+        if not content <= {w.lower() for w in _SAID_WORDS.findall(sentence)}:
+            continue
+        # The denial has to be said of what the statement denies: "No listing states a rating, and it is plant-based" denies nothing of it.
+        if not denies or any(_NEGATION.search(clause) and content & {w.lower() for w in _SAID_WORDS.findall(clause)}
+                             for clause in _CLAUSE.split(sentence)):
+            return True
+    return False
+
+
 def safety_notes(items: list[CatalogItem | WebItem], constraints: Constraints, route: RouteDecision | None,
                  evidence: Evidence | None = None, asked: str | None = None) -> tuple[list[str], list[str]]:
     """On-screen notes and (short) spoken sentences, decided from flags and constraints, never by a model.
@@ -529,6 +562,8 @@ def whole_sentences(text: str, around: list[str], max_seconds: float, max_words:
     daughter." The two did not fit, the first was kept, and the recall was on screen only: run 11, turn 15.)
     """
     kept = split_sentences(" ".join((text or "").split()))
+    if len(kept) > 1 and lead_of(text) != kept[0]:
+        kept = [f"{kept[0]} {kept[1]}", *kept[2:]]           # a first sentence that names nothing is said with the one after it
     while len(kept) > 1 and not fits(" ".join([*around, *kept]), max_seconds, MAX_SPEED):
         later = range(1, len(kept))
         no_recall = [i for i in later if not _RECALL_SAID.search(kept[i])]
@@ -730,9 +765,11 @@ def build_answer(draft: AnswerDraft, evidence: Evidence, constraints: Constraint
     if question and abstained and draft.spoken.strip().endswith("?"):
         question, offer = None, None                         # the statement already ends by asking; a second question would only repeat it
     before = said_before(preface, draft.spoken, max_seconds)                              # what was declined is said first
-    if len(pressed) == 1 and pressed[0][2]:
+    if len(pressed) == 1 and pressed[0][2] and not said_already(pressed[0][2], draft.spoken):
         # One claim about one product: what the sources state about it is said in place of "I can only confirm what my sources
-        # state", when it can be said together with the answer's first sentence. Both are on screen either way.
+        # state", when it can be said together with the answer's first sentence. Both are on screen either way. Not when the
+        # answer's own sentence already says it: "The Barnyard Wooden Jigsaw Puzzle listing does not state that it is non-toxic
+        # or BPA-free. The Barnyard puzzle's listing does not say it is non-toxic or BPA-free." (a replay of series 3-3, turn 22).
         specific = [*said_before([i for i in preface or [] if i != "no_unconfirmed"], draft.spoken, max_seconds), pressed[0][2]]
         if fits(" ".join([*specific, *split_sentences(" ".join((draft.spoken or "").split()))[:1]]), max_seconds, MAX_SPEED):
             before = specific

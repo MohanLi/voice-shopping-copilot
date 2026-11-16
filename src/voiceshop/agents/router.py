@@ -103,13 +103,36 @@ def points_at_screen(text: str, shown: list[dict[str, Any]] | None) -> bool:
 
 
 def named_on_screen(text: str, shown: list[dict[str, Any]] | None) -> list[int]:
-    """Positions of the products on screen that a text names by a word the other products on screen do not share."""
+    """Positions of the products on screen that a text names by a word the other products on screen do not share.
+
+    A material is no name, nor is a word for what is asked about: "just show me something then, anything wooden under five" named
+    the two puzzles on screen with "Wooden" in their names, so the claim that came with it ("the Barnyard one's basically six bucks on
+    sale, right?") was left unanswered as part of a question about the list (a replay of series 3-3, turn 10).
+    """
     if not shown:
         return []
     names = [_name_words(str(entry.get("name") or entry.get("title") or "")) for entry in shown]
     shared = set.intersection(*names) if len(names) > 1 else set()
     said = {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", text.lower())}
-    return [i for i, words in enumerate(names, 1) if {w for w in words - shared if len(w) > 3} & said]
+    return [i for i, words in enumerate(names, 1) if {w for w in words - shared - _MATERIAL_WORDS - _ASKED_ABOUT if len(w) > 3} & said]
+
+
+_MATERIAL_WORDS = frozenset(w for key in rules._MATERIALS for w in key.split())
+# A product's name as a shopper writes it: two or more words with capitals, which short words in small letters may join ("Created by Me
+# Monster", "Bear and Bunny Set"). Not after "at", "from" or "on", where a store is named ("the Weiman at Home Depot").
+_CAPITALISED_NAME = re.compile(r"(?<![.!?]\s)(?<!^)(?<!\bat\s)(?<!\bfrom\s)(?<!\bon\s)\b[A-Z][\w'-]*(?:\s+(?:(?:by|of|and|&|the|for|de|von)\s+)?[A-Z][\w'-]*)+")
+
+
+def named_besides_the_screen(text: str, shown: list[dict[str, Any]] | None) -> str | None:
+    """A product's name that a message writes with capitals and that names nothing on screen (see normalise_route), or None."""
+    titles = [_name_words(str(entry.get("title") or entry.get("name") or "")) for entry in shown or []]
+    stores = {_store_key(str(entry.get("store") or "")) for entry in shown or []} - {""}
+    for found in _CAPITALISED_NAME.finditer(without_quotations(text)):
+        words = {w for w in _name_words(found.group(0)) if len(w) > 3} - _QUALITY_WORDS - _ASKED_ABOUT
+        if words and not any(words <= title for title in titles) and not any(words & title for title in titles) \
+                and _store_key(found.group(0)) not in stores:
+            return found.group(0)
+    return None
 
 
 _THE_STORES_ONE = re.compile(r"\bthe\s+(?P<store>[a-z0-9][\w&'.-]*(?:\s+[a-z0-9][\w&'.-]*)?)\s+(?:one|listing|bottle|option|offer)\b", re.I)
@@ -156,7 +179,7 @@ def earlier_by_its_store(text: str, seen: list[dict[str, Any]] | None, shown: li
 
     on_screen = {seen_key(entry) for entry in shown or []}
     names = set().union(*(_name_words(str(e.get("title") or e.get("name") or "")) for e in [*seen, *(shown or [])]))
-    for found in _THE_STORES_PAGE.finditer(_QUOTED.sub(" ", text or "")):
+    for found in _THE_STORES_PAGE.finditer(without_quotations(text)):
         words = found.group("store")
         key = _store_key(words)
         if len(key) < 4 or _name_words(words) <= names:          # "the Koala one" is called by its name, not by a store
@@ -288,7 +311,10 @@ _ASKS_FOR_A_PRODUCT = re.compile(r"\?|\b(?:show|find|get|give|recommend|suggest|
 
 
 # A claim the shopper says the assistant made: "you said", "you already confirmed", "you told me", "as you said".
-_SAYS_THE_ASSISTANT_SAID = re.compile(r"\byou\s+(?:(?:already|just|even|did)\s+)?(?:said|told|mentioned|confirmed|agreed|showed|noted|stated|promised)\b"
+_SAYS_THE_ASSISTANT_SAID = re.compile(r"\byou(?:'ve|\s+have)?\s+(?:(?:already|just|even|did)\s+)?(?:said|told|mentioned|confirmed|agreed|showed|noted|stated|promised)\b"
+                                      # "And you did confirm Method is plant-based on the Target listing" (a replay of series 3-2, turn 26)
+                                      r"|\byou\s+(?:already\s+)?did\s+(?:say|tell|mention|confirm|agree|show|note|state|promise)\b"
+                                      r"|\bdid(?:n'?t|\s+not)\s+you\s+(?:just\s+|already\s+)?(?:say|tell|mention|confirm|show)\b"
                                       r"|\bas\s+you\s+said\b|\byour\s+(?:earlier\s+)?(?:note|answer|reply|table)\s+(?:said|says|showed|shows|stated)\b", re.I)
 
 
@@ -322,8 +348,48 @@ _ASKS_FOR_GIST = re.compile(
     # "give me the short version of this review ... what the reviewer says about streaks and scent" (the sixth live run, turn 21)
     r"|\b(?:short|shorter|quick|brief)\s+version\b|\bin\s+a\s+nutshell\b"
     r"|\bwhat\s+(?:it|this|that|(?:the|this|that)\s+(?:review(?:er)?|text|message|post|comment|note|email|label|writer|author))\s+(?:actually\s+)?(?:says|said|is\s+saying)\b", re.I)
-_QUOTED = re.compile(r'["\u201c]([^"\u201c\u201d]{20,700})["\u201d]')
-_UNCLOSED = re.compile(r'["\u201c]([^"\u201c\u201d]{20,700})$')
+# A quotation is a text to be written or kept, not the shopper's own words: 20 to 700 characters between a pair of quotation marks.
+# The marks are paired in turn. A pattern that skipped the short quotations paired the closing mark of one with the opening mark of
+# the next: 'Two sections: "Verified" and "To do." Under Verified, put that the Method cleaner is plant-based, since you already said
+# that was on the Target listing. Under To do, add: "After Target confirms ..."' lost the shopper's own sentence between them, and the
+# claim the shopper says the assistant made went unanswered (a replay of series 3-2, turn 21). A straight mark after a digit is an inch.
+_QUOTE_MARK = re.compile('(?<![0-9])"|[\u201c\u201d]')
+QUOTED_MIN, QUOTED_MAX = 20, 700
+
+
+def quotations(text: str) -> tuple[list[tuple[int, int]], int | None]:
+    """The quoted spans of a message, marks included, paired in turn; and where a quotation that is not closed opens, if one is."""
+    spans: list[tuple[int, int]] = []
+    start: int | None = None
+    for mark in _QUOTE_MARK.finditer(text or ""):
+        if start is None:
+            if mark.group(0) != "\u201d":                     # a closing curly mark opens nothing
+                start = mark.start()
+        elif mark.group(0) == "\u201c":                       # an opening curly mark closes nothing: the quotation starts again
+            start = mark.start()
+        else:
+            spans.append((start, mark.end()))
+            start = None
+    return spans, start
+
+
+def quoted_texts(text: str) -> tuple[list[str], str | None]:
+    """What the message quotes (each quotation of 20 to 700 characters), and the quotation that is not closed, if it is that long."""
+    spans, start = quotations(text)
+    closed = [text[a + 1:b - 1] for a, b in spans if QUOTED_MIN <= b - a - 2 <= QUOTED_MAX]
+    tail = text[start + 1:] if start is not None else ""
+    return closed, (tail if QUOTED_MIN <= len(tail) <= QUOTED_MAX else None)
+
+
+def without_quotations(text: str) -> str:
+    """The message without its quotations of 20 to 700 characters, each put as a space. A quotation that is not closed stays."""
+    text = text or ""
+    out, last = [], 0
+    for a, b in quotations(text)[0]:
+        if QUOTED_MIN <= b - a - 2 <= QUOTED_MAX:
+            out += [text[last:a], " "]
+            last = b
+    return "".join([*out, text[last:]])
 _ASKS_SOMETHING = re.compile(r"\?|\b(?:tell\s+me|show\s+me|let\s+me\s+know|check|compare|find|look\s+up|what|which|how|where|when|is\s+(?:it|that|this|there)"
                              r"|does\s+(?:it|that|this)|do\s+(?:they|you)|can\s+you|could\s+you|i\s+need|i\s+want|i'?d\s+like)\b", re.I)
 MAX_PASTED_WORDS = 80
@@ -460,7 +526,7 @@ def claims_about_earlier(text: str, seen: list[dict[str, Any]] | None, shown: li
         return [], text
 
     def words_of(part: str) -> set[str]:
-        return {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", _QUOTED.sub(" ", part).lower())}
+        return {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", without_quotations(part).lower())}
 
     on_screen = {seen_key(entry) for entry in shown or []}
     words = {seen_key(entry): _name_words(str(entry.get("title") or entry.get("name") or "")) for entry in [*seen, *(shown or [])]}
@@ -520,7 +586,7 @@ def _claims_said_of_the_assistant(text: str) -> list[str]:
     """The sentences of a message in which the shopper says the assistant stated a quality of the claims vocabulary or a price."""
     from voiceshop.speech.text import split_sentences
 
-    return [s for s in split_sentences(" ".join(_QUOTED.sub(" ", text or "").split()))
+    return [s for s in split_sentences(" ".join(without_quotations(text).split()))
             if _SAYS_THE_ASSISTANT_SAID.search(s) and (claimed_qualities(s) or _OF_A_PRICE.search(s))]
 
 
@@ -751,6 +817,32 @@ def someone_elses_age(constraints: Constraints, text: str, earlier: Constraints 
     return bool(now) and bool(before) and not (now & before)
 
 
+# Markup that runs code where it is shown, and words of harm to a person or an animal (see normalise_route).
+_MARKUP = re.compile(r"<\s*script\b|<\s*[a-z]+\b[^>]*\bon[a-z]+\s*=|\bjavascript\s*:|\bdocument\.cookie\b", re.I)
+_HARM_TO_SOMEONE = re.compile(r"\b(?:hurt|harm|kill|poison|injur\w*|sick|weapons?|stalk\w*|revenge|beat\s+(?:up|him|her|them)|abuse|threaten\w*|scare)\b", re.I)
+_ANYTHING_OF = re.compile(r"\b(?:anything|something|whatever)\s+(?:that'?s\s+|made\s+(?:of|from|out\s+of)\s+)?(?P<material>"
+                          + "|".join(sorted((re.escape(k) for k in rules._MATERIALS), key=len, reverse=True)) + r")\b", re.I)
+
+
+def anything_of(text: str, product: str | None) -> tuple[str, str] | None:
+    """The material of "anything wooden", and the shopper's sentence that asks for it, when the Router's product names a kind the message does not.
+
+    "Anything wooden under five" after a list of puzzles is not a puzzle; "a wooden puzzle, anything wooden" is.
+    """
+    from voiceshop.speech.text import split_sentences
+
+    found = _ANYTHING_OF.search(text or "")
+    if found is None:
+        return None
+    kind = _name_words(product or "") - _MATERIAL_WORDS - _QUALITY_WORDS
+    said = {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", (text or "").lower())}
+    if not kind or kind & said:
+        return None
+    sentence = next((s for s in split_sentences(" ".join(text.split())) if _ANYTHING_OF.search(s)), None)
+    material = rules._MATERIALS[found.group("material").lower()]
+    return (material, sentence) if sentence and len(sentence.split()) <= MAX_REQUEST_WORDS else None
+
+
 def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]] | None, earlier: Constraints | None = None) -> RouteDecision:
     """Code backstops applied to whatever the Router model returned."""
     c = route.constraints
@@ -809,6 +901,14 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
             route.request = None                              # nothing is declined any more: the agents read the message itself
     if _ACCOUNT_DATA.search(text) and "no_personal_data" not in route.say:
         route.say = ["no_personal_data", *route.say][:MAX_SAY]                                          # type: ignore[assignment]
+    if "no_harm" in route.say and _MARKUP.search(text or "") and not _HARM_TO_SOMEONE.search(text or ""):
+        # A script in markup the shopper wants pasted back ('<img src=x onerror="fetch(...document.cookie)">') is an injection,
+        # declined as one, not an intent to hurt a person: the product question beside it is answered as in any other message.
+        # Refused whole as "anything meant to hurt someone", the claim next to it ("Monster Truck kit, $4.49, ages 4 to 8, BPA-free
+        # as you confirmed earlier") went unanswered (a replay of series 3-3, turn 28; the live run had answered it).
+        route.say = list(dict.fromkeys("no_instructions" if i == "no_harm" else i for i in route.say))[:MAX_SAY]      # type: ignore[assignment]
+        route.safety = "caution" if route.safety == "refuse" else route.safety
+        route.intent = "out_of_scope" if route.intent == "unsafe" else route.intent
     if "no_harm" in route.say or route.safety == "refuse":
         route.intent = "unsafe"                               # an intent to hurt someone colours the whole message: nothing in it is served
     if route.intent == "unsafe":
@@ -899,6 +999,11 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
         missing = named - set().union(*titles) - qualities
         if named and all(named - title for title in titles) and missing & {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", text.lower())}:
             route.also_asked = c.product
+        elif route.intent == "compare" and not named:
+            # The same when the Router gave no product: "Can you just compare the Barnyard puzzle and the Created by Me Monster for a
+            # 4-year-old?" with the puzzle on screen. The kit was searched for, and the reply described the puzzle alone, with "Would
+            # you like the Monster craft kit's age and price compared on the same terms?" at the end (a replay of series 3-3, turn 27).
+            route.also_asked = named_besides_the_screen(text, shown)
         c.product = None
     if route.intent in ("follow_up", "compare") and not route.refers_to:
         declined = any(i.startswith("no_") for i in route.say)
@@ -916,6 +1021,14 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
             # Another product is another request: the brand, material and budget of the last one are not carried over.
             # (After one question about a "Zentrix" hoverboard, six later searches were for "Zentrix" beads, putty and pitchers.)
             route.intent = "product_search"
+    if route.intent == "product_search" and c.product and (broad := anything_of(text, c.product)) is not None:
+        # "Ugh, just show me something then, anything wooden under five" was routed as a search for a "wooden puzzle", the kind of
+        # product of the list on screen, and the reply was "I could not find a wooden puzzle under five dollars" (a replay of series
+        # 3-3, turn 10; the live run had found a wooden craft kit at $3.50). Anything of a material is a search for that material.
+        material, asked = broad
+        c.product = None
+        c.materials = list(dict.fromkeys([*c.materials, material]))
+        route.request = asked
     if route.intent == "product_search" and shown:
         # What the sources state about a product on screen that the message names only to press a claim is said by code, next
         # to the answer to the request itself. The sentence that declines to confirm is said with it.
@@ -1146,6 +1259,23 @@ def about_what_is_on_screen(second: RouteDecision, asked: str, shown: list[dict[
     return second
 
 
+def about_what_was_shown(second: RouteDecision, asked: str, seen: list[dict[str, Any]] | None, shown: list[dict[str, Any]] | None) -> RouteDecision:
+    """The route of a request found on a second reading that names a product of an earlier list, which the Router took for no shopping request.
+
+    A replay of series 3-1, turn 20: the second reading found "why was the MOXIE Poly Fiber Scrub Brush picked, and does Lowe's offer
+    free returns on brushes?", the Router called it "out of scope" (the store's return policy), the request was dropped, and the reply
+    was the declining sentences alone. The brush had been shown four turns before. Not when the Router declined something in the
+    request itself or refused it.
+    """
+    if second.intent not in ("chitchat", "out_of_scope") or second.safety == "refuse" or any(i.startswith("no_") for i in second.say):
+        return second
+    if not recalled_products(asked, RouteDecision(intent="follow_up"), seen, shown):
+        return second
+    second.intent, second.refers_to = "follow_up", []
+    second.say = [i for i in second.say if i not in ("greeting", "thanks", "capabilities", "identity", "calm")]      # type: ignore[assignment]
+    return second
+
+
 def adopt_second_route(first: RouteDecision, second: RouteDecision, asked: str, shown: list[dict[str, Any]] | None = None) -> RouteDecision | None:
     """The route of a product request found on a second reading, with what the first reading declined; None when it is not adopted.
 
@@ -1184,11 +1314,12 @@ def pasted_text(text: str) -> str | None:
     # emailed; I cannot verify it". The library-only run, turn 4.)
     # A quotation that is opened and not closed runs to the end of the message. (The harness's messages often end that way,
     # and so does a message whose appended part the input screen has removed: run 19, turn 21.)
-    outside = _QUOTED.sub(" ", text or "")
-    unclosed = _UNCLOSED.search(outside)
-    if not _ASKS_FOR_GIST.search(outside[:unclosed.start()] if unclosed else outside):
+    text = text or ""
+    closed, unclosed = quoted_texts(text)
+    outside = without_quotations(text[:len(text) - len(unclosed) - 1] if unclosed else text)
+    if not _ASKS_FOR_GIST.search(outside):
         return None
-    spans = [" ".join(m.group(1).split()) for m in _QUOTED.finditer(text)] + ([" ".join(unclosed.group(1).split())] if unclosed else [])
+    spans = [" ".join(span.split()) for span in closed] + ([" ".join(unclosed.split())] if unclosed else [])
     spans = [span for span in spans if 4 <= len(span.split()) <= MAX_PASTED_WORDS]
     longest = max(spans, key=len) if spans else None
     if longest and not only_a_text(longest):
@@ -1275,7 +1406,18 @@ _POINTS_BACK = re.compile(
     r"|\b(?:was|were)\s+(?:the\s+|that\s+|this\s+)?(?:[\w'&-]+\s+){0,6}?(?:picked|chosen|recommended|ranked|suggested)\b"
     r"|\b(?:the|that|your)\s+(?:[\w'&-]+\s+){1,5}?pick\b", re.I)
 MAX_RECALLED = 2
+_SPEAKS_OF_THE_BUDGET = re.compile(r"\b(?:budget|afford|price\s+range|spend(?:ing)?|within\s+(?:my|our|the|that|this)\b|(?:my|our|the)\s+(?:limit|max(?:imum)?))", re.I)
 _STANDS_BEFORE_A_NAME = re.compile(r"\b(?:the|that|this|those|these|my|your|our)\s+(?:[\w'&-]+\s+)?$", re.I)
+
+
+def written_as_a_name(word: str, text: str) -> bool:
+    """Is ``word`` written with a capital inside a sentence of ``text`` ("compare the Barnyard puzzle and ...")?"""
+    text = without_quotations(text)
+    for m in re.finditer(r"[A-Za-z0-9]+", text):
+        before = text[:m.start()].rstrip()
+        if m.group(0).lower().rstrip("s") == word and m.group(0)[0].isupper() and before and before[-1:] not in ".!?:;\"\u201c":
+            return True
+    return False
 
 
 def used_as_names(words: set[str], text: str) -> set[str]:
@@ -1289,7 +1431,7 @@ def used_as_names(words: set[str], text: str) -> set[str]:
     game", "that Walk toy"). A recall that is missed costs a search by the shopper's own words, as before there was a
     record; a false one costs the reply.
     """
-    text = _QUOTED.sub(" ", text or "")
+    text = without_quotations(text)
     out: set[str] = set()
     for m in re.finditer(r"[A-Za-z0-9]+", text):
         token = m.group(0)
@@ -1336,7 +1478,8 @@ def recalled_products(request: str, route: RouteDecision, seen: list[dict[str, A
         return []
     if route.intent == "product_search" and not _POINTS_BACK.search(request):
         return []
-    if route.refers_to and not _POINTS_BACK.search(request) and points_at_screen(request, shown):
+    pointing = bool(route.refers_to) and not _POINTS_BACK.search(request) and points_at_screen(request, shown)
+    if pointing and route.intent != "compare":
         # The Router's positions stand when the message points at the list. When it points at nothing on screen they are the
         # Router's guess: "... the CDC said Glimmer Putty is fine for kids with eczema. Can you put that quote in the comparison
         # table" was routed to the three cleaners on screen, and on a replay of series 3-3, turn 18, the reply said "Glimmer Putty
@@ -1344,7 +1487,7 @@ def recalled_products(request: str, route: RouteDecision, seen: list[dict[str, A
         return []
     on_screen = {seen_key(entry) for entry in shown or []}
     words = {seen_key(entry): _name_words(str(entry.get("title") or entry.get("name") or "")) for entry in [*seen, *(shown or [])]}
-    said = {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", _QUOTED.sub(" ", request).lower())}
+    said = {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", without_quotations(request).lower())}
     named: dict[frozenset[str], tuple[bool, dict[str, Any]]] = {}     # by the words of the name: is its store named, and the record
     for entry in reversed(seen):
         key = seen_key(entry)
@@ -1359,6 +1502,13 @@ def recalled_products(request: str, route: RouteDecision, seen: list[dict[str, A
         others = set().union(*(w for k, w in words.items() if k != key and w != name)) if len(words) > 1 else set()
         telling = {w for w in name - others - kind - _QUALITY_WORDS - _ASKED_ABOUT if len(w) > 3}
         named_by = used_as_names(telling, request)
+        if pointing:
+            # A comparison of a product on screen with one of an earlier list: the earlier one is named by a word written as a
+            # name. "Can you just compare the Barnyard puzzle and the Created by Me Monster for a 4-year-old?" pointed at the
+            # kit on screen, the puzzle was searched for under the budget of the list in force, and the reply said "The Barnyard
+            # puzzle is not among my catalog results within your limits" (series 3-3, turn 27: two jurors of six found the
+            # request answered). "Which is cheaper, the first one or the safari one?" names nothing of an earlier list.
+            named_by = {w for w in named_by if written_as_a_name(w, request)}
         if not named_by:
             continue
         store = _name_words(str(entry.get("store") or ""))
@@ -1366,8 +1516,42 @@ def recalled_products(request: str, route: RouteDecision, seen: list[dict[str, A
         if frozenset(name) not in named or not named[frozenset(name)][0]:
             named[frozenset(name)] = (at_store, {**entry, "named_by": sorted(named_by)})
     if not named and route.intent in ("follow_up", "compare") and not points_at_screen(request, shown):
-        return named_by_a_proper_name(request, seen, shown)
+        return named_by_a_proper_name(request, seen, shown) or recalled_by_kind(request, seen, shown)
     return [entry for _, entry in named.values()][:MAX_RECALLED]
+
+
+def _singular(word: str) -> str:
+    """A noun without its plural ending: "brushes" -> "brush", "puzzles" -> "puzzle", "boxes" -> "box"."""
+    if (len(word) > 4 and word.endswith("es") and word[-3] in "sxz") or word.endswith(("shes", "ches")):
+        return word[:-2]
+    return word[:-1] if len(word) > 3 and word.endswith("s") and not word.endswith("ss") else word
+
+
+MAX_RECALLED_BY_KIND = 3
+
+
+def recalled_by_kind(request: str, seen: list[dict[str, Any]] | None, shown: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """The products of the latest earlier list of the kind a question names, when nothing on screen is of that kind (at most three).
+
+    A replay of series 3-3, turn 20: "... show me your step by step reasoning for the scrub brush list? ... tell me which of those
+    brushes works best on grout." Three brushes had been shown four turns before; a puzzle was on screen, the Router took it for
+    the product meant, and the reply was "No scrub brush appears in my sources" and the puzzle. The kind is the last word of what
+    that list was found for ("scrub brush": a brush), in the question in either number, and in no name on screen.
+    """
+    from voiceshop.agents.finalize import seen_key
+
+    said = {_singular(w) for w in re.findall(r"[a-z0-9]+", without_quotations(request).lower())}
+    on_screen = {seen_key(entry) for entry in shown or []}
+    screen_words = {_singular(w) for entry in shown or [] for w in re.findall(r"[a-z0-9]+", str(entry.get("title") or entry.get("name") or "").lower())}
+    for entry in reversed(seen or []):
+        product = str((entry.get("found_for") or {}).get("product") or "").lower().split()
+        head = _singular(product[-1]) if product else ""
+        if len(head) < 4 or head in screen_words or head not in said or head in _ASKED_ABOUT:
+            continue
+        found_for = entry.get("found_for")
+        listed = [e for e in seen or [] if e.get("found_for") == found_for and seen_key(e) not in on_screen]
+        return listed[:MAX_RECALLED_BY_KIND]
+    return []
 
 
 _PROPER_NAME = re.compile(r"(?<=[a-z,;:]\s)(?:[A-Z][a-z]+(?:[\s-]+[A-Z][a-z]+){1,3})"
@@ -1387,7 +1571,7 @@ def named_by_a_proper_name(request: str, seen: list[dict[str, Any]], shown: list
     from voiceshop.agents.finalize import seen_key
 
     on_screen = {seen_key(entry) for entry in shown or []}
-    for found in _PROPER_NAME.finditer(_QUOTED.sub(" ", request or "")):
+    for found in _PROPER_NAME.finditer(without_quotations(request)):
         words = {w.lower().rstrip("s") for w in re.findall(r"[A-Za-z]+", found.group(0)) if len(w) > 2}
         if len(words) < 2:
             continue
@@ -1463,7 +1647,7 @@ def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
                           "prompt_version": look.get("version"), "adopted": False}
                 if asked:
                     again, _ = await ask_router(asked)
-                    again = about_what_is_on_screen(again, asked, shown)
+                    again = about_what_was_shown(about_what_is_on_screen(again, asked, shown), asked, state.get("seen"), shown)
                     adopted = adopt_second_route(route, normalise_route(again, asked, shown, earlier), asked, shown)
                     if adopted is not None:
                         route, looked["adopted"] = adopted, True
@@ -1521,11 +1705,30 @@ def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
             # A question about a product of an earlier list is asked under what that list was found for, as a question about
             # the list on screen is. (The Safari puzzle of a request for a three-year-old was asked about after a hoverboard
             # for a nine-year-old: the search for it ran with age nine and found another Safari puzzle. Run 14, turn 14.)
-            constraints = route.constraints.merged_with(Constraints(**(recalled[0].get("found_for") or {})))
+            # Not under its budget, unless the message speaks of one. "Anything wooden under five" showed the Barnyard puzzle at
+            # $7.99 as the product the shopper had claimed was on sale; nine turns later, asked whether a German page was the same
+            # puzzle, and then whether its listing said BPA-free, the replies led with "my top pick is" a $4.49 craft kit, which
+            # the rule for answers over budget had asked for (series 3-3, turns 19 and 22: none of five and one of four jurors
+            # found the request answered).
+            found_for = dict(recalled[0].get("found_for") or {})
+            if not _SPEAKS_OF_THE_BUDGET.search(text):
+                found_for.pop("budget_max", None)
+                found_for.pop("budget_min", None)
+            constraints = route.constraints.merged_with(Constraints(**found_for))
         elif route.intent in ("follow_up", "compare") and not route.refers_to and asks_for_another_kind(route.request, earlier, shown):
             # A question about another kind of product, about nothing on screen and nothing shown before: a new request. The
             # brand, budget and age of the request before are not carried over to it (see asks_for_another_kind).
             route.intent, constraints = "product_search", route.constraints
+        elif route.intent == "follow_up" and not route.refers_to and not recalled and (broad := anything_of(
+                text, route.constraints.merged_with(earlier).product)) is not None:
+            # "Ugh, just show me something then, anything wooden under five" with puzzles on screen, routed as the list's own follow-up
+            # with a new limit: the search was for a "wooden jigsaw puzzle" under $5 and found none (a replay of series 3-3, turn 10). As
+            # for a new request (normalise_route), anything of a material is a search for that material, under the rest of what is in force.
+            material, asked = broad
+            constraints = route.constraints.merged_with(earlier).model_copy(update={"product": None})
+            constraints.materials = list(dict.fromkeys([*constraints.materials, material]))
+            route.request = asked
+            request_text = request_for_agents(route, text, shown)
         elif route.intent in ("follow_up", "compare"):
             # A question about products on screen is asked under what that list was found for. Usually that is the request in
             # force; it is not after a request that showed no list. (A marble run for an eighteen-month-old was declined, the

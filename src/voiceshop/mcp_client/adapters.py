@@ -148,9 +148,25 @@ def render_for_model(result: ToolCallResult) -> str:
 OnResult = Callable[[ToolCallResult], Awaitable[None] | None]
 
 
+def with_arguments_in_place(kwargs: dict[str, Any], schema: dict[str, Any] | None) -> dict[str, Any]:
+    """The model's arguments, with a top-level argument it wrote inside "filters" moved back out.
+
+    A replay of series 3-1, turn 30: rag.search was called with {"filters": {..., "top_k": 5}} and failed the server's validation
+    ("filters.top_k: extra inputs are not permitted"); the model called it again correctly, and the failed call stayed in the record of
+    the turn. An argument given at both levels keeps its top-level value.
+    """
+    filters = kwargs.get("filters")
+    top = set((schema or {}).get("properties") or {}) - {"filters"}
+    if not isinstance(filters, dict) or not top & set(filters):
+        return kwargs
+    kept = dict(filters)
+    moved = {key: kept.pop(key) for key in list(kept) if key in top}
+    return {**moved, **{k: v for k, v in kwargs.items() if k != "filters"}, "filters": kept}
+
+
 def _tool_for(client: MCPToolClient, spec: ToolSpec, on_result: OnResult | None) -> StructuredTool:
     async def _call(**kwargs: Any) -> tuple[str, ToolCallResult]:
-        result = await client.call(spec.name, kwargs)
+        result = await client.call(spec.name, with_arguments_in_place(kwargs, spec.input_schema))
         if on_result is not None:
             maybe = on_result(result)
             if maybe is not None:

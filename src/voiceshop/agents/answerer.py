@@ -61,7 +61,8 @@ from voiceshop.speech.text import WORDS_PER_SECOND, estimate_seconds
 # (a replay of the fifth live run's turn 14: the page's only "material" was the tin the putty came in).
 # A second is "the product you also asked about is not mentioned": the reply is incomplete, not untrue.
 ADVISORY_AFTER_REVISION = ("critic_unsupported", "critic_constraint", "critic_unfit", "critic_safety", "critic_unanswered", "materials_overlooked",
-                           "asked_product_unmentioned", "superlative_unscoped")
+                           "asked_product_unmentioned", "superlative_unscoped", "comparison_one_sided", "price_asked_not_said",
+                           "pick_reason_unanswered")
 TAIL_WORDS = 9                   # "Two more options and the sources are on screen."
 QUESTION_WORDS = 12              # room for the follow-up question (or the safety sentence that replaces it)
 LEAD_SECONDS = 9.5               # how long the Answerer's own sentence may take to say; the pointer to the screen follows it
@@ -594,15 +595,21 @@ def kept_by_code(draft: AnswerDraft, blocking: list[Issue], evidence: Evidence, 
       with "My top pick is" the activity center and never said that there was no marble run. Otherwise, and for a
       question about products on screen, the products stay and the sentence stands as the answer about them.
     """
-    if not draft.recommendations or not blocking:
+    if not blocking:
         return []
     codes = {i.code for i in blocking}
+    if not draft.recommendations and codes != {"spoken_too_long"}:
+        # An answer that found nothing is repaired for one thing only: its length. "I could not find a marble run for your son in
+        # the catalog; the closest is the Manhattan Toy Playful Pony activity center ..." was a few words too long after its
+        # revision, and the template answered "My top pick is Manhattan Toy Playful Pony" without a word about the marble run (a
+        # replay of series 3-3, turn 11). Cut at the clause, it says what was not found.
+        return []
     if codes == {"abstain_with_recommendations"}:
         if focus or not _NOT_FOUND.search(draft.spoken):
             return [("products_kept", draft.model_copy(update={"abstain": False}))]
         refs = list(dict.fromkeys([*draft.sources, *(rec.ref for rec in draft.recommendations)]))[:4]
         return [("abstention_kept", draft.model_copy(update={"recommendations": [], "sources": refs}))]
-    if draft.abstain:
+    if draft.abstain and codes != {"spoken_too_long"}:
         return []
     if codes == {"rating_not_as_stated"} and all(i.message.startswith('"') for i in blocking):
         # A count of ratings that its listing does not give, said twice: the count is copied from the listing.

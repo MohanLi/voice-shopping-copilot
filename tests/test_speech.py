@@ -120,6 +120,21 @@ def test_time_estimate_grows_with_text_and_shrinks_with_speed() -> None:
     assert estimate_seconds(longer, 1.2) < estimate_seconds(longer, 1.0)
     assert fits(lead, LIMIT) and not fits(" ".join([lead] * 4), LIMIT, MAX_SPEED)
     assert split_sentences("One. Two! Three?  Four") == ["One.", "Two!", "Three?", "Four"]
+    # An initial or a title is no end of a sentence, nor is a full stop before a word in small letters (a replay of series 3-3, turn 28,
+    # said "The catalog lists the Nuby iMonster plate and B." aloud: the name is "B. Ready Beach Bag").
+    assert split_sentences("I did not find it. The catalog lists the Nuby plate and B. Ready Beach Bag, both BPA-free. Two more are on screen.") == [
+        "I did not find it.", "The catalog lists the Nuby plate and B. Ready Beach Bag, both BPA-free.", "Two more are on screen."]
+    assert split_sentences("Dr. Bronner's soap is $9.99. The U.S. version costs more.") == ["Dr. Bronner's soap is $9.99.", "The U.S. version costs more."]
+    assert split_sentences("No. It is made in the U.S.A. It is wood.") == ["No.", "It is made in the U.S.A.", "It is wood."]
+    # The lead of an answer: its first sentence, with the next when the first names nothing (a replay of series 3-3, turn 2).
+    from voiceshop.speech.text import lead_of
+
+    assert lead_of("Both are listed for four-year-olds. The Safari puzzle is $9.99; the Crayola set $19.99. More on screen.") == (
+        "Both are listed for four-year-olds. The Safari puzzle is $9.99; the Crayola set $19.99.")
+    assert lead_of("Yes. The Barnyard is cheaper at $7.99. Two more options.") == "Yes. The Barnyard is cheaper at $7.99."
+    for said in ("I could not find a marble run. The closest is the Playful Pony.", "Neither listing states it is eco-friendly. The Method is $6.79.",
+                 "My top pick is the Safari puzzle at $9.99. Two more options."):
+        assert lead_of(said) == split_sentences(said)[0], said
 
 
 def test_every_fixed_reply_can_be_said_within_the_limit_at_normal_speed() -> None:

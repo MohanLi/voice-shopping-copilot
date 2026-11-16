@@ -157,6 +157,11 @@ async def test_langchain_tools_return_compact_content_and_the_full_result_as_art
     assert len(message.content) < len(json.dumps(full.data)) / 2
     assert view["source"].startswith("private catalog") and view["notes"]
 
+    # A top-level argument the model wrote inside "filters" is moved back out (a replay of series 3-1, turn 30, failed validation on it).
+    moved = await tools["rag_search"].ainvoke({"type": "tool_call", "id": "call_3", "name": "rag_search",
+                                               "args": {"query": "puzzle", "filters": {"price_max": 30, "top_k": 2}}})
+    assert moved.artifact.ok and len(moved.artifact.results) <= 2
+
     message = await tools["web_search"].ainvoke({"type": "tool_call", "id": "call_2", "name": "web_search", "args": {"query": "poisoned train set"}})
     view = json.loads(message.content)
     assert view["source"] == "live web via fixture" and view["results"][0]["instructions_removed"] is True

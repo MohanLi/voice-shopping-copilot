@@ -72,8 +72,46 @@ def normalize_for_speech(text: str) -> str:
     return " ".join(out.split())
 
 
+# A full stop after an initial or a title is no end of a sentence: "the Nuby iMonster plate and B. Ready Beach Bag" was cut at "B."
+# when the reply's last sentence gave way to the time limit, and "The catalog lists the Nuby iMonster plate and B." was said aloud (a
+# replay of series 3-3, turn 28). Nor is one before a word in small letters ("the U.S. version").
+_NO_END = re.compile(r"(?:(?<![\w.])[A-Z]|\b(?:Dr|Mr|Mrs|Ms|St|Jr|Sr|Prof|Mt))\.$")
+
+
 def split_sentences(text: str) -> list[str]:
-    return [s.strip() for s in _SENTENCE.split((text or "").strip()) if s.strip()]
+    text = (text or "").strip()
+    out, start = [], 0
+    for gap in _SENTENCE.finditer(text):
+        before, after = text[start:gap.start()], text[gap.end():gap.end() + 1]
+        if before.endswith(".") and (_NO_END.search(before) or after.islower()):
+            continue
+        out.append(before)
+        start = gap.end()
+    out.append(text[start:])
+    return [s.strip() for s in out if s.strip()]
+
+
+_BARE_WORD = re.compile(r"^(?:yes|no|yeah|nope|sure|okay|ok|right|correct|exactly)\W*$", re.I)
+_DENIES = re.compile(r"\b(?:not|no|none|never|nothing|cannot|neither|nor)\b|n't\b", re.I)
+
+
+def lead_of(text: str) -> str:
+    """The lead of a spoken answer: the sentence that is said for certain, or the first two when the first names nothing.
+
+    The first sentence is kept whole and the others give way to the time limit. "Both are listed for four-year-olds." was a
+    first sentence once, and the comparison after it was the one that gave way: "Both are listed for four-year-olds. Details
+    and sources are on screen." was said in answer to "compare the first and the third one" (a replay of series 3-3, turn 2).
+    A first sentence names nothing when it is a bare yes or no, or a few words with no figure, no name in capitals and no
+    denial ("I could not find a marble run" says something).
+    """
+    sentences = split_sentences(" ".join((text or "").split()))
+    if len(sentences) < 2:
+        return sentences[0] if sentences else ""
+    first = sentences[0]
+    words = first.split()
+    bare = bool(_BARE_WORD.match(first)) or (len(words) <= 7 and not re.search(r"[\d$]", first) and not _DENIES.search(first)
+                                             and not any(word[:1].isupper() for word in words[1:]))
+    return f"{first} {sentences[1]}" if bare else first
 
 
 def _number_words(n: int) -> int:

@@ -27,6 +27,7 @@ from voiceshop.speech.text import (
     WORDS_PER_SECOND,
     estimate_seconds,
     fits,
+    lead_of,
     split_sentences,
     spoken_words,
 )
@@ -260,7 +261,6 @@ def superlative_without_scope(text: str) -> str | None:
     "The lowest catalog price of the puzzles shown" and "the cheapest of the three" say it. "The highest-rated eco option
     under $15" does not: it reads as a statement about every product there is, and a search returned five.
     """
-    from voiceshop.speech.text import split_sentences
 
     for sentence in split_sentences(" ".join((text or "").split())):
         said = asserted(_SUPERLATIVE, sentence)
@@ -270,6 +270,23 @@ def superlative_without_scope(text: str) -> str | None:
             return (f"'{said.group(0)}' is said without saying of what. A search returns a few products, not every one there is: write "
                     f"'{said.group(0)} of the ones shown' or 'of the three', and only if it is true of them, or leave the word out.")
     return None
+
+
+_ASKS_WHY_PICKED = re.compile(r"\b(?:why|rule|reason(?:ing|s)?|criteri(?:a|on)|logic)\b[^.?!]{0,80}?\b(?:pick(?:ed)?|chose|chosen|choose|recommend(?:ed)?|rank(?:ed)?|put\s+(?:it|that)\s+first)\b"
+                              r"|\b(?:reasoning|reason)\s+(?:behind|for)\s+(?:the|that|your|this)\b[^.?!]{0,40}\bpick\b", re.I)
+_NO_REASON_GIVEN = re.compile(r"\b(?:does|do|did)\s*(?:not|n't)\s+(?:say|state|give|explain|show)\s+why\b|\bcan(?:not|'t)\s+(?:say|explain|confirm|tell\s+you)\s+why\b"
+                              r"|\bno\s+(?:source|listing)\s+(?:says|states|gives|explains)\s+why\b", re.I)
+_ASKS_TO_COMPARE = re.compile(r"\b(?:compare|comparison|versus|vs\.?|difference\s+between|side\s+by\s+side)\b"
+                              r"|\bwhich\s+(?:one\s+)?(?:is|would\s+be)\s+(?:better|cheaper|best|safer|bigger)\b", re.I)
+_MONEY_WORDS = re.compile(r"\b(?:budget|afford|price|prices|priced|cost|costs|costing|cheap|cheaper|cheapest|expensive|spend|spending|dollars?|bucks?|"
+                          r"deal|sale|discount|max(?:imum)?|limit)\b|\$\s?\d", re.I)
+
+
+def speaks_of_money(text: str) -> bool:
+    """Does a message speak of a budget, a price or an amount ("I can only do eight dollars", "what does it cost")?"""
+    from voiceshop.agents.rules import amounts_said
+
+    return bool(_MONEY_WORDS.search(text or "") or amounts_said(text or ""))
 
 
 def asserted(pattern: re.Pattern[str], text: str) -> re.Match[str] | None:
@@ -527,7 +544,6 @@ def origin_misstated(text: str, refs: set[str], evidence: Evidence, whole: str |
     """A message when ``text`` says no source states where a product is made while a result about it does, or gives the country as the
     statement of a result that does not give it; None otherwise. ``whole`` is the whole reply: a sentence that one listing does
     not say is right when another sentence of the reply gives the country with the result that states it."""
-    from voiceshop.speech.text import split_sentences
 
     matched = {w.ref for w in results_about(refs, evidence)}
     stating = [w for w in results_about(refs, evidence, named=True) if w.origin]
@@ -880,6 +896,10 @@ _PRICE_QUESTIONS = (
                rf"(?:the\s+)?({_PLACE})(?:\s+one)?(?:\s+(?:then|though|right\s+now|today))?(?:,?\s*(?:right|yeah|yes|correct|isn't\s+it))?[\s?.!]*$", re.I),
 )
 _OPENS_YES_NO = re.compile(r"^\s*(yes|yeah|yep|no|nope)\s*[,.;:!]", re.I)
+_SAME_PRODUCT = re.compile(r"\b(?:is|are|it's|they're)\s+(?:indeed\s+|really\s+|exactly\s+)?the\s+same\s+(?:product|one|item|puzzle|listing|thing|toy|cleaner|set|kit)\b"
+                           r"|\bthe\s+same\s+(?:product|item)\s+as\b", re.I)
+_OTHER_LISTING = re.compile(r"\b(?:a|an|another|other|different|second|separate)\s+(?:[\w'-]+\s+){0,3}?(?:listing|page|site|version|link|product\s+page)\b", re.I)
+_SAME_ASKED = re.compile(r"\bthe\s+same\b", re.I)
 _WANTS_YES_OR_NO = re.compile(r"\byes\s*(?:or|/)\s*no\b|\b(?:just|only)\s+(?:a\s+|say\s+)?(?:yes|no)\b|\bone\s+word\b", re.I)
 _DECLINES_RECORDS = {"no_personal_data", "no_records", "no_instructions", "no_actions"}
 _ASKS_IF_IN_CATALOG = re.compile(r"\b(?:is|are)\s+(?:it|they|(?:that|this|those|these|the)(?:\s+[^.?!]{1,60}?)?)\s+(?:actually\s+|really\s+|even\s+|also\s+)?"
@@ -1168,7 +1188,8 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
             listed = "; ".join(f"{item.ref} is listed for {item.age_label}" for item in fitting[:3] if isinstance(item, CatalogItem))
             issues.append(Issue(code="fit_unstated", severity="revise", where=where,
                                 message=f"'{best.group(0)}': no listing says which product suits a {constraints.age_years:g}-year-old better ({listed}). "
-                                        "Say that both are listed for that age, how they differ (pieces, price, picture), and which suits which preference."))
+                                        "Say in one sentence that both are listed for that age, naming each with its price and the one thing that "
+                                        "sets it apart (pieces, picture, what comes with it); which suits which preference can follow."))
 
     # ---- a product's age range is the one its age label gives
     for rec in draft.recommendations:
@@ -1265,7 +1286,11 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
     # ---- when every product of the answer is over the budget and the evidence has one that fits, that one is named too
     # Live run, turn 10: "I can only do eight dollars, but just show me the best one anyway" about the second product on screen.
     # The reply said, correctly, that it costs $13.46 and is over the budget, and stopped; the first product on screen cost $7.99.
-    if constraints.budget_max is not None and items and not draft.abstain:
+    # Not for a question about products the shopper named that says nothing of a budget or a price: asked whether a German page
+    # was the same Barnyard puzzle, and whether its listing said BPA-free, the replies led with "my top pick is" a $4.49 craft
+    # kit, under a budget of five dollars set nine turns before (series 3-3, turns 19 and 22: none of five and one of four
+    # jurors found the request answered). Its price over the budget is still said, on screen and aloud (the rules above).
+    if constraints.budget_max is not None and items and not draft.abstain and (not focus or user_text is None or speaks_of_money(user_text)):
         def price_of(item: CatalogItem | WebItem) -> float | None:
             prices = item_prices(item)
             return min(prices) if prices else None
@@ -1298,6 +1323,16 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
         issues.append(Issue(code="yes_no_to_declined", severity="revise", where="spoken",
                             message="The shopper asked for a yes or a no about something that is declined. Do not open with \"yes\" or \"no\": "
                                     "state the product fact plainly."))
+
+    # ---- "it is the same product" needs a source that links the two
+    # A replay of series 3-3, turn 19 (the multilingual merge trap): "I also found a German listing for the Barnyard puzzle, Holzpuzzle
+    # Bauernhof, and it's the same one, just the German-language page, right?" was answered "The Barnyard puzzle is the same product".
+    # No result of the turn was that page. Code links a live listing to a catalog product only by its own match (reconcile).
+    same = asserted(_SAME_PRODUCT, draft.spoken or "")
+    if same is not None and _OTHER_LISTING.search(user_text or "") and _SAME_ASKED.search(user_text or "") and not any(w.matched_ref and w.matched_ref in {i.ref for i in answered} for w in evidence.web):
+        issues.append(Issue(code="sameness_unsupported", severity="revise", where="spoken",
+                            message=f"'{same.group(0)}': no result of this answer shows that the listing the shopper mentions is the same product. "
+                                    "Say that your sources cannot confirm it, and answer from the product's own listing."))
 
     # ---- "is it in the catalog?" of a live web listing is answered "no"
     # Series 3-1, turn 23: "... is that Glimmer Putty tin actually in the catalog?" was answered "Yes, the Glimmer Putty Galaxy Tin is
@@ -1354,11 +1389,45 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
     for name in [also_asked, *asked_names] if also_asked else asked_names:
         its_own = _name_stems(name) - answered_words
         if its_own and not its_own & _name_stems(every):
+            compared = bool(user_text and _ASKS_TO_COMPARE.search(user_text))
             issues.append(Issue(code="asked_product_unmentioned", severity="revise", where="spoken",
                                 message=f"The shopper {'also ' if name == also_asked else ''}asked about \"{name}\", and the reply does not mention it. "
-                                        "If the search returned it, state the facts asked for; if not, say in the spoken text that it was not found, "
-                                        "and name a result that carries part of its name if there is one."))
+                                        "If a result is that product under a longer name (the same maker and the words of the name), "
+                                        + ("compare the two in one sentence, each with the facts asked for and its price. " if compared else
+                                           "state the facts asked for. ")
+                                        + "If none is, say in the spoken text that it was not found, and name a result that carries part of its "
+                                          "name if there is one."))
             break
+
+    # ---- a comparison names each product it compares, in the sentence that is said for certain
+    # "Can you just compare the Barnyard puzzle and the Created by Me Monster for a 4-year-old?": both were in the answer and on
+    # screen, and the spoken sentence was "The Barnyard puzzle is listed for ages 3 to 5, at a catalog price of $7.99" (a replay of
+    # series 3-3, turn 27; two replays of turn 2 the same). It asks for a fuller answer, not a truer one: advisory after a revision.
+    if not draft.abstain and len(items) >= 2 and user_text and _ASKS_TO_COMPARE.search(user_text):
+        lead = lead_of(draft.spoken)
+        said, prices = _name_stems(lead), dollars_in(lead)
+
+        def named(item: CatalogItem | WebItem, other: CatalogItem | WebItem) -> bool:
+            own = _name_stems(item.title) - _name_stems(other.title)
+            return bool(own & said) or any(abs(p - q) < 0.005 for p in prices for q in known_prices(item, evidence))
+
+        first, second = items[0], items[1]
+        if named(first, second) != named(second, first):
+            left = second if named(first, second) else first
+            issues.append(Issue(code="comparison_one_sided", severity="revise", where="spoken",
+                                message=f"The shopper asked for a comparison, and the spoken sentence speaks of one product; {left.ref} is not named "
+                                        "in it. In one sentence, name each product with the fact that was asked about or that sets it apart, "
+                                        "and its price."))
+
+    # ---- asked why a product was picked, the answer gives the reason
+    # "... tell me the rule you used to pick it over the others." The reply: "The listing does not say why it was picked; it is
+    # first on screen" (a replay of series 3-2, turn 26). No listing says why it was picked; the pick and its reason are the
+    # assistant's, from what the listings state. Asked once.
+    if user_text and _ASKS_WHY_PICKED.search(user_text) and _NO_REASON_GIVEN.search(draft.spoken or "") and items:
+        issues.append(Issue(code="pick_reason_unanswered", severity="revise", where="spoken",
+                            message="The shopper asked why it was picked. A listing never says that; the reason is yours, from the evidence. "
+                                    "Say what puts it first among the products shown: it fits the budget, costs least, has the highest rating "
+                                    "of them, or states what was asked for, with the figure."))
 
     # ---- "none was found" is not said of something the search returned
     presented = [i.ref for i in answered]
@@ -1385,6 +1454,17 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
                             message="The shopper asked for a price and the spoken sentence gives none. State the price your sources give"
                                     + (f" ({', '.join(priced)})" if priced else "") + " with its source, or say that no current price was found. "
                                     "A product you do not recommend can still have its price stated, next to the reason."))
+    elif user_text and _ASKS_PRICE.search(user_text) and constraints.wants_current_info and spoken_after is not None and total_seconds is not None \
+            and not dollars_in(lead_of(draft.spoken)):
+        # Given, but in a sentence that gives way to the time limit: "The Aqua Beads Mega Set is under a 2023 recall because its beads can
+        # expand if swallowed ... Example Toys lists it at $18.99, but that listing does not state availability." was said without its
+        # second sentence, and the offer to look for other kits in its place (a replay of series 3-2, turn 15). Asked once.
+        sentences = split_sentences(" ".join(draft.spoken.split()))
+        priced_at = next((n for n, sentence in enumerate(sentences) if dollars_in(sentence)), None)
+        if priced_at is not None and not fits(" ".join([*sentences[:priced_at + 1], *spoken_after]), total_seconds, MAX_SPEED):
+            issues.append(Issue(code="price_asked_not_said", severity="revise", where="spoken",
+                                message="The price the shopper asked for is in a sentence that will not be said in the time. Say it in the "
+                                        "first sentence, with its source, and say the rest in fewer words."))
 
     every_text = " ".join([draft.spoken, draft.conflict_note or "", draft.follow_up_question or "", draft.abstain_reason or "",
                            *(f"{r.why} {r.caveat or ''}" for r in draft.recommendations)])
@@ -1411,14 +1491,14 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
     timed = spoken_after is not None and total_seconds is not None
     if words > max_words:
         kept = word_count(trim_spoken(draft.spoken, max_words))
-        first_sentence = word_count(re.split(r"(?<=[.!?])\s+", draft.spoken.strip())[0])
+        first_sentence = word_count(lead_of(draft.spoken))
         if not timed and (first_sentence > max_words * 1.25 or kept < 8):        # cannot be fixed by dropping trailing sentences
             issues.append(Issue(code="spoken_too_long", severity="revise", where="spoken",
                                 message=f"The spoken text has {words} words; the limit is {max_words}. Use one short sentence."))
         else:
             issues.append(Issue(code="spoken_trimmed", severity="info", where="spoken",
                                 message=f"{words} words written against a budget of {max_words}; trailing sentences give way first when the reply is assembled."))
-    first = (split_sentences(draft.spoken) or [""])[0]
+    first = lead_of(draft.spoken)                     # the sentence said for certain (with the next, when it names nothing)
     # Words on paper are not seconds in the ear: "$27.99" takes as long to say as seven words.
     if timed:
         assert spoken_after is not None and total_seconds is not None

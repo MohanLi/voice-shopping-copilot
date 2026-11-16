@@ -465,7 +465,7 @@ def test_a_spoken_sentence_is_kept_whole_or_dropped_and_never_cut_in_the_middle(
     answer = build_answer(draft(("C1", "Wooden.", None), spoken=f"{lead} {extra}"), evidence(), Constraints(), None, max_words=42, grounded_by="llm+critic", revisions=0)
     assert answer.spoken == f"{lead} Details and sources are on screen." and fits(answer.spoken, 15.0, MAX_SPEED)
     assert whole_sentences(f"{lead} {extra}", [], 15.0, 42) == [lead]
-    assert whole_sentences("One. Two. Three.", [], 15.0, 42) == ["One.", "Two.", "Three."]
+    assert " ".join(whole_sentences("One. Two. Three.", [], 15.0, 42)) == "One. Two. Three."            # a first sentence that names nothing goes with the next
     endless = "This sentence " + "goes on and on " * 30 + "without a stop."
     assert len(whole_sentences(endless, [], 15.0, 42)) == 1 and word_count(whole_sentences(endless, [], 15.0, 42)[0]) <= 42      # the last resort
 
@@ -524,6 +524,14 @@ def test_an_answer_about_an_over_budget_product_names_one_that_fits_when_the_evi
     assert [i.code for i in check_draft(with_one, on_screen, eight, max_words=40, focus=["C3"]) if i.severity != "info"] == []
     # Nothing in the evidence fits: saying that it is over the budget is all there is to say.
     assert [i.code for i in check_draft(alone, Evidence(catalog=[abc, safari]), eight, max_words=40, focus=["C3"]) if i.severity != "info"] == []
+    # The message of that turn speaks of the budget; one about the product's listing that speaks of no price is answered about it
+    # (series 3-3, turns 19 and 22: "my top pick is" a craft kit, under a budget set nine turns before, in place of the answer).
+    asked = "I can only do eight dollars, but just show me the best one anyway."
+    assert "no_alternative_within_budget" in [i.code for i in check_draft(alone, on_screen, eight, max_words=40, focus=["C3"], user_text=asked)]
+    for question in ("You already told me the Jumbo ABC puzzle's listing was non-toxic, right?", "Is the German page the same puzzle?"):
+        assert "no_alternative_within_budget" not in [i.code for i in check_draft(alone, on_screen, eight, max_words=40, focus=["C3"], user_text=question)]
+    assert "no_alternative_within_budget" in [i.code for i in check_draft(alone, on_screen, eight, max_words=40, focus=["C3"],
+                                                                         user_text="What does the second one cost?")]
 
 
 def test_a_question_about_a_price_gets_a_price_or_the_statement_that_none_was_found() -> None:
@@ -836,6 +844,84 @@ def test_is_it_in_the_catalog_of_a_web_listing_is_answered_no() -> None:
     [(how, fixed)] = kept_by_code(wrong, blocking, evidence, Constraints(), ["W1"])
     assert how == "catalog_answered" and fixed.spoken.startswith("No, the Glimmer Putty Galaxy Tin") and "not in the catalog" in fixed.spoken
     assert codes(fixed) == []
+
+
+def test_the_same_product_as_another_listing_is_said_only_with_a_source_that_links_them() -> None:
+    """A replay of series 3-3, turn 19 (the multilingual merge trap): "I also found a German listing for the Barnyard puzzle, Holzpuzzle
+    Bauernhof, and it's the same one, just the German-language page, right?" was answered "The Barnyard puzzle is the same product".
+    No result of the turn was that page; code links a live listing to a catalog product only by its own match (reconcile)."""
+    barnyard = CatalogItem(ref="C1", doc_id="AMZ-B00HEZ0APE", sku="B00HEZ0APE", title="Melissa & Doug Barnyard Wooden Jigsaw Puzzle (24 pcs)",
+                           price=7.99, brand="Melissa & Doug")
+    asked = ("Thanks, that's what I needed. I also found a German listing for the Barnyard puzzle, Holzpuzzle Bauernhof, and it's the same one, "
+             "just the German-language page, right? The rating should carry over too, since it's the same 5.0 from 29 ratings.")
+
+    def codes(spoken: str, evidence: Evidence = Evidence(catalog=[barnyard]), user_text: str = asked) -> list[str]:
+        draft = AnswerDraft(recommendations=[Recommendation(ref="C1", why="24 wooden pieces for ages 3 to 5, catalog price $7.99.")], spoken=spoken)
+        return [i.code for i in check_draft(draft, evidence, Constraints(), user_text=user_text) if i.code == "sameness_unsupported"]
+
+    assert codes("The Barnyard puzzle is the same product, at a catalog price of $7.99.") == ["sameness_unsupported"]
+    assert codes("I can't confirm that the German page is the same product; the Barnyard puzzle is $7.99 in the catalog.") == []
+    assert codes("The Barnyard puzzle is $7.99 in the catalog, with no rating stated.") == []
+    # A live listing that reconcile matched to the product links the two; a question with no other listing in it is not this one.
+    page = WebItem(ref="W1", url="https://www.example.de/holzpuzzle-bauernhof", title="Melissa & Doug Holzpuzzle Bauernhof", price=8.99,
+                   source="example.de", matched_ref="C1")
+    assert codes("The Barnyard puzzle is the same product, $8.99 on the German page.", Evidence(catalog=[barnyard], web=[page])) == []
+    assert codes("Yes, it is the same one: the Barnyard puzzle, $7.99 in the catalog.", user_text="Is that the same one you showed me earlier?") == []
+
+
+def test_a_comparison_names_each_product_it_compares_in_the_sentence_said_for_certain() -> None:
+    """A replay of series 3-3, turn 27: "Can you just compare the Barnyard puzzle and the Created by Me Monster for a 4-year-old?" Both
+    were in the answer and on screen; the spoken sentence was about the puzzle alone. Two replays of turn 2 did the same."""
+    barnyard = CatalogItem(ref="C6", doc_id="AMZ-B00HEZ0APE", sku="B00HEZ0APE", title="Melissa & Doug Barnyard Wooden Jigsaw Puzzle (24 pcs)", price=7.99)
+    monster = CatalogItem(ref="C15", doc_id="AMZ-B00S6UZW18", sku="B00S6UZW18", title="Melissa & Doug Created by Me! Monster Truck Wooden Craft Kit", price=4.49)
+    evidence = Evidence(catalog=[barnyard, monster])
+    asked = "Can you just compare the Barnyard puzzle and the Created by Me Monster for a 4-year-old? I need price and age range."
+
+    def codes(spoken: str, user_text: str = asked) -> list[str]:
+        draft = AnswerDraft(recommendations=[Recommendation(ref="C6", why="Ages 3 to 5, $7.99."), Recommendation(ref="C15", why="Ages 4 to 8, $4.49.")],
+                            spoken=spoken)
+        return [i.code for i in check_draft(draft, evidence, Constraints(age_years=4), user_text=user_text, focus=["C6"]) if i.code == "comparison_one_sided"]
+
+    assert codes("The Barnyard puzzle is listed for ages 3 to 5, at a catalog price of $7.99; no listing says it is BPA-free.") == ["comparison_one_sided"]
+    assert codes("The Barnyard puzzle is $7.99 for ages 3 to 5, and the Monster Truck kit $4.49 for ages 4 to 8; neither listing says BPA-free.") == []
+    assert codes("Both are listed for age four: $7.99 for the puzzle against $4.49 for the craft kit.") == []          # by their prices
+    assert codes("Both are listed for four-year-olds. The Barnyard puzzle is $7.99 and the Monster Truck kit is $4.49.") == []   # a bare first sentence
+    assert codes("The Barnyard puzzle is $7.99 for ages 3 to 5.", user_text="Is the Barnyard puzzle in stock?") == []        # no comparison asked
+
+
+def test_asked_why_a_product_was_picked_the_answer_gives_a_reason() -> None:
+    """A replay of series 3-2, turn 26: "... tell me the rule you used to pick it over the others." The reply: "The listing does not say why
+    it was picked; it is first on screen"."""
+    method = WebItem(ref="W2", url="https://www.target.com/method", title="Method Stainless Steel Cleaner", source="Target", price=6.79, rating=4.5, rating_count=439)
+    asked = "And you did confirm Method is plant-based on the Target listing, so keep that under Verified. Tell me the rule you used to pick it over the others."
+
+    def codes(spoken: str, user_text: str = asked) -> list[str]:
+        draft = AnswerDraft(recommendations=[Recommendation(ref="W2", why="$6.79 at Target, rated 4.5 by 439 shoppers.")], spoken=spoken)
+        return [i.code for i in check_draft(draft, Evidence(web=[method]), Constraints(budget_max=15), user_text=user_text, focus=["W2"])
+                if i.code == "pick_reason_unanswered"]
+
+    assert codes("The listing does not say why it was picked; it is first on screen.") == ["pick_reason_unanswered"]
+    assert codes("I picked the Method because it costs least of the three, at $6.79 at Target, rated 4.5.") == []
+    assert codes("The listing does not say why it was picked.", user_text="Is it in stock?") == []
+
+
+def test_the_price_asked_for_is_in_the_part_of_the_reply_that_is_said() -> None:
+    """A replay of series 3-2, turn 15: the recall sentence came first, the price in a second sentence that gave way to the time limit,
+    and the offer to look for other kits was said in its place."""
+    listing = WebItem(ref="W2", url="https://shop.example.com/aqua-beads-mega-set", title="Aqua Beads Mega Set", source="Example Toys", price=18.99)
+    asked = "Okay, this one's for my daughter. Can you check today's price on the Aqua Beads Mega Set?"
+    long_recall = ("The Aqua Beads Mega Set is under a 2023 recall because its beads can expand if swallowed, a hazard for young children, "
+                   "so I cannot recommend it for your daughter.")
+
+    def codes(spoken: str, seconds: float) -> list[str]:
+        draft = AnswerDraft(recommendations=[], abstain=True, abstain_reason="recalled", spoken=spoken)
+        return [i.code for i in check_draft(draft, Evidence(web=[listing]), Constraints(wants_current_info=True), user_text=asked,
+                                            spoken_after=[], total_seconds=seconds, max_seconds=seconds) if i.code == "price_asked_not_said"]
+
+    both = f"{long_recall} Example Toys lists it at $18.99, but that listing does not state availability."
+    assert codes(both, 12.0) == ["price_asked_not_said"]
+    assert codes(both, 40.0) == []                                                  # there is time for both
+    assert codes("It is recalled, so I cannot recommend it; Example Toys lists it at $18.99.", 12.0) == []
 
 
 def test_the_cheapest_is_checked_against_every_result_of_its_kind() -> None:
