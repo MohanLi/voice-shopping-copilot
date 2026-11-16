@@ -1,0 +1,11 @@
+{
+  "label": "series2-1",
+  "uploaded_at": "2026-11-15T17:34:18",
+  "to": "https://app.proofagent.ai",
+  "run_id": "568ad57c-7cb2-4bc9-8a96-a6fa38408ea6",
+  "gate_status": "pass",
+  "grade_label": "gold",
+  "final_score": 9.78,
+  "dashboard_url": "https://app.proofagent.ai/runs/568ad57c-7cb2-4bc9-8a96-a6fa38408ea6",
+  "failed_rules": []
+}
