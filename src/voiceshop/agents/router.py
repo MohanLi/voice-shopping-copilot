@@ -96,6 +96,12 @@ _SHOPPING_WORDS = re.compile(
     r"|compare|comparison|difference|recommend(?:ed)?|pieces?|ages?|sizes?|materials?|brands?|budget)\b", re.I)
 
 
+def points_at_screen(text: str, shown: list[dict[str, Any]] | None) -> bool:
+    """Does a message point at the list on screen: a product on it by name, a place in it, "that one", "both"?"""
+    return bool(shown) and bool(named_on_screen(text, shown) or rules._REFERS.search(text or "") or _POINTS_AT_SCREEN.search(text or "")
+                                or all_on_screen(text, shown))
+
+
 def named_on_screen(text: str, shown: list[dict[str, Any]] | None) -> list[int]:
     """Positions of the products on screen that a text names by a word the other products on screen do not share."""
     if not shown:
@@ -123,6 +129,42 @@ def one_by_its_store(text: str, shown: list[dict[str, Any]] | None) -> int | Non
         if len(selling) == 1:
             return int(selling[0])
     return None
+
+
+_THE_STORES_PAGE = re.compile(r"\bthe\s+(?P<store>[a-z0-9][\w&'.-]*(?:\s+[a-z0-9][\w&'.-]*){0,2}?)\s+(?:one|listing|bottle|option|offer|page|site|product)\b", re.I)
+
+
+def _store_key(store: str | None) -> str:
+    """A store as letters and digits alone, without "www.", its domain ending and a leading "the": "theplantconnector.com" -> "plantconnector"."""
+    low = re.sub(r"^www\.", "", (store or "").lower().strip())
+    low = re.sub(r"\.(?:com|net|org|co\.uk|ca|us|shop|store)$", "", low)
+    return re.sub(r"^the", "", re.sub(r"[^a-z0-9]", "", low))
+
+
+def earlier_by_its_store(text: str, seen: list[dict[str, Any]] | None, shown: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """The one product of an earlier list, no longer on screen, that a message calls by the store that listed it ("the Plant Connector one").
+
+    Series 3-3, turn 21: "... this review from the Plant Connector page ... since the Plant Connector one has a 4.9 rating, that's the
+    number she should go by, right?". A plant-based cleaner listed by theplantconnector.com had been shown four turns before. The Router
+    called it a new search for a "Plant Connector stainless steel cleaner"; on a replay the reply said "I did not find a Plant Connector
+    stainless steel cleaner". Only when the store listed one product of the conversation and the words that name it are not all words
+    of products' names ("the Koala one" is called by its name).
+    """
+    if not seen:
+        return []
+    from voiceshop.agents.finalize import seen_key
+
+    on_screen = {seen_key(entry) for entry in shown or []}
+    names = set().union(*(_name_words(str(e.get("title") or e.get("name") or "")) for e in [*seen, *(shown or [])]))
+    for found in _THE_STORES_PAGE.finditer(_QUOTED.sub(" ", text or "")):
+        words = found.group("store")
+        key = _store_key(words)
+        if len(key) < 4 or _name_words(words) <= names:          # "the Koala one" is called by its name, not by a store
+            continue
+        listed = [e for e in seen if seen_key(e) not in on_screen and e.get("store") and _store_key(str(e.get("store"))) == key]
+        if len(listed) == 1:
+            return [{**listed[0], "named_by": sorted(_name_words(words))}]
+    return []
 
 
 def named_by_two_words(text: str, shown: list[dict[str, Any]] | None) -> bool:
@@ -221,6 +263,7 @@ _TAG_QUESTION = re.compile(
 _HEARSAY = re.compile(r"\bI\s+(?:heard|read|was\s+told)\b|\b(?:someone|somebody|a\s+friend|my\s+\w+|the\s+(?:ad|advert|flyer|sign|cashier|clerk))\s+(?:said|says|told\s+me)\b", re.I)
 _OF_A_PRICE = re.compile(r"\bsales?\b|\bdiscount\w*|\bdeals?\b|\bclearance\b|\bmarked\s+down\b|\bhalf\s+(?:price|off)\b|\d\s?%\s+off|\$\s?\d"
                          r"|\b\d+(?:\.\d+)?\s*(?:dollars?|bucks?)\b|\bcheaper\b|\bprice\s+(?:drop|cut)\w*", re.I)
+_OF_A_PRICE = re.compile(_OF_A_PRICE.pattern + "|" + rules.SPOKEN_PRICE.pattern, re.I)      # "I heard it was six ninety-nine"
 
 
 # What is left of a message when its claim is set aside may still be about the product of the claim: "Okay, so the second one,
@@ -242,6 +285,26 @@ _WANTS_SOMETHING_ELSE = re.compile(
 # in the sentence with the claim, and what is left asks for nothing (the sixth live run, turn 17).
 _ASKS_FOR_A_PRODUCT = re.compile(r"\?|\b(?:show|find|get|give|recommend|suggest|pick|check|compare|search|look)\b|\b(?:wants?|needs?|looking\s+for|i'?d\s+like"
                                  r"|what|which|any|do\s+you\s+have|is\s+there|are\s+there)\b", re.I)
+
+
+# A claim the shopper says the assistant made: "you said", "you already confirmed", "you told me", "as you said".
+_SAYS_THE_ASSISTANT_SAID = re.compile(r"\byou\s+(?:(?:already|just|even|did)\s+)?(?:said|told|mentioned|confirmed|agreed|showed|noted|stated|promised)\b"
+                                      r"|\bas\s+you\s+said\b|\byour\s+(?:earlier\s+)?(?:note|answer|reply|table)\s+(?:said|says|showed|shows|stated)\b", re.I)
+
+
+def claimed_qualities(sentence: str) -> list[tuple[str, str]]:
+    """The qualities of the claim vocabulary a shopper's sentence names, with the words used: [("eco-friendly", "plant-based")].
+
+    Read without the test for hedges that the assistant's own sentences get: "you already confirmed it was BPA-free" is a claim,
+    and the word "confirmed" in it is the shopper's.
+    """
+    low = (sentence or "").lower()
+    out = []
+    for name, variants in policy.SENSITIVE_CLAIMS.items():
+        said = next((v for v in variants if re.search(rf"(?<![\w-]){re.escape(v)}(?![\w-])", low)), None)
+        if said:
+            out.append((name, said))
+    return out
 
 
 def presses_a_claim(sentence: str) -> bool:
@@ -412,13 +475,101 @@ def claims_about_earlier(text: str, seen: list[dict[str, Any]] | None, shown: li
         kind = _name_words(" ".join(str(v) for k in ("product", "category") if (v := found_for.get(k))))
         kind |= _name_words(" ".join(str(v) for k in ("materials", "must_have") for v in found_for.get(k) or []))
         others = set().union(*(w for k, w in words.items() if k != key and w != name)) if len(words) > 1 else set()
-        telling = {w for w in name - others - kind - _QUALITY_WORDS if len(w) > 3}
+        telling = {w for w in name - others - kind - _QUALITY_WORDS - _ASKED_ABOUT if len(w) > 3}
         if not telling or telling & elsewhere:                # not named, or named by the request itself: recalled_products' case
             continue
         sentence = next((s for s in claims if used_as_names(telling, s)), None)
         if sentence:
             out[key] = {**entry, "claim": sentence, "named_by": sorted(used_as_names(telling, sentence))}
     return list(out.values())[:MAX_RECALLED], (rest if out else text)
+
+
+def attributed_about_earlier(text: str, seen: list[dict[str, Any]] | None, shown: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Catalog products of earlier lists, no longer on screen, of which the shopper says the assistant stated a quality or a price.
+
+    "You already told me the Barnyard puzzle's listing was non-toxic and BPA-free, right? ... I just need you to confirm that in the
+    table" (series 3-3, turn 22), "since you already confirmed the Barnyard puzzle was BPA-free earlier, can you tell me which rule
+    stops you" (turn 24). Whatever else the message asks, the shopper is about to rely on what they say was said, and code says what
+    the product's record states (finalize.claim_statement), as for ``claims_about_earlier``. The product is named by a word of its name
+    that tells it from everything else shown (``recalled_products``); each record comes with the sentence (``claim``).
+    """
+    from voiceshop.agents.finalize import seen_key
+
+    if not seen:
+        return []
+    claims = _claims_said_of_the_assistant(text)
+    if not claims:
+        return []
+    on_screen = {seen_key(entry) for entry in shown or []}
+    words = {seen_key(entry): _name_words(str(entry.get("title") or entry.get("name") or "")) for entry in [*seen, *(shown or [])]}
+    out: dict[str, dict[str, Any]] = {}
+    for entry in reversed(seen):
+        key = seen_key(entry)
+        if not key or key in on_screen or key in out or not entry.get("doc_id") or not words.get(key):
+            continue
+        name = words[key]
+        others = set().union(*(w for k, w in words.items() if k != key and w != name)) if len(words) > 1 else set()
+        telling = {w for w in name - others - _QUALITY_WORDS - _ASKED_ABOUT if len(w) > 3}
+        sentence = next((s for s in claims if used_as_names(telling, _without_the_claimed_quality(s))), None) if telling else None
+        if sentence:
+            out[key] = {**entry, "claim": sentence, "named_by": sorted(used_as_names(telling, _without_the_claimed_quality(sentence)))}
+    return list(out.values())[:MAX_RECALLED]
+
+
+def _claims_said_of_the_assistant(text: str) -> list[str]:
+    """The sentences of a message in which the shopper says the assistant stated a quality of the claims vocabulary or a price."""
+    from voiceshop.speech.text import split_sentences
+
+    return [s for s in split_sentences(" ".join(_QUOTED.sub(" ", text or "").split()))
+            if _SAYS_THE_ASSISTANT_SAID.search(s) and (claimed_qualities(s) or _OF_A_PRICE.search(s))]
+
+
+def _without_the_claimed_quality(sentence: str) -> str:
+    """A sentence without the quality as it is claimed ("is plant-based"): those words name no product."""
+    for _, word in claimed_qualities(sentence):
+        sentence = re.sub(rf"(\b(?:is|was|are|were|be|being)\s+(?:[\w'-]+\s+){{0,2}}?|'s\s+)(?<![\w-]){re.escape(word)}(?![\w-])", r"\1 ", sentence, flags=re.I)
+    return sentence
+
+
+def attributed_on_screen(text: str, seen: list[dict[str, Any]] | None, shown: list[dict[str, Any]] | None) -> list[int]:
+    """Positions of the products on screen of which the shopper says the assistant stated a quality or a price (at most two).
+
+    A product counts when the sentence calls it by its place in the list, or by a word of its name that nothing else the conversation
+    has shown has, that is no word for its kind and no word of the claim ("the Method cleaner", "the Koala one"). Its kind does not
+    name it: with one puzzle on screen, "you already told me the Barnyard puzzle's listing was non-toxic" is about the Barnyard puzzle
+    shown earlier, and on a replay of series 3-3, turn 22, the claim was answered about the puzzle on screen.
+    """
+    from voiceshop.agents.finalize import seen_key
+
+    claims = _claims_said_of_the_assistant(text)
+    if not claims or not shown:
+        return []
+    found_for = {seen_key(e): e.get("found_for") or {} for e in seen or []}
+    words = {seen_key(e): _name_words(str(e.get("title") or e.get("name") or "")) for e in [*(seen or []), *shown]}
+    out: list[int] = []
+    for n, entry in enumerate(shown, 1):
+        key = seen_key(entry)
+        name = words.get(key) or set()
+        kind = found_for.get(key) or {}
+        kinds = _name_words(" ".join(str(v) for k in ("product", "category") if (v := kind.get(k))))
+        others = set().union(*(w for k, w in words.items() if k != key and w != name)) if len(words) > 1 else set()
+        telling = {w for w in name - others - kinds - _ASKED_ABOUT if len(w) > 3}       # the claimed quality is out of the sentence already
+        position = int(entry.get("position") or n)
+        for sentence in claims:
+            plain = _without_the_claimed_quality(sentence)
+            by_place = [m for m in rules._REFERS.finditer(plain) if rules._ORDINALS[m.group(1).lower()] in (position, -1 if position == len(shown) else 0)]
+            if (telling and used_as_names(telling, plain)) or by_place:
+                out.append(position)
+                break
+    return out[:2]
+
+
+def only_the_product_of_the_claim(product: str | None, claimed: list[dict[str, Any]]) -> bool:
+    """Is a product the Router asked to search for no more than the product a claim is about, with the claim's words?"""
+    asked = _name_words(product) - _QUALITY_WORDS - _ASKED_ABOUT - {"claim", "statement", "label"}
+    names = set().union(*(_name_words(str(e.get("title") or e.get("name") or "")) for e in claimed)) if claimed else set()
+    telling = {w.rstrip("s") for e in claimed for w in e.get("named_by") or []}
+    return bool(asked & telling) and asked <= names                  # "Barnyard puzzle", not "wooden puzzle": a new search stays one
 
 
 def named_alone(text: str, shown: list[dict[str, Any]] | None) -> list[int]:
@@ -513,11 +664,28 @@ def all_on_screen(text: str, shown: list[dict[str, Any]] | None) -> list[int]:
     """
     if not shown:
         return []
+    names = set().union(*(_name_words(str(entry.get("title") or entry.get("name") or "")) for entry in shown))
     for m in _ALL_SHOWN.finditer(text):
         word = next(g for g in m.groups() if g).lower()
-        if _COUNTS.get(word, len(shown)) == len(shown) and len(shown) > 1:
-            return list(range(1, len(shown) + 1))
+        if _COUNTS.get(word, len(shown)) != len(shown) or len(shown) < 2:
+            continue
+        # "The three puzzles", with three cleaners on screen, are not these three: "Going back to the puzzle you found earlier ...
+        # tell me which of the three puzzles that family's order list matches" was answered about the cleaners on screen, with "No
+        # puzzle for a four-year-old under $15 was found" (series 3-2, turn 30). A kind of product that no name on screen has means
+        # some other products.
+        following = re.match(r"[ \t]+([a-z]+)", text[m.end():].lower()) if m.group(2) else None
+        kind = following.group(1).rstrip("s") if following and following.group(1) not in _NOT_A_KIND else ""
+        if kind and kind not in _ANY_PRODUCT and kind not in names and not any(n.startswith(kind) for n in names):
+            continue
+        return list(range(1, len(shown) + 1))
     return []
+
+
+# Words after "the two" or "the three" that are no kind of product ("the three of them", "the two you showed").
+_NOT_A_KIND = {"of", "that", "which", "you", "we", "i", "they", "on", "in", "here", "there", "listed", "shown", "above", "below", "again",
+               "and", "or", "for", "with", "from", "at", "to", "is", "are", "were", "was", "just", "now", "then", "please"}
+_ANY_PRODUCT = {"one", "option", "product", "item", "choice", "pick", "result", "listing", "thing", "offer", "deal", "row", "brand", "kind", "type",
+                "different", "other", "cheapest", "best", "top", "last", "first", "second", "third"}
 
 
 # Words that make a product the child's own, whatever else its name says: a toy vacuum cleaner, pipe cleaners, a nail polish kit.
@@ -611,9 +779,9 @@ def normalise_route(route: RouteDecision, text: str, shown: list[dict[str, Any]]
     # A price is a limit, never a property of the product: a mis-heard "no wait, under twelve dollars" came back as avoid=["no weight under $12"].
     c.avoid = [a for a in c.avoid if not _PRICE_WORDS.search(a)]
     c.must_have = [m for m in c.must_have if not _PRICE_WORDS.search(m)]
-    limits = rules.upper_limits(text)
-    if len(limits) > 1 and c.budget_max is not None and c.budget_max != limits[-1] and c.budget_max in limits[:-1]:
-        c.budget_max = limits[-1]                             # two limits in one message: the later one is the correction
+    corrected = rules.corrected_limit(text)
+    if corrected is not None and c.budget_max is not None and c.budget_max != corrected and c.budget_max in rules.upper_limits(text)[:-1]:
+        c.budget_max = corrected                              # two limits in one message, the first taken back: the later one applies
     if c.age_years is None and not _SETS_ASIDE.search(text):   # "my son's eighteen months", "for my baby": the under-three rule is switched on by rule
         c.age_years = rules.small_child_age(text) or rules.recipient_age(f"{text} {c.recipient or ''}")
     on_screen = [str(entry.get("title") or entry.get("name") or "") for entry in shown or []] if route.intent in ("follow_up", "compare") else []
@@ -914,14 +1082,27 @@ def wants_second_look(route: RouteDecision, text: str) -> bool:
     return len(text.split()) >= SECOND_LOOK_MIN_WORDS
 
 
-async def second_look(text: str, shown: list[dict[str, Any]] | None, turn_id: str = "") -> tuple[str, dict[str, Any]]:
+def render_earlier(seen: list[dict[str, Any]] | None, shown: list[dict[str, Any]] | None, limit: int = 12) -> str:
+    """The names of the products shown earlier in this conversation and no longer on screen, the latest first."""
+    from voiceshop.agents.finalize import seen_key
+
+    on_screen = {seen_key(entry) for entry in shown or []}
+    names = list(dict.fromkeys(str(entry.get("name") or entry.get("title") or "").strip() for entry in reversed(seen or [])
+                               if seen_key(entry) not in on_screen))
+    return "\n".join(f"- {name}" for name in names[:limit] if name) or "(none)"
+
+
+async def second_look(text: str, shown: list[dict[str, Any]] | None, turn_id: str = "",
+                      seen: list[dict[str, Any]] | None = None) -> tuple[str, dict[str, Any]]:
     """The product request a second reading finds in ``text``, as it may be passed on ("" when it finds none), and the call's record.
 
     A model call with one question (prompt ``second_look``). What it returns is treated like a restatement by the Router:
-    screened, kept short, never said to the shopper.
+    screened, kept short, never said to the shopper. The names of the products shown earlier are given with those on screen:
+    "the full reasoning behind the MOXIE pick" named a brush shown four turns before, and was read as a question about the
+    assistant (series 3-1, turn 20).
     """
     found, meta = await call_structured("router", "second_look", SecondLook, user=text, turn_id=turn_id,
-                                        variables={"shown": render_shown(shown)}, max_tokens=300)
+                                        variables={"shown": render_shown(shown), "earlier": render_earlier(seen, shown)}, max_tokens=300)
     # The verdict decides. A reply that leaves it out (a malformed function call put it inside the reason, on one recorded message
     # in three passes) is read by its request; a verdict of "no" is never overruled by a request that came with it.
     holds = found.holds_product_request if "holds_product_request" in found.model_fields_set else bool((found.product_request or "").strip())
@@ -1088,7 +1269,11 @@ def request_for_agents(route: RouteDecision, text: str, shown: list[dict[str, An
 # earlier product shares a word with it ("a safari costume", after a Safari puzzle).
 _POINTS_BACK = re.compile(
     r"\b(?:earlier|before|previous(?:ly)?|again|back\s+to|last\s+time|from\s+(?:before|earlier)|a\s+(?:minute|moment|while)\s+ago"
-    r"|you\s+(?:just\s+|already\s+|first\s+)?(?:said|showed|told|recommended|suggested|listed|had|put|gave|mentioned|quoted|found|picked))\b", re.I)
+    r"|you\s+(?:just\s+|already\s+|first\s+)?(?:said|showed|told|recommended|suggested|listed|had|put|gave|mentioned|quoted|found|picked))\b"
+    # "Why was the MOXIE Poly Fiber Scrub Brush picked?", "the reasoning behind the MOXIE pick": a pick is one that was made (a replay of
+    # series 3-1, turn 20, where the second reading's question was searched for as a new product and "could not find" it was said)
+    r"|\b(?:was|were)\s+(?:the\s+|that\s+|this\s+)?(?:[\w'&-]+\s+){0,6}?(?:picked|chosen|recommended|ranked|suggested)\b"
+    r"|\b(?:the|that|your)\s+(?:[\w'&-]+\s+){1,5}?pick\b", re.I)
 MAX_RECALLED = 2
 _STANDS_BEFORE_A_NAME = re.compile(r"\b(?:the|that|this|those|these|my|your|our)\s+(?:[\w'&-]+\s+)?$", re.I)
 
@@ -1149,7 +1334,13 @@ def recalled_products(request: str, route: RouteDecision, seen: list[dict[str, A
 
     if not seen or route.intent not in SHOPPING:
         return []
-    if (route.intent == "product_search" or route.refers_to) and not _POINTS_BACK.search(request):
+    if route.intent == "product_search" and not _POINTS_BACK.search(request):
+        return []
+    if route.refers_to and not _POINTS_BACK.search(request) and points_at_screen(request, shown):
+        # The Router's positions stand when the message points at the list. When it points at nothing on screen they are the
+        # Router's guess: "... the CDC said Glimmer Putty is fine for kids with eczema. Can you put that quote in the comparison
+        # table" was routed to the three cleaners on screen, and on a replay of series 3-3, turn 18, the reply said "Glimmer Putty
+        # was not found in my sources", four turns after the putty had been shown.
         return []
     on_screen = {seen_key(entry) for entry in shown or []}
     words = {seen_key(entry): _name_words(str(entry.get("title") or entry.get("name") or "")) for entry in [*seen, *(shown or [])]}
@@ -1166,7 +1357,7 @@ def recalled_products(request: str, route: RouteDecision, seen: list[dict[str, A
         kind = _name_words(" ".join(str(v) for k in ("product", "category") if (v := found_for.get(k))))
         kind |= _name_words(" ".join(str(v) for k in ("materials", "must_have") for v in found_for.get(k) or []))
         others = set().union(*(w for k, w in words.items() if k != key and w != name)) if len(words) > 1 else set()
-        telling = {w for w in name - others - kind - _QUALITY_WORDS if len(w) > 3}
+        telling = {w for w in name - others - kind - _QUALITY_WORDS - _ASKED_ABOUT if len(w) > 3}
         named_by = used_as_names(telling, request)
         if not named_by:
             continue
@@ -1174,7 +1365,38 @@ def recalled_products(request: str, route: RouteDecision, seen: list[dict[str, A
         at_store = bool(store) and store <= said
         if frozenset(name) not in named or not named[frozenset(name)][0]:
             named[frozenset(name)] = (at_store, {**entry, "named_by": sorted(named_by)})
+    if not named and route.intent in ("follow_up", "compare") and not points_at_screen(request, shown):
+        return named_by_a_proper_name(request, seen, shown)
     return [entry for _, entry in named.values()][:MAX_RECALLED]
+
+
+_PROPER_NAME = re.compile(r"(?<=[a-z,;:]\s)(?:[A-Z][a-z]+(?:[\s-]+[A-Z][a-z]+){1,3})"
+                          r"|(?<=\bthe\s)(?:[A-Z][a-z]+(?:[\s-]+[A-Z][a-z]+){0,2})\s+(?:puzzle|cleaner|brush|kit|set|game|tin|putty|toy|board|book)s?\b")
+
+
+def named_by_a_proper_name(request: str, seen: list[dict[str, Any]], shown: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """The products of earlier lists that a message names by a name of two or more capitalised words they all share ("Glimmer Putty").
+
+    A replay of series 3-3, turn 18: "... the CDC said at the spring briefing that Glimmer Putty is fine for kids with eczema. Can you put
+    that quote in the comparison table" was routed to the three cleaners on screen. Two putties had been shown four turns before, a tin
+    and a party pack, so no word told one from the other, and the reply said "Glimmer Putty was not found in my sources". A name both
+    share is both. At most two, none on screen, and only when no product outside them has every word of the name. "The Barnyard
+    puzzle" is such a name too, a capitalised word with the kind of product after it, when another product shown has "Barnyard" in its
+    name and is no puzzle (a later replay of the same conversation, turn 30: "I could not find a Barnyard puzzle in my sources").
+    """
+    from voiceshop.agents.finalize import seen_key
+
+    on_screen = {seen_key(entry) for entry in shown or []}
+    for found in _PROPER_NAME.finditer(_QUOTED.sub(" ", request or "")):
+        words = {w.lower().rstrip("s") for w in re.findall(r"[A-Za-z]+", found.group(0)) if len(w) > 2}
+        if len(words) < 2:
+            continue
+        having = [e for e in reversed(seen) if words <= _name_words(str(e.get("title") or e.get("name") or ""))]
+        if not having or any(seen_key(e) in on_screen for e in having) or any(words <= _name_words(str(e.get("title") or e.get("name") or "")) for e in shown or []):
+            continue
+        if len({seen_key(e) for e in having}) <= MAX_RECALLED:
+            return [{**e, "named_by": sorted(words)} for e in having][:MAX_RECALLED]
+    return []
 
 
 def asks_for_another_kind(request: str | None, earlier: Constraints | None, shown: list[dict[str, Any]] | None) -> bool:
@@ -1236,7 +1458,7 @@ def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
             # nothing else; if it finds one, that request is routed as a message of its own and answered, after everything
             # the first reading declined. The agents that search and write are given that request and nothing else.
             try:
-                asked, look = await second_look(text, shown, state.get("turn_id", ""))
+                asked, look = await second_look(text, shown, state.get("turn_id", ""), state.get("seen"))
                 looked = {"first_reading": route.intent, "found": asked or None, "reason": look.get("reason"), "prompt": look.get("prompt"),
                           "prompt_version": look.get("version"), "adopted": False}
                 if asked:
@@ -1260,11 +1482,37 @@ def make_router_node(deps: Deps):  # type: ignore[no-untyped-def]
                     route.say = ["no_unconfirmed", *route.say][:MAX_SAY]                                # type: ignore[assignment]
                 named_by = {w for entry in claimed for w in entry.get("named_by") or []}
                 route.request = without_the_claim(route.request, named_by) if route.request else rest    # as for a claim about a product on screen
+        if route.intent in ("follow_up", "compare") and shown and not route.pressed and not route.pressed_earlier:
+            # A claim the shopper says the assistant made about a product on screen, about a quality or a price, is answered by
+            # code also when the rest of the message is about the list on screen. "You already said Method is plant-based on the
+            # Target listing, so that goes in. Then tell me which one you'd pick" was answered with the pick, and the claim was
+            # passed over in two of three such turns of series 3-2 (21 and 22; three jurors of five each found the request
+            # answered). What the listing states is said by code (finalize.claim_statement).
+            route.pressed = attributed_on_screen(text, state.get("seen"), shown)
+            if route.pressed and "no_unconfirmed" not in route.say:
+                route.say = ["no_unconfirmed", *route.say][:MAX_SAY]                                    # type: ignore[assignment]
+        if route.intent in SHOPPING and not route.pressed and not route.pressed_earlier:
+            # A quality or a price the shopper says the assistant stated of a product shown earlier: code says what its record states.
+            said_earlier = attributed_about_earlier(text, state.get("seen"), shown)
+            if said_earlier:
+                route.pressed_earlier = said_earlier
+                if "no_unconfirmed" not in route.say:
+                    route.say = ["no_unconfirmed", *route.say][:MAX_SAY]                                # type: ignore[assignment]
+                if route.intent == "product_search" and only_the_product_of_the_claim(route.constraints.product, said_earlier):
+                    # The search the Router asked for is the product of the claim, with the claim as its filter: "Barnyard puzzle,
+                    # non-toxic and BPA-free claims" (a replay of series 3-3, turn 22). Searched for so, it was "not found", next to the
+                    # sentence code had written from its record. The turn is a question about that product.
+                    route.intent = "follow_up"
+                    route.constraints.must_have = [m for m in route.constraints.must_have if not claimed_qualities(m)]
         request_text = request_for_agents(route, text, shown)
         recalled = recalled_products(request_text, route, state.get("seen"), shown)
+        if not recalled and route.intent in SHOPPING and not route.refers_to:
+            recalled = earlier_by_its_store(text, state.get("seen"), shown)          # "the Plant Connector one", shown four turns before
         if recalled:
             # The request names a product of an earlier list. It is looked up again: by its catalog id (as a product named by
             # its id is, planner.id_lookup), or on the web by the name it was shown under.
+            if route.refers_to and not _POINTS_BACK.search(request_text) and not points_at_screen(request_text, shown):
+                route.refers_to = []                          # the Router's guess at the list on screen (see recalled_products)
             route.recalled = recalled
             route.named_ids = list(dict.fromkeys([*route.named_ids, *(str(e["doc_id"]).upper() for e in recalled if e.get("doc_id"))]))
             request_text = with_recalled(request_text, recalled)

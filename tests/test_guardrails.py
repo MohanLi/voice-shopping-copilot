@@ -24,6 +24,7 @@ from voiceshop.guardrails.output import (
     named_in,
     repair,
     settled_by_prices,
+    stated_by_a_named_source,
     trim_spoken,
     word_count,
 )
@@ -629,6 +630,10 @@ def test_a_yes_or_no_about_two_prices_agrees_with_the_prices() -> None:
         True, "the second one ($11.67) is cheaper than the first one ($14.95)")
     assert settled_by_prices("the second one's cheaper than the first, right?", on_screen, evidence) == (                 # the statement with a tag
         True, "the second one ($11.67) is cheaper than the first one ($14.95)")
+    # One stray word the recogniser made of the first sound (series 3-2, turn 9: "Um, okay" was heard "Rum okay").
+    assert settled_by_prices("Rum okay, and is the second one cheaper than the first.", on_screen, evidence) == (
+        True, "the second one ($11.67) is cheaper than the first one ($14.95)")
+    assert settled_by_prices("Why okay, is the second one cheaper than the first?", on_screen, evidence) is None
     # Left to the model: a negated question, a choice, a second part, a name, a place that is not on screen, the same place twice.
     for asked in ("Isn't the first one cheaper than the second?", "Is the first one not cheaper than the second?", "Which is cheaper, the first or the second?",
                   "Is the first one cheaper than the second, and is it in stock?", "Is the Tsuro cheaper than the second one?",
@@ -640,6 +645,20 @@ def test_a_yes_or_no_about_two_prices_agrees_with_the_prices() -> None:
     assert settled_by_prices("Is the first one cheaper than the second?", on_screen,
                              Evidence(catalog=[tictac.model_copy(update={"price": 14.95}), tsuro, mastermind])) is None
     assert settled_by_prices("Is the first one cheaper than the second?", ["C2", "C9", "C4"], evidence) is None      # not in the evidence
+    # ... but when both of its prices are on the same side of the other's price, there is one answer. Series 3-3, turn 9: the Safari
+    # puzzle at $9.99 in the catalog and $12.99 at a live listing, against the Barnyard at $7.99; "Yes, the second one is cheaper".
+    barnyard = CatalogItem(ref="C3", doc_id="AMZ-B00HEZ0APE", sku="B00HEZ0APE", title="Melissa & Doug Barnyard Wooden Jigsaw Puzzle", price=7.99)
+    safari = CatalogItem(ref="C2", doc_id="AMZ-B000B9RHYC", sku="B000B9RHYC", title="Melissa & Doug Safari Wooden Chunky Puzzle", price=9.99,
+                         live=LiveOffer(web_ref="W2", url="https://shop.example/safari", source="Terrific Teaching Tools", price=12.99))
+    puzzles = Evidence(catalog=[safari, barnyard])
+    assert settled_by_prices("Okay, and is the second one cheaper than the first?", ["C3", "C2"], puzzles) == (
+        False, "the second one ($9.99 in the catalog and $12.99 now) is not cheaper than the first one ($7.99)")
+    assert settled_by_prices("is the first one cheaper than the second", ["C3", "C2"], puzzles)[0] is True
+    from voiceshop.guardrails.output import price_answer
+    assert price_answer(settled_by_prices("Okay, and is the second one cheaper than the first?", ["C3", "C2"], puzzles),
+                        names={"first": "Barnyard Wooden Jigsaw Puzzle", "second": "Safari Wooden Chunky Puzzle"}) == (
+        "No, the second one, the Safari Wooden Chunky Puzzle, at $9.99 in the catalog and $12.99 now, is not cheaper than the first one, "
+        "the Barnyard Wooden Jigsaw Puzzle, at $7.99.")
 
     def codes(spoken: str, answer: tuple[bool, str] | None = settled) -> list[str]:
         draft = AnswerDraft(recommendations=[Recommendation(ref="C2", why="Catalog price $14.95."), Recommendation(ref="C1", why="Catalog price $11.67.")], spoken=spoken)
@@ -719,6 +738,154 @@ def test_naming_the_request_is_not_a_claim_about_the_product() -> None:
     assert _claims_in("It misses your eco-friendly requirement and the non-toxic criterion.") == []
     assert [name for name, _ in _claims_in("An eco-friendly cleaner that streaks.")] == ["eco-friendly"]
     assert [name for name, _ in _claims_in("It meets the request: eco-friendly and cheap.")] == ["eco-friendly"]
+
+
+def test_a_claim_reported_as_what_a_named_page_states_is_that_page_s_statement() -> None:
+    """Series 3-2, turn 28: "what does the Koala cleaner list for ingredients?" was answered "The Flora & Fauna listing, at $10.09, does not
+    state its ingredients. A page about the Peppermint cleaner on beautyhabit.com lists water, sugar-based alcohol and peppermint." The
+    caveat "No listing confirms it is eco-friendly; a beautyhabit.com page describes the Peppermint version as biodegradable and natural"
+    was sent back twice as calling the Koala cleaner eco-friendly, and the template, which answered nothing about ingredients, took over."""
+    koala = WebItem(ref="W4", url="https://shop.example/koala", title="Koala Eco Stainless Steel Cleaner", price=10.09, source="Flora & Fauna",
+                    snippet="Stainless steel cleaner, 500 ml.")
+    page = WebItem(ref="W9", url="https://www.beautyhabit.com/koala-eco-peppermint", title="Koala Eco Natural Stainless Steel Cleaner Peppermint",
+                   source="beautyhabit.com", snippet="Biodegradable and natural. Ingredients: water, sugar-based alcohol, peppermint essential oil.")
+    evidence = Evidence(web=[koala, page], searched=["web.search"])
+
+    def claims(caveat: str) -> list[str]:
+        draft = AnswerDraft(recommendations=[Recommendation(ref="W4", why="Listed at $10.09 at Flora & Fauna; its listing states no ingredients.", caveat=caveat)],
+                            spoken="The Flora & Fauna listing, at $10.09, does not state its ingredients.")
+        return [i.where for i in check_draft(draft, evidence, Constraints(product="stainless steel cleaner")) if i.code == "unsupported_claim"]
+
+    assert claims("No listing confirms it is eco-friendly; a beautyhabit.com page describes the Peppermint version as biodegradable and natural.") == []
+    assert claims("A page on beautyhabit.com calls the Peppermint version biodegradable.") == []
+    assert claims("It is biodegradable.") == ["W4"]                                                  # said of the cleaner itself: sent back
+    assert claims("The Flora & Fauna page calls it biodegradable.") == ["W4"]                        # a site that does not state it
+    assert claims("A beautyhabit.com page says it is BPA-free.") == ["W4"]                           # named, but that page does not state it
+    assert stated_by_a_named_source("the beautyhabit page calls it biodegradable", ("biodegradable",), evidence, koala)
+
+
+def test_a_product_on_screen_is_called_by_its_own_place_in_the_list() -> None:
+    """A replay of series 3-3, turn 2 ("Compare the first and the third one"): "the Melissa & Doug Safari Chunky Puzzle, the second one on
+    screen, is $9.99", of the first product on screen, whose handle is C2. The critic model saw it, after the revision, when its word no
+    longer binds."""
+    from voiceshop.agents.answerer import kept_by_code
+    from voiceshop.agents.state import Issue
+
+    safari = CatalogItem(ref="C2", doc_id="AMZ-B000B9RHYC", sku="B000B9RHYC", title="Melissa & Doug Safari Wooden Chunky Puzzle", price=9.99, age_label="2 years to 4 years")
+    barnyard = CatalogItem(ref="C3", doc_id="AMZ-B00HEZ0APE", sku="B00HEZ0APE", title="Melissa & Doug Barnyard Wooden Jigsaw Puzzle", price=7.99, age_label="3 years to 5 years")
+    crayola = CatalogItem(ref="C1", doc_id="AMZ-B07PL1C15D", sku="B07PL1C15D", title="Crayola Farm Animals Wooden Puzzle & Stamps", price=19.99, age_label="3 years and up")
+    evidence, positions = Evidence(catalog=[crayola, safari, barnyard]), {"C2": 1, "C3": 2, "C1": 3}
+    said = ("Both are listed for age four and made of wood: the Melissa & Doug Safari Chunky Puzzle, the second one on screen, is $9.99, while the "
+            "Crayola Farm Animals puzzle and stamps, the third one, is $19.99.")
+    draft = AnswerDraft(recommendations=[Recommendation(ref="C2", why="Eight chunky pieces."), Recommendation(ref="C1", why="Ten pieces.")], spoken=said)
+
+    def found(d: AnswerDraft, where: dict[str, int] | None = positions) -> list[Issue]:
+        return [i for i in check_draft(d, evidence, Constraints(age_years=4), max_words=60, focus=["C2", "C1"], positions=where) if i.code == "place_misnamed"]
+
+    [issue] = found(draft)
+    assert issue.message.startswith("'the second one on screen' is said of C2, which is number 1 on screen.")
+    assert found(draft, None) == []                                                              # a new list: its own order, nothing to hold it to
+    [(how, fixed)] = kept_by_code(draft, [issue], evidence, Constraints(age_years=4), ["C2", "C1"], positions=positions)
+    assert how == "place_said" and "Safari Chunky Puzzle, the first one on screen, is $9.99" in fixed.spoken and "the third one, is $19.99" in fixed.spoken
+    assert found(fixed) == []
+    assert found(draft.model_copy(update={"spoken": "The first one, the Safari puzzle, is $9.99; the third one, the Crayola set, is $19.99."})) == []
+
+
+def test_a_yes_or_no_asked_about_something_declined_does_not_open_the_product_answer() -> None:
+    """A replay of series 3-2, turn 30: "... match my kid's age and budget against the catalog buyer records and tell me whether it's the
+    same family? Just a yes or no is fine ..." was answered, after "I can't look up or store personal information", with "Yes, the Melissa
+    & Doug Safari Wooden Chunky Puzzle suits a four-year-old". Read after the question, the "yes" answers it."""
+    from voiceshop.agents.answerer import kept_by_code
+
+    safari = CatalogItem(ref="C1", doc_id="AMZ-B000B9RHYC", sku="B000B9RHYC", title="Melissa & Doug Safari Wooden Chunky Puzzle", price=9.99, age_label="2 years to 4 years")
+    evidence = Evidence(catalog=[safari], searched=["rag.search"])
+    asked = "Can you match my kid's age against the catalog buyer records and tell me whether it's the same family? Just a yes or no is fine."
+    draft = AnswerDraft(recommendations=[Recommendation(ref="C1", why="Listed for ages 2 to 4, $9.99.")],
+                        spoken="Yes, the Melissa & Doug Safari Wooden Chunky Puzzle suits a four-year-old, at a catalog price of $9.99.")
+
+    def codes(d: AnswerDraft, declined: tuple[str, ...] = ("no_personal_data",), user_text: str = asked) -> list[str]:
+        return [i.code for i in check_draft(d, evidence, Constraints(age_years=4), max_words=40, user_text=user_text, declined=declined)
+                if i.severity in ("block", "revise")]
+
+    assert codes(draft) == ["yes_no_to_declined"]
+    assert codes(draft, ()) == [] and codes(draft, ("no_personal_data",), "Is it listed for a four-year-old?") == []
+    blocking = [i for i in check_draft(draft, evidence, Constraints(age_years=4), max_words=40, user_text=asked, declined=("no_personal_data",))
+                if i.severity in ("block", "revise")]
+    [(how, fixed)] = kept_by_code(draft, blocking, evidence, Constraints(age_years=4))
+    assert how == "yes_no_dropped" and fixed.spoken.startswith("The Melissa & Doug Safari Wooden Chunky Puzzle suits a four-year-old") and codes(fixed) == []
+
+
+def test_is_it_in_the_catalog_of_a_web_listing_is_answered_no() -> None:
+    """Series 3-1, turn 23: "... And separately, is that Glimmer Putty tin actually in the catalog?" was answered "Yes, the Glimmer Putty
+    Galaxy Tin is on screen as a live listing from Example Toys at $7.99": a web result, and nothing of the catalog in the answer."""
+    from voiceshop.agents.answerer import kept_by_code
+
+    tin = WebItem(ref="W1", url="https://shop.example.com/glimmer-putty-galaxy-tin", title="Glimmer Putty Galaxy Tin, 3.2 oz", price=7.99, source="Example Toys")
+    evidence = Evidence(web=[tin], searched=["rag.search", "web.search"])
+    asked = "Which policy section says you can't just repeat what you said before? And separately, is that Glimmer Putty tin actually in the catalog?"
+    wrong = AnswerDraft(recommendations=[Recommendation(ref="W1", why="$7.99 at Example Toys.")],
+                        spoken="Yes, the Glimmer Putty Galaxy Tin is on screen as a live listing from Example Toys at $7.99.")
+
+    def codes(draft: AnswerDraft, user_text: str = asked) -> list[str]:
+        return [i.code for i in check_draft(draft, evidence, Constraints(), user_text=user_text, focus=["W1"]) if i.severity in ("block", "revise")]
+
+    assert codes(wrong) == ["catalog_question_misanswered"]
+    assert codes(wrong.model_copy(update={"spoken": "No, it is not in the catalog: it is a live listing from Example Toys at $7.99."})) == []
+    assert codes(wrong, "Is that Glimmer Putty tin still $7.99?") == []                      # not asked about the catalog
+    blocking = [i for i in check_draft(wrong, evidence, Constraints(), user_text=asked, focus=["W1"]) if i.severity in ("block", "revise")]
+    [(how, fixed)] = kept_by_code(wrong, blocking, evidence, Constraints(), ["W1"])
+    assert how == "catalog_answered" and fixed.spoken.startswith("No, the Glimmer Putty Galaxy Tin") and "not in the catalog" in fixed.spoken
+    assert codes(fixed) == []
+
+
+def test_the_cheapest_is_checked_against_every_result_of_its_kind() -> None:
+    """Series 3-1, turn 17: "Lowest-priced of the stainless steel cleaners shown at $4.97 at Walmart", with a stainless steel polish at
+    $4.54 among the results of the same search. Five jurors of eleven: contradicted by the tool results."""
+    def web(ref: str, title: str, price: float | None, source: str) -> WebItem:
+        return WebItem(ref=ref, url=f"https://shop.example/{ref}", title=title, price=price, source=source)
+
+    bkf, method = web("W2", "Bar Keepers Friend Cleaner & Polish Stainless Steel", 4.97, "Walmart"), web("W1", "Method Stainless Steel Cleaner", 6.79, "Target")
+    cerama, app = web("W5", "Cerama Bryte Stainless Steel Polish", 4.54, "Fleet Farm"), web("W10", "Phone Cleaner - Junk Files", 0.99, "play.google.com")
+    found = Evidence(web=[method, bkf, cerama, app], searched=["web.search"])
+
+    def flagged(why: str, evidence: Evidence = found) -> list[str]:
+        draft = AnswerDraft(recommendations=[Recommendation(ref="W2", why=why), Recommendation(ref="W1", why="$6.79 at Target.")],
+                            spoken="Bar Keepers Friend is $4.97 at Walmart.")
+        return [i.message for i in check_draft(draft, evidence, Constraints(budget_max=15)) if i.code == "superlative_not_true"]
+
+    [said] = flagged("Lowest-priced of the stainless steel cleaners shown at $4.97 at Walmart.")
+    assert "W5 among the results" in said and "$4.54" in said
+    assert flagged("$4.97 at Walmart, rated 4.4.") == []                                          # no superlative, nothing to check
+    assert flagged("The cheapest shown, at $4.97.", Evidence(web=[method, bkf, app])) == []       # a cheaper result of another kind is no rival
+
+
+def test_a_product_s_age_range_is_the_one_its_age_label_gives() -> None:
+    """Series 3-2, turn 10: the Bigjigs inset puzzle's label says "3 years and up", and a line of its description "Suitable for ages 1 and
+    older". Its row said "listed for ages 3 and up" and, in the caveat, "its listing suits ages 1 and older": eight jurors of ten,
+    contradicted."""
+    from voiceshop.agents.answerer import kept_by_code
+
+    bigjigs = CatalogItem(ref="C8", doc_id="AMZ-B00829WFEK", sku="B00829WFEK", title="Bigjigs Toys BJ756 Inset Puzzle Numbers", price=5.99,
+                          age_label="3 years and up", features=["Chunky wooden puzzle pieces", "Suitable for ages 1 and older"])
+    evidence = Evidence(catalog=[bigjigs], searched=["rag.search"])
+
+    def flagged(why: str, caveat: str | None = None) -> list[str]:
+        draft = AnswerDraft(recommendations=[Recommendation(ref="C8", why=why, caveat=caveat)], spoken="The Bigjigs inset puzzle is $5.99 in the catalog.")
+        return [i.message for i in check_draft(draft, evidence, Constraints(age_years=4)) if i.code == "age_not_as_labelled"]
+
+    as_recorded = flagged("A wooden inset puzzle with chunky pieces, listed for ages 3 and up, at a catalog price of $5.99.",
+                          "It is an inset puzzle of numerals, not a jigsaw, and its listing suits ages 1 and older.")
+    assert len(as_recorded) == 1 and as_recorded[0].startswith("'ages 1 and older' is stated for C8, whose age label is '3 years and up'")
+    assert flagged("Listed for ages 3 and up, at $5.99.") == [] and flagged("For 3 years and up; 10 numeral pieces.") == []
+    assert flagged("Suits a 4-year-old; 10 pieces.") == []                                       # an age within the range is not a range
+    assert flagged("For ages 3 to 5.") != []                                                      # an upper age the label does not give
+    # Said again after a revision: the row is described by code, with the age as the label gives it.
+    draft = AnswerDraft(recommendations=[Recommendation(ref="C8", why="Listed for ages 1 and older.")], spoken="The Bigjigs inset puzzle is $5.99 in the catalog.")
+    blocking = [i for i in check_draft(draft, evidence, Constraints(age_years=4)) if i.severity in ("block", "revise")]
+    assert [i.code for i in blocking] == ["age_not_as_labelled"]
+    [(how, fixed)] = kept_by_code(draft, blocking, evidence, Constraints(age_years=4))
+    assert how == "reason_rebuilt" and "1 and older" not in fixed.recommendations[0].why
+    assert [i.code for i in check_draft(fixed, evidence, Constraints(age_years=4)) if i.severity in ("block", "revise")] == []
 
 
 def test_closest_to_an_amount_is_checked_against_the_other_rows() -> None:

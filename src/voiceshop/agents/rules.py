@@ -41,6 +41,38 @@ _NUM_WORD = "|".join(sorted([*(_UNITS.keys() - {"a", "an"}), *_TENS, "hundred", 
 _NUMBER = rf"(?:\d+(?:\.\d+)?|(?:(?:{_NUM_WORD}|a|an|and)[\s-]+)*(?:{_NUM_WORD}))"
 
 
+# A price said the way people say prices: "six ninety-nine" ($6.99), "seven fifty" ($7.50), "twelve ninety five" ($12.95). The
+# number readers above sum the words ("six ninety nine" would be 105). "The Barnyard one was six ninety-nine at Terrific last
+# week, right?" was taken for no price at all, and the claim went unanswered (series 3-2, turn 10; series 2-3, turn 10 the same
+# with "five ninety nine at Target").
+_DOLLAR_WORD = r"(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen)"
+_TENS_WORD = r"(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)"
+_DIGIT_WORD = r"(?:one|two|three|four|five|six|seven|eight|nine)"
+SPOKEN_PRICE = re.compile(
+    rf"\b(?P<d>{_TENS_WORD}(?:[\s-]+{_DIGIT_WORD})?|{_DOLLAR_WORD})[\s-]+(?P<c>{_TENS_WORD}(?:[\s-]+{_DIGIT_WORD})?"
+    r"|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen)\b(?![\s-]+(?:years?|months?|pieces?|pcs|percent|%))", re.I)
+
+
+def amounts_said(text: str) -> list[float]:
+    """Every amount of money a shopper's message states, in figures or in words: "$5", "six dollars", "six ninety-nine"."""
+    out = []
+    for m in _DOLLARS.finditer(text or ""):
+        value = float(m.group("a")) if m.group("a") else words_to_number(m.group("b") or "")
+        if value:
+            out.append(round(float(value), 2))
+    return [*out, *spoken_prices(text)]
+
+
+def spoken_prices(text: str) -> list[float]:
+    """Prices said in words as dollars and cents: "six ninety-nine" -> [6.99]."""
+    out = []
+    for m in SPOKEN_PRICE.finditer(text or ""):
+        dollars, cents = words_to_number(m.group("d")), words_to_number(m.group("c"))
+        if dollars is not None and cents is not None and 0 < cents < 100:
+            out.append(round(dollars + cents / 100, 2))
+    return out
+
+
 def words_to_number(text: str) -> float | None:
     """ "twenty five" -> 25, "a hundred and fifty" -> 150, "12.5" -> 12.5."""
     raw = text.strip().lower().replace("-", " ")
@@ -139,21 +171,56 @@ def recipient_age(text: str) -> float | None:
     return None
 
 
+# "for $5" after words that say where a price was seen or paid is that price, not a limit: "under $15, Walmart had one for
+# $5" (series 3-3, turn 8, through audio) was read as two limits, the later one was taken for a correction, and the
+# catalog was searched under $5. "a puzzle for $15" and "a gift for my nephew for $20" still state a limit.
+_SEEN_BEFORE_FOR = re.compile(
+    r"\b(?:had|has|have|got|saw|seen|bought|sold|sells?|selling|listed|lists|found|paid|was|were|goes|going|went|offer(?:s|ed|ing)?"
+    r"|retail(?:s|ed|ing)?|priced|marked|on\s+sale)\b(?:\s+[\w'&.-]+){0,3}\s*$", re.I)
+# Words that take back what was just said. Two limits are a correction only with one of them between ("under fifteen
+# dollars, no wait, under twelve"; the recogniser heard "no weight").
+_CORRECTS = re.compile(
+    r"\b(?:no\s+wait|no\s+weight|wait|actually|make\s+(?:that|it)|i\s+mean[t]?|sorry|or\s+rather|scratch\s+that|change\s+(?:that|it)"
+    r"|correction|let'?s\s+say|on\s+second\s+thought)\b", re.I)
+
+
+def _limit_spans(text: str) -> list[tuple[int, int, float]]:
+    """(start, end, amount) of every upper price limit a message states, in the order said (see ``upper_limits``)."""
+    low = " ".join(text.lower().split())
+    found: list[tuple[int, int, float]] = []
+    for m in _BUDGET_MAX.finditer(low):
+        amount = words_to_number(m.group("amount"))
+        tail = low[m.end(): m.end() + 14]
+        if not (amount and amount > 0 and ("$" in m.group(0) or re.match(r"\s*(?:dollars?|bucks?|usd)\b", tail) or re.search(r"dollars?|bucks?", m.group(0)))):
+            continue
+        if m.group(0).startswith("for") and _SEEN_BEFORE_FOR.search(low[max(0, m.start() - 60):m.start()]):
+            continue
+        found.append((m.start(), m.end(), float(amount)))
+    return found
+
+
 def upper_limits(text: str) -> list[float]:
     """Every upper price limit a message states, in the order said: "under fifteen dollars, no wait, under twelve" -> [15, 12].
 
     People correct themselves aloud, and the correction comes second. In the live evaluation the recogniser heard
     "no wait" as "no weight" (the two sound the same), the Router took the first limit, and a $13.46 puzzle was shown
-    as within a budget the shopper had lowered to twelve dollars. So the later limit is the one applied, by rule.
+    as within a budget the shopper had lowered to twelve dollars. A price said with where it was seen ("Walmart had one
+    for $5") is not a limit.
+    """
+    return [amount for _, _, amount in _limit_spans(text)]
+
+
+def corrected_limit(text: str) -> float | None:
+    """The later of two price limits, when words that take the first back stand between them: "under $15, no wait, under $12" -> 12.
+
+    Without such words a second limit is no correction, and the Router's reading stands.
     """
     low = " ".join(text.lower().split())
-    found: list[float] = []
-    for m in _BUDGET_MAX.finditer(low):
-        amount = words_to_number(m.group("amount"))
-        tail = low[m.end(): m.end() + 14]
-        if amount and amount > 0 and ("$" in m.group(0) or re.match(r"\s*(?:dollars?|bucks?|usd)\b", tail) or re.search(r"dollars?|bucks?", m.group(0))):
-            found.append(float(amount))
-    return found
+    spans = _limit_spans(text)
+    if len(spans) < 2:
+        return None
+    (_, end, _), (start, _, last) = spans[-2], spans[-1]
+    return last if _CORRECTS.search(low[end:start]) else None
 
 
 def extract_constraints(text: str) -> Constraints:
@@ -169,13 +236,14 @@ def extract_constraints(text: str) -> Constraints:
             c.budget_min, c.budget_max = lo, hi
             spans.append(m.span())
     if c.budget_max is None:
-        for m in _BUDGET_MAX.finditer(low):            # no break: of two limits in one message the later one is meant (see upper_limits)
-            amount = words_to_number(m.group("amount"))
-            tail = low[m.end(): m.end() + 14]
-            is_money = "$" in m.group(0) or re.match(r"\s*(?:dollars?|bucks?|usd)\b", tail) or re.search(r"dollars?|bucks?", m.group(0))
-            if amount and amount > 0 and is_money:
-                c.budget_max = amount
-                spans.append((m.start(), m.end() + (re.match(r"\s*(?:dollars?|bucks?|usd)", tail).end() if re.match(r"\s*(?:dollars?|bucks?|usd)", tail) else 0)))
+        limits = _limit_spans(low)
+        # Of two limits the later one is meant when the shopper took the first back (see corrected_limit); else the first.
+        chosen = limits[-1] if corrected_limit(low) is not None else (limits[0] if limits else None)
+        if chosen is not None:
+            start, end, amount = chosen
+            tail = low[end: end + 14]
+            c.budget_max = amount
+            spans.append((start, end + (re.match(r"\s*(?:dollars?|bucks?|usd)", tail).end() if re.match(r"\s*(?:dollars?|bucks?|usd)", tail) else 0)))
     if c.budget_max is None:
         m = _PRICED_NOUN.search(low)                  # "a fifty dollar drone": read as the price they have in mind
         amount = words_to_number(m.group("amount")) if m else None

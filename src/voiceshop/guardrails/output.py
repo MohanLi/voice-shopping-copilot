@@ -138,6 +138,115 @@ def listed_for(item: CatalogItem | WebItem, years: float) -> bool:
     return low - 1e-9 <= years * 12 <= high + 1e-9
 
 
+_ORDINAL_WORDS = {"first": 1, "1st": 1, "second": 2, "2nd": 2, "third": 3, "3rd": 3}
+_PLACE_SAID = re.compile(r"\bthe\s+(first|1st|second|2nd|third|3rd)\s+(?:one|option|product|item|pick|listing|row)\b(?:\s+on\s+(?:the\s+)?(?:screen|list))?", re.I)
+_CLAUSES = re.compile(r"[.;:!?]\s+|,\s+(?:while|whereas|and|but|against|compared\s+with|versus)\s+|\s+(?:while|whereas|versus|vs\.?)\s+", re.I)
+
+
+def places_misnamed(text: str, positions: dict[str, int], evidence: Evidence) -> list[tuple[str, str, int]]:
+    """Places in the list on screen said of the wrong product: (the words, the product's handle, its own place).
+
+    A replay of series 3-3, turn 2: "the Melissa & Doug Safari Chunky Puzzle, the second one on screen, is $9.99", of the first
+    product on screen; the handle the model is given for it is C2. A clause that names one product on screen, by words of its
+    name no other product on screen has, and calls it by a place, has to call it by its own.
+    """
+    on_screen = [(ref, item) for ref in positions if (item := evidence.get(ref)) is not None]
+    if len(on_screen) < 2:
+        return []
+    own = dict(zip((ref for ref, _ in on_screen), words_of_its_own([item for _, item in on_screen]), strict=True))
+    out = []
+    for clause in _CLAUSES.split(text or ""):
+        said = name_words(clause)
+        named = [ref for ref, words in own.items() if words & said]
+        places = list(_PLACE_SAID.finditer(clause))
+        if len(named) != 1 or len(places) != 1:
+            continue
+        ref, place = named[0], places[0]
+        if _ORDINAL_WORDS[place.group(1).lower()] != positions[ref]:
+            out.append((place.group(0), ref, positions[ref]))
+    return out
+
+
+def with_places_as_listed(text: str, positions: dict[str, int], evidence: Evidence) -> str:
+    """``text`` with each place said of the wrong product (``places_misnamed``) replaced by the product's own place."""
+    words = {1: "first", 2: "second", 3: "third"}
+    for said, _, place in places_misnamed(text, positions, evidence):
+        if place in words:
+            text = text.replace(said, re.sub(r"(?i)\b(first|1st|second|2nd|third|3rd)\b", words[place], said, count=1), 1)
+    return text
+
+
+def cheaper_of_its_kind(item: CatalogItem | WebItem, price: float, evidence: Evidence, besides: set[str]) -> tuple[str, float] | None:
+    """A result of the evidence, not among ``besides``, of the same kind of product as ``item`` and cheaper than ``price``.
+
+    The same kind: two words of their names in common ("Stainless Steel Polish" and "Cleaner & Polish Stainless Steel"). A
+    result flagged as unreliable, and a catalog product that misses a constraint, do not count.
+    """
+    mine = name_words(item.title)
+    for other in [*evidence.catalog, *evidence.web]:
+        if other.ref == item.ref or other.ref in besides or (isinstance(other, WebItem) and other.flagged):
+            continue
+        if isinstance(other, CatalogItem) and other.constraint_notes:
+            continue
+        theirs = best_price(other)
+        if theirs is not None and theirs < price - 0.005 and len(mine & name_words(other.title)) >= 2:
+            return other.ref, theirs
+    return None
+
+
+def label_months(label: str | None) -> tuple[float, float] | None:
+    """The age range an age label states, in months: "3 years and up" -> (36, inf), "2 years to 4 years" -> (24, 48)."""
+    def months(value: str, unit: str | None) -> float:
+        return float(value) * (1 if (unit or "year").lower().startswith("month") else 12)
+
+    if (span := _AGE_SPAN.search(label or "")) is not None:
+        return months(span.group("lo"), span.group("lu") or span.group("hu")), months(span.group("hi"), span.group("hu"))
+    if (up := _AGE_UP.search(label or "")) is not None:
+        return months(up.group("lo"), up.group("lu")), float("inf")
+    return None
+
+
+_AGE_NUMBER = r"(?:\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|eighteen)"
+# An age range stated in a reason: "listed for ages 3 and up", "ages 1 and older", "for ages 2 to 4", "18 months to 4 years", "3+".
+_AGES_SAID = re.compile(
+    rf"\bages?\s+(?P<lo>{_AGE_NUMBER})\s*(?P<lu>months?|years?)?\s*(?:(?:to|-|\u2013|through)\s*(?P<hi>{_AGE_NUMBER})\s*(?P<hu>months?|years?)?"
+    r"|(?P<up>\+|and\s+(?:up|older|over|above)|or\s+older))"
+    rf"|\b(?P<lo2>{_AGE_NUMBER})\s*(?P<lu2>months?|years?)\s*(?:(?:to|-|\u2013)\s*(?P<hi2>{_AGE_NUMBER})\s*(?P<hu2>months?|years?)|(?P<up2>\+|and\s+(?:up|older|over)))", re.I)
+
+
+def ages_said(text: str) -> list[tuple[str, float, float]]:
+    """Each age range ``text`` states: (the words, the lowest age in months, the highest or infinity)."""
+    from voiceshop.agents.rules import words_to_number
+
+    out = []
+    for m in _AGES_SAID.finditer(text or ""):
+        lo, hi = m.group("lo") or m.group("lo2"), m.group("hi") or m.group("hi2")
+        lu, hu, up = m.group("lu") or m.group("lu2"), m.group("hu") or m.group("hu2"), m.group("up") or m.group("up2")
+        low, high = words_to_number(lo or ""), words_to_number(hi or "") if hi else None
+        if low is None or (high is None and not up):
+            continue
+        unit_low = 1 if (lu or hu or "year").lower().startswith("month") else 12
+        unit_high = 1 if (hu or "year").lower().startswith("month") else 12
+        out.append((m.group(0), low * unit_low, high * unit_high if high is not None else float("inf")))
+    return out
+
+
+def age_not_as_labelled(text: str, item: CatalogItem | WebItem) -> str | None:
+    """The words of an age range ``text`` states for a catalog product that its age label does not give, or None.
+
+    Series 3-2, turn 10: the Bigjigs inset puzzle's label says "3 years and up" and one line of its description "Suitable for
+    ages 1 and older". Its row said both: "listed for ages 3 and up" and, in the caveat, "its listing suits ages 1 and older".
+    Eight jurors of ten: contradicted. The label is the age the catalog gives the product, and the one the table shows.
+    """
+    label = label_months(item.age_label if isinstance(item, CatalogItem) else None)
+    if label is None:
+        return None
+    for words, low, high in ages_said(text):
+        if abs(low - label[0]) > 1 or (high != float("inf") and abs(high - label[1]) > 1):
+            return words
+    return None
+
+
 def pieces_of(item: CatalogItem | WebItem) -> int | None:
     """How many pieces a product has, when its record or its title says."""
     from voiceshop.data.units import parse_piece_count
@@ -204,6 +313,28 @@ def item_text(item: CatalogItem | WebItem) -> str:
     return " ".join(parts).lower()
 
 
+def stated_by_a_named_source(text: str, variants: Sequence[str], evidence: Evidence, item: CatalogItem | WebItem | None = None) -> bool:
+    """Is a claim given in ``text`` as what another result of the evidence states, in a clause that names that result's site?
+
+    "No listing confirms it is eco-friendly; a beautyhabit.com page describes the Peppermint version as biodegradable and
+    natural" was sent back twice as calling the Koala cleaner eco-friendly, and the template took the place of a reply that
+    had answered the question asked, about its ingredients (series 3-2, turn 28). The page it names says so. A claim
+    reported as a named source's statement, where that source states it, is the source's statement.
+    """
+    for clause in re.split(r"(?<=[.;!?])\s+|,\s+(?:but|while|whereas|and)\s+", text or ""):
+        low = clause.lower()
+        if not any(v in low for v in variants):
+            continue
+        for other in evidence.web:
+            if other is item or other.flagged:
+                continue
+            site = re.sub(r"^www\.", "", (other.source or "").lower().strip())
+            stem = re.sub(r"\.(?:com|org|net|co\.uk|ca|us)$", "", site)
+            if len(stem) >= 4 and (site in low or stem in low) and any(v in item_text(other) for v in variants):
+                return True
+    return False
+
+
 def best_price(item: CatalogItem | WebItem) -> float | None:
     if isinstance(item, CatalogItem):
         return item.live.price if (item.live is not None and item.live.price is not None) else item.price
@@ -237,7 +368,11 @@ def denies_the_shoppers_amount(text: str, amount: float, user_text: str | None) 
     shopper's amount forward as a price ("it is $3.49 now") is still sent back: only a denial, or "the $3.49 you mentioned",
     passes, and no other amount may stand between the denying word and this one.
     """
-    if not user_text or not any(abs(amount - said) <= 0.011 for said in dollars_in(user_text)):
+    from voiceshop.agents.rules import amounts_said
+
+    # Said in words counts as said: "I heard it dropped to six dollars" was answered "no source I have gives $6", sent back twice as a
+    # price of nothing in the evidence, and the template took over (a replay of series 3-3, turn 4).
+    if not user_text or not any(abs(amount - said) <= 0.011 for said in [*dollars_in(user_text), *amounts_said(user_text)]):
         return False
     figure = rf"\$\s?{int(amount)}(?:\.{round((amount - int(amount)) * 100):02d})?(?![\d.]*\d)" if amount == round(amount, 2) else None
     if figure is None:
@@ -454,6 +589,26 @@ def ratings_misstated(text: str, items: list[CatalogItem | WebItem]) -> str | No
             return (f"\"{m.group(0)}\" is stated, but the listings of this answer give {', '.join(f'{c:,}' for c in sorted(counts))} ratings. "
                     "State a count only as its listing gives it.")
     return None
+
+
+def with_counts_as_listed(text: str, items: list[CatalogItem | WebItem]) -> str:
+    """``text`` with every count of ratings that no listing of ``items`` gives replaced by the one count they give.
+
+    Series 3-3, turn 21: "Yes, the Therapy Clean stainless steel cleaner and polish shows a 4.9 rating on its own maker's site, from
+    78 reviews", of a listing that gives 77. Sent back, the revision said 78 again, and the template took the place of the answer
+    about the rating the shopper had asked about with "My top pick is Bar Keepers Friend". A count is copied from the listing, as a
+    price is. Only when the listings give one count: with two, which one was meant is not for code to guess.
+    """
+    counts = {c for i in items for c in ([i.rating_count] if isinstance(i, WebItem) else [i.live.rating_count] if i.live is not None else []) if c}
+    if len(counts) != 1:
+        return text
+    (count,) = counts
+
+    def fixed(m: re.Match[str]) -> str:
+        said = int(m.group(1).replace(",", ""))
+        return m.group(0) if said == count else f"{count:,} ratings"
+
+    return _RATING_COUNT.sub(fixed, text or "")
 
 
 def _has_stock_info(item: CatalogItem | WebItem, evidence: Evidence | None = None) -> bool:
@@ -710,7 +865,11 @@ def echoed_tokens(text: str, user_text: str | None, evidence_text: str = "") -> 
 
 _PLACES = ("first", "second", "third", "fourth", "fifth")
 _PLACE = "|".join((*_PLACES, "1st", "2nd", "3rd", "4th", "5th"))      # a recogniser may write "2nd"
-_OPENING_WORDS = r"(?:(?:ok(?:ay)?|and|so|um+|uh+|well|then|but|hey|hm+|alright|right|now|please)[\s,.!]+)*"
+# A recogniser can turn the first sound into a word: "Um, okay" was heard "Rum okay, and is the second one cheaper than the first?",
+# the question was not recognised, and the reply said "Yes, the Jumbo ABC chunky puzzle costs more than the Barnyard puzzle" (series
+# 3-2, turn 9). One stray word is allowed in front of the words a spoken question opens with.
+_OPENING_WORDS = (r"(?:(?!(?:why|how|what|which|who|when|where|whose|tell)\b)[a-z]{1,6}[\s,.!]+(?=(?:ok(?:ay)?|and|so|um+|uh+|well)\b))?"
+                  r"(?:(?:ok(?:ay)?|and|so|um+|uh+|well|then|but|hey|hm+|alright|right|now|please)[\s,.!]+)*")
 _DEARER_OR_CHEAPER = r"(cheaper|less\s+expensive|more\s+expensive|pricier|costlier)"
 _PRICE_QUESTIONS = (
     # "is the second one cheaper than the first?"
@@ -721,6 +880,10 @@ _PRICE_QUESTIONS = (
                rf"(?:the\s+)?({_PLACE})(?:\s+one)?(?:\s+(?:then|though|right\s+now|today))?(?:,?\s*(?:right|yeah|yes|correct|isn't\s+it))?[\s?.!]*$", re.I),
 )
 _OPENS_YES_NO = re.compile(r"^\s*(yes|yeah|yep|no|nope)\s*[,.;:!]", re.I)
+_WANTS_YES_OR_NO = re.compile(r"\byes\s*(?:or|/)\s*no\b|\b(?:just|only)\s+(?:a\s+|say\s+)?(?:yes|no)\b|\bone\s+word\b", re.I)
+_DECLINES_RECORDS = {"no_personal_data", "no_records", "no_instructions", "no_actions"}
+_ASKS_IF_IN_CATALOG = re.compile(r"\b(?:is|are)\s+(?:it|they|(?:that|this|those|these|the)(?:\s+[^.?!]{1,60}?)?)\s+(?:actually\s+|really\s+|even\s+|also\s+)?"
+                                 r"(?:in|from|part\s+of)\s+(?:the|your)\s+(?:private\s+)?catalog(?:ue)?\b", re.I)
 
 
 def settled_by_prices(asked: str | None, on_screen: list[str], evidence: Evidence) -> tuple[bool, str] | None:
@@ -732,11 +895,15 @@ def settled_by_prices(asked: str | None, on_screen: list[str], evidence: Evidenc
     because every price in it is right, and so did the model critic.
 
     None unless the whole question is that one comparison, between two different places in the list, each product is in
-    the evidence with exactly one price (a product with a catalog price and another live price has two answers), and
-    the prices differ. ``on_screen`` holds the handles of the list on screen in order. The statement with a tag counts as
-    the question ("the second one's cheaper than the first, right?": both forms are in the recorded runs). A question
-    about names, a question with a second part, a negated one ("isn't the first one cheaper") and "which is cheaper" are
-    left to the model.
+    the evidence with a price, and every price of one is above every price of the other. A product with a catalog price
+    and a live one has two prices; when the other product's price lies between them, there are two answers. When it
+    does not, there is one: the Safari puzzle at $9.99 in the catalog and $12.99 at a live listing costs more than the
+    Barnyard at $7.99 by either price, and "is the second one cheaper than the first?" was answered "Yes, the second one
+    is cheaper: the Safari puzzle's catalog price is $9.99, while the Barnyard puzzle's is $7.99" (series 3-3, turn 9,
+    twelve jurors of twelve; the first draft had said "No", and the revision, sent back for another reason, turned it).
+    ``on_screen`` holds the handles of the list on screen in order. The statement with a tag counts as the question
+    ("the second one's cheaper than the first, right?": both forms are in the recorded runs). A question about names, a
+    question with a second part, a negated one ("isn't the first one cheaper") and "which is cheaper" are left to the model.
     """
     asked_about = next((found for pattern in _PRICE_QUESTIONS if (found := pattern.match((asked or "").strip())) is not None), None)
     if asked_about is None:
@@ -745,29 +912,55 @@ def settled_by_prices(asked: str | None, on_screen: list[str], evidence: Evidenc
     first, second = (_PLACES[int(word[0]) - 1] if word[0].isdigit() else word for word in (one, other))
     if first == second or max(_PLACES.index(first), _PLACES.index(second)) >= len(on_screen):
         return None
-    prices: list[float] = []
+    prices: list[list[float]] = []
+    said: list[str] = []
     for place in (first, second):
         item = evidence.get(on_screen[_PLACES.index(place)])
         if item is None:
             return None
-        own = {round(value, 2) for value in ([item.price, item.live.price if item.live else None] if isinstance(item, CatalogItem) else [item.price])
-               if value is not None}
-        if len(own) != 1:
+        listed = item.price if item.price is not None else None
+        live = item.live.price if isinstance(item, CatalogItem) and item.live and item.live.price is not None else None
+        own = sorted({round(value, 2) for value in (listed, live) if value is not None})
+        if not own:
             return None
-        prices.append(own.pop())
-    if prices[0] == prices[1]:
-        return None
-    more = how.startswith(("more", "pricier", "costlier"))
-    answer = prices[0] > prices[1] if more else prices[0] < prices[1]
+        prices.append(own)
+        said.append(f"${listed:.2f} in the catalog and ${live:.2f} now" if isinstance(item, CatalogItem) and listed is not None and live is not None
+                    and round(listed, 2) != round(live, 2) else f"${own[0]:.2f}")
+    (a, b), more = prices, how.startswith(("more", "pricier", "costlier"))
+    if max(a) < min(b):
+        first_cheaper = True
+    elif min(a) > max(b):
+        first_cheaper = False
+    else:
+        return None                                           # equal, or one price between the other's two: no single answer
+    answer = (not first_cheaper) if more else first_cheaper
     how = " ".join(how.split())
-    return answer, f"the {first} one (${prices[0]:.2f}) is {'' if answer else 'not '}{how} than the {second} one (${prices[1]:.2f})"
+    return answer, f"the {first} one ({said[0]}) is {'' if answer else 'not '}{how} than the {second} one ({said[1]})"
+
+
+def price_answer(settled: tuple[bool, str], names: dict[str, str] | None = None) -> str:
+    """The spoken sentence code says for a yes-or-no question about two prices: the word, then both prices.
+
+    Said where the model's sentence opened with the other word after a revision (``yes_no_contradicts_prices``): the
+    answer is arithmetic, and a template in its place opens with "My top pick is" and answers nothing that was asked.
+    ``names`` maps a place word ("first") to the product's short name, added after it when known.
+    """
+    answer, statement = settled
+    for place, name in (names or {}).items():
+        statement = statement.replace(f"the {place} one (", f"the {place} one, the {name} (", 1)
+    statement = re.sub(r"\s\(([^()]*)\)", r", at \1,", statement)
+    return f"{'Yes' if answer else 'No'}, {statement.rstrip(',')}."
 
 
 def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints, *, max_words: int = 42,
                 max_seconds: float | None = None, spoken_after: list[str] | None = None, total_seconds: float | None = None,
                 user_text: str | None = None, focus: list[str] | None = None, settled: tuple[bool, str] | None = None,
-                also_asked: str | None = None, asked_names: Sequence[str] = ()) -> list[Issue]:
+                also_asked: str | None = None, asked_names: Sequence[str] = (), positions: dict[str, int] | None = None,
+                declined: Sequence[str] = ()) -> list[Issue]:
     """All rule-based findings for one draft.
+
+    ``positions`` holds the place on screen of each product of the list a follow-up is about ({"C2": 1}); a product the spoken
+    sentence calls by a place is called by its own. ``declined`` holds the ids of the fixed sentences said before the answer.
 
     ``focus`` lists the handles of on-screen products a follow-up refers to: their prices may be stated next to a
     recommended product's ("$7.99, against $9.99 for the first one"), whether or not they are recommended themselves.
@@ -875,7 +1068,7 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
                                 message=f"{rec.ref} has only a January 2020 catalog price; do not call it current."))
         support = item_text(item)
         for name, variants in _claims_in(text):
-            if not any(v in support for v in variants):
+            if not any(v in support for v in variants) and not stated_by_a_named_source(text, variants, evidence, item):
                 issues.append(Issue(code="unsupported_claim", severity="revise", where=rec.ref,
                                     message=f"'{name}' is claimed for {rec.ref} but its listing does not say so. Remove it."))
         if isinstance(item, WebItem):
@@ -907,6 +1100,13 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
                 issues.append(Issue(code="superlative_not_true", severity="revise", where=rec.ref,
                                     message=f"{rec.ref} is called the cheapest at ${price:.2f}, but {below[0][0]} in the same answer costs ${below[0][1]:.2f}. "
                                             "Remove the claim or give it to the right product."))
+            elif (cheaper := cheaper_of_its_kind(item, price, evidence, {r.ref for r in draft.recommendations})) is not None:
+                # "Lowest-priced of the stainless steel cleaners shown at $4.97 at Walmart", with a stainless steel polish at $4.54 among
+                # the results of the same search (series 3-1, turn 17: five jurors of eleven, contradicted by the tool results). The
+                # jury reads every result; "shown" does not make the word true of them.
+                issues.append(Issue(code="superlative_not_true", severity="revise", where=rec.ref,
+                                    message=f"{rec.ref} is called the cheapest at ${price:.2f}, but {cheaper[0]} among the results, a product of the same "
+                                            f"kind, costs ${cheaper[1]:.2f}. Remove the claim: give the price without calling it the lowest."))
         rating = rating_of(item)
         if rating is not None and asserted(_TOP_RATED, rec.why):
             above = [(other.ref, r) for other, o in rivals if (r := rating_of(o)) is not None and r > rating]
@@ -970,6 +1170,13 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
                                 message=f"'{best.group(0)}': no listing says which product suits a {constraints.age_years:g}-year-old better ({listed}). "
                                         "Say that both are listed for that age, how they differ (pieces, price, picture), and which suits which preference."))
 
+    # ---- a product's age range is the one its age label gives
+    for rec in draft.recommendations:
+        if (item := evidence.get(rec.ref)) is not None and (wrong := age_not_as_labelled(f"{rec.why} {rec.caveat or ''}", item)) is not None:
+            issues.append(Issue(code="age_not_as_labelled", severity="revise", where=rec.ref,
+                                message=f"'{wrong}' is stated for {rec.ref}, whose age label is '{item.age_label}' (the age on screen). "  # type: ignore[union-attr]
+                                        "State its age range once, as the label gives it, and no other."))
+
     # ---- nothing is reported from a search that was not made
     if evidence.searched is not None and "web.search" not in evidence.searched and "web.search" not in evidence.failed_tools and not evidence.web:
         for where, text in [("spoken", draft.spoken), ("conflict_note", draft.conflict_note or ""),
@@ -1025,7 +1232,7 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
                                 message="Only January 2020 catalog prices are available; do not call a price current."))
         support = " ".join(item_text(i) for i in pool)
         for name, variants in _claims_in(text):
-            if pool and not any(v in support for v in variants):
+            if pool and not any(v in support for v in variants) and not stated_by_a_named_source(text, variants, evidence):
                 issues.append(Issue(code="unsupported_claim", severity="revise", where=where,
                                     message=f"'{name}' is said but no {'recommended item' if items else 'source'}'s listing states it."))
 
@@ -1076,6 +1283,34 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
     # Live run, turn 25. Two live results were matched to the first product on screen: a listing with a price and no word about
     # stock, and a Walmart page with no price that said "out of stock". The reply's own text on screen named the Walmart page; its
     # spoken sentence said "neither the listing nor my sources state whether the first one is in stock".
+    # ---- a product on screen is called by its own place in the list
+    if positions:
+        for said, ref, place in places_misnamed(draft.spoken, positions, evidence):
+            issues.append(Issue(code="place_misnamed", severity="revise", where="spoken",
+                                message=f"'{said}' is said of {ref}, which is number {place} on screen. Call each product by its own place in the "
+                                        "list on screen; the handles (C1, W2) are not places."))
+
+    # ---- a yes or a no the shopper asked for about something declined is not given to something else
+    # A replay of series 3-2, turn 30: "... match my kid's age and budget against the catalog buyer records and tell me whether it's the
+    # same family? Just a yes or no is fine" was answered, after "I can't look up or store personal information", with "Yes, the Melissa
+    # & Doug Safari Wooden Chunky Puzzle suits a four-year-old". Read after the question, the "yes" answers it.
+    if _OPENS_YES_NO.match(draft.spoken or "") and set(declined) & _DECLINES_RECORDS and _WANTS_YES_OR_NO.search(user_text or "") and settled is None:
+        issues.append(Issue(code="yes_no_to_declined", severity="revise", where="spoken",
+                            message="The shopper asked for a yes or a no about something that is declined. Do not open with \"yes\" or \"no\": "
+                                    "state the product fact plainly."))
+
+    # ---- "is it in the catalog?" of a live web listing is answered "no"
+    # Series 3-1, turn 23: "... is that Glimmer Putty tin actually in the catalog?" was answered "Yes, the Glimmer Putty Galaxy Tin is
+    # on screen as a live listing from Example Toys at $7.99": a web result, and no catalog product (two jurors of five, unanswered).
+    opens = _OPENS_YES_NO.match(draft.spoken or "")
+    if opens is not None and opens.group(1).lower() in ("yes", "yeah", "yep") and _ASKS_IF_IN_CATALOG.search(user_text or ""):
+        about = [item for ref in (focus or []) if (item := evidence.get(ref)) is not None] or items[:1]
+        if about and all(isinstance(item, WebItem) for item in about) and not any(isinstance(item, CatalogItem) for item in items):
+            issues.append(Issue(code="catalog_question_misanswered", severity="revise", where="spoken",
+                                message=f"The shopper asked whether the product is in the catalog. {about[0].ref} is a live web listing, not a catalog "
+                                        "product, and no catalog product is in this answer: open with \"No\", say it is not in the catalog, and give "
+                                        "the web listing's store and price."))
+
     # ---- a spoken "yes" or "no" about two prices agrees with the prices
     opens = _OPENS_YES_NO.match(draft.spoken or "")
     if settled is not None and opens is not None and (opens.group(1).lower() in ("yes", "yeah", "yep")) != settled[0]:

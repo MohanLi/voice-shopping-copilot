@@ -230,6 +230,14 @@ def focus_refs(state: TurnState) -> list[str]:
     return [str(shown[p - 1].get("ref")) for p in route.refers_to if 0 < p <= len(shown)]
 
 
+def screen_positions(state: TurnState) -> dict[str, int]:
+    """The place on screen of each product of the list a follow-up is about: {"C2": 1, "C3": 2, "C1": 3}."""
+    route: RouteDecision | None = state.get("route")
+    if route is None or route.intent not in ("follow_up", "compare"):
+        return {}
+    return {str(entry.get("ref")): int(entry.get("position") or n) for n, entry in enumerate(state.get("shown") or [], 1) if entry.get("ref")}
+
+
 def a_search(state: TurnState) -> bool:
     """Whether this turn looks for products (a new list), as opposed to a question about the list on screen."""
     route: RouteDecision | None = state.get("route")
@@ -370,9 +378,35 @@ def with_what_was_asked_for(draft: AnswerDraft, evidence: Evidence, constraints:
     return draft.model_copy(update={"recommendations": recs}), pick.ref
 
 
+def recalled_refs(state: TurnState, evidence: Evidence) -> list[str]:
+    """The handles in this turn's evidence of the products of earlier lists that the request names (router.recalled_products).
+
+    A catalog product is found again by its id, a web listing by its address or else by the title it was shown under.
+    """
+    route: RouteDecision | None = state.get("route")
+    out: list[str] = []
+    for entry in (route.recalled if route is not None else []) or []:
+        doc_id, url = str(entry.get("doc_id") or "").upper(), str(entry.get("url") or "")
+        title = " ".join(str(entry.get("title") or entry.get("name") or "").lower().split())
+        item = next((c for c in evidence.catalog if doc_id and c.doc_id.upper() == doc_id), None) \
+            or next((w for w in evidence.web if url and w.url == url), None) \
+            or next((w for w in evidence.web if title and " ".join(w.title.lower().split()) == title), None)
+        if item is not None and item.ref not in out:
+            out.append(item.ref)
+    return out
+
+
 def template_answer(state: TurnState, evidence: Evidence, constraints: Constraints, weak: float | None) -> AnswerDraft:
-    """The answer built by code from the evidence, with the row for the product that states what was asked for (a search only)."""
-    draft = rules.answer(evidence, constraints, weak, focus_refs(state), focus_labels(state), searched_tools(state), asked=state.get("user_text"))
+    """The answer built by code from the evidence, with the row for the product that states what was asked for (a search only).
+
+    A question about a product of an earlier list is answered about that product. A replay of series 3-3, turn 21 ("since the Plant
+    Connector one has a 4.9 rating ..."): the cleaner was recalled and looked up again, the draft was sent back twice, and the template
+    opened "My top pick is Unger 2-in-1 Grout and Corner Scrubber", the first of the brushes then on screen.
+    """
+    # A catalog product of an earlier list is looked up by its id and leads the template already ("Earlier I showed you the ..."); a
+    # web listing is found again by its address or title, and is what the answer is about.
+    focus = focus_refs(state) or ([ref for ref in recalled_refs(state, evidence) if isinstance(evidence.get(ref), WebItem)] if not a_search(state) else [])
+    draft = rules.answer(evidence, constraints, weak, focus, focus_labels(state), searched_tools(state), asked=state.get("user_text"))
     route: RouteDecision | None = state.get("route")
     first = evidence.get(draft.recommendations[0].ref) if draft.recommendations else None
     if route is not None and isinstance(first, CatalogItem) and first.doc_id.upper() in route.named_ids and draft.spoken.startswith("My top pick is "):
@@ -523,6 +557,11 @@ REPAIRED = {
     "asked_product_shown": "The product the spoken sentence is about was added to the answer",
     "spoken_shortened": "The spoken sentence was shortened at a clause",
     "origin_said": "The sentence about where the product is made was written by code from the result that states it",
+    "price_answered": "A yes or a no about two prices that contradicted them was replaced by the answer code worked out, with both prices",
+    "count_as_listed": "A count of ratings that no listing gives was replaced by the count its listing gives",
+    "catalog_answered": "A yes to whether a web listing is in the catalog was replaced by what it is: a live web listing, with its store and price",
+    "place_said": "A product called by another product's place in the list was called by its own",
+    "yes_no_dropped": "A yes or a no that would have answered a declined question was taken out; the product fact stays",
     "fit_said": "A verdict on which product suits the child's age was replaced by what the listings state of each: ages, pieces and price",
     "size_word_dropped": "A word for the size of pieces, which no listing states, was taken out",
     "spoken_rebuilt": "The spoken sentence was rebuilt from the evidence (name, price, source)",
@@ -531,7 +570,8 @@ REPAIRED = {
 
 
 def kept_by_code(draft: AnswerDraft, blocking: list[Issue], evidence: Evidence, constraints: Constraints,
-                 focus: list[str] | None = None, labels: dict[str, str] | None = None) -> list[tuple[str, AnswerDraft]]:
+                 focus: list[str] | None = None, labels: dict[str, str] | None = None,
+                 settled: tuple[bool, str] | None = None, positions: dict[str, int] | None = None) -> list[tuple[str, AnswerDraft]]:
     """Repairs that keep the model's spoken sentence, tried before the sentence is rebuilt from name, price and source.
 
     A rebuilt sentence is grounded and often no longer answers the question. In the second live run it replaced two
@@ -546,6 +586,8 @@ def kept_by_code(draft: AnswerDraft, blocking: list[Issue], evidence: Evidence, 
       one code writes from the result that states it, and the rest of the sentence, the rating it gives, stays.
     * A reason on screen calls a product the cheapest or the highest rated and the answer's own table says otherwise:
       that one reason is written by code from the product's evidence. Everything else stays.
+    * The sentence opens with the wrong word of a yes or a no that code worked out from two prices (``settled``): the
+      sentence code writes from the two prices takes its place.
     * The draft abstains and lists products as well, twice. When its sentence says that something was not found, for a
       new request, that is an abstention which names what comes closest ("no marble run for eighteen months; the
       closest is the activity center, at $49.89"): the products become its sources. The template in its place opened
@@ -562,6 +604,23 @@ def kept_by_code(draft: AnswerDraft, blocking: list[Issue], evidence: Evidence, 
         return [("abstention_kept", draft.model_copy(update={"recommendations": [], "sources": refs}))]
     if draft.abstain:
         return []
+    if codes == {"rating_not_as_stated"} and all(i.message.startswith('"') for i in blocking):
+        # A count of ratings that its listing does not give, said twice: the count is copied from the listing.
+        from voiceshop.guardrails.output import with_counts_as_listed
+
+        about = [item for ref in {*(focus or []), *(rec.ref for rec in draft.recommendations)} if (item := evidence.get(ref)) is not None]
+        recs = [rec.model_copy(update={"why": with_counts_as_listed(rec.why, about), "caveat": with_counts_as_listed(rec.caveat, about) if rec.caveat else rec.caveat})
+                for rec in draft.recommendations]
+        fixed = draft.model_copy(update={"spoken": with_counts_as_listed(draft.spoken, about), "recommendations": recs,
+                                         "conflict_note": with_counts_as_listed(draft.conflict_note, about) if draft.conflict_note else draft.conflict_note})
+        if fixed != draft:
+            return [("count_as_listed", fixed)]
+    if codes == {"age_not_as_labelled"}:
+        # An age range other than the label's, said twice: the row is described by code from its evidence, with its age label.
+        wrong = {i.where for i in blocking}
+        recs = [rules.recommendation_for(item, constraints) if rec.ref in wrong and (item := evidence.get(rec.ref)) is not None else rec
+                for rec in draft.recommendations]
+        return [("reason_rebuilt", draft.model_copy(update={"recommendations": recs}))]
     if codes == {"superlative_not_true"}:
         wrong = {i.where for i in blocking}
         recs = [rules.recommendation_for(item, constraints).model_copy(update={"caveat": rec.caveat})
@@ -605,6 +664,38 @@ def kept_by_code(draft: AnswerDraft, blocking: list[Issue], evidence: Evidence, 
         return [("fit_said", draft.model_copy(update=update))]
     if any(i.where != "spoken" for i in blocking):
         return []
+    if "yes_no_contradicts_prices" in codes and codes <= {"yes_no_contradicts_prices", "spoken_too_long"} and settled is not None:
+        # The wrong word of a yes or a no about two prices, twice (series 3-3, turn 9: "Yes, the second one is cheaper", of $9.99
+        # against $7.99, after a first draft that had said "No"). The answer is arithmetic: code says it, with both prices.
+        from voiceshop.agents.finalize import brief_name
+        from voiceshop.guardrails.output import price_answer
+
+        names = {label.removeprefix("the ").removesuffix(" one"): brief_name(item)
+                 for ref, label in (labels or {}).items() if (item := evidence.get(ref)) is not None}
+        return [("price_answered", draft.model_copy(update={"spoken": price_answer(settled, names=names)}))]
+    if codes == {"place_misnamed"} and positions:
+        # A product called by another product's place in the list, twice: the place words are put right by code.
+        from voiceshop.guardrails.output import with_places_as_listed
+
+        fixed = draft.model_copy(update={"spoken": with_places_as_listed(draft.spoken, positions, evidence)})
+        if fixed.spoken != draft.spoken:
+            return [("place_said", fixed)]
+    if codes == {"yes_no_to_declined"}:
+        # A yes or a no before a product fact, after a question about something declined, twice: the word goes.
+        said = re.sub(r"^\s*(?:yes|yeah|yep|no|nope)\s*[,.;:!]\s*", "", draft.spoken, flags=re.I)
+        if said and said != draft.spoken:
+            return [("yes_no_dropped", draft.model_copy(update={"spoken": said[:1].upper() + said[1:]}))]
+    if codes == {"catalog_question_misanswered"}:
+        # "Yes" to "is it in the catalog?" of a web listing, twice: code says what it is.
+        from voiceshop.agents.finalize import brief_name
+
+        about = [item for ref in (focus or []) if (item := evidence.get(ref)) is not None] or \
+                [item for rec in draft.recommendations[:1] if (item := evidence.get(rec.ref)) is not None]
+        if about and isinstance(about[0], WebItem):
+            web = about[0]
+            price = f", at ${web.price:.2f}" if web.price is not None else ""
+            said = f"No, the {brief_name(web)} is not in the catalog: it is a live web listing from {web.source}{price}."
+            return [("catalog_answered", draft.model_copy(update={"spoken": said}))]
     if codes == {"origin_misstated"}:
         # Where it is made, said wrongly twice: the sentences about it give way to the one code writes from the result that states it.
         from voiceshop.guardrails.output import _ORIGIN_TALK, origin_statement
@@ -671,7 +762,7 @@ def make_critic_node(deps: Deps):  # type: ignore[no-untyped-def]
         names = names_not_found(asked_names(state), evidence)    # a name that was found is the Answerer's to weigh; one that was not must be said
         issues = check_draft(draft, evidence, constraints, max_words=budget, total_seconds=settings.tts_max_seconds, spoken_after=[*before, *after],
                              user_text=state.get("user_text"), focus=focus_refs(state), settled=settled_question(state), also_asked=also_asked,
-                             asked_names=names)
+                             asked_names=names, positions=screen_positions(state), declined=said_ids(state.get("preface"), route_now, state.get("user_text")))
         blocking = [i for i in issues if i.severity in ("block", "revise")]
         checked = ["rules"]
         report: CriticReport | None = None
@@ -714,7 +805,8 @@ def make_critic_node(deps: Deps):  # type: ignore[no-untyped-def]
             verdict = "fallback"
             binding = [i for i in blocking if i.code not in ADVISORY_AFTER_REVISION]
             # Repairs by code, the gentlest first; the first whose result passes every rule is kept.
-            repairs = [] if from_template else [*kept_by_code(draft, binding, evidence, constraints, focus_refs(state), focus_labels(state)),
+            repairs = [] if from_template else [*kept_by_code(draft, binding, evidence, constraints, focus_refs(state), focus_labels(state),
+                                                              settled=settled_question(state), positions=screen_positions(state)),
                                                 ("spoken_rebuilt", rebuilt_by_code(draft, binding, evidence, constraints, focus_refs(state), focus_labels(state),
                                                                                    asked=state.get("user_text")))]
             for how, fixed in repairs:
@@ -723,7 +815,9 @@ def make_critic_node(deps: Deps):  # type: ignore[no-untyped-def]
                 before, after = spoken_around_lead(fixed, evidence, constraints, state.get("route"), said_ids(state.get("preface"), state.get("route"), state.get("user_text")))
                 left = [i for i in check_draft(fixed, evidence, constraints, max_words=budget, total_seconds=settings.tts_max_seconds,
                                                spoken_after=[*before, *after], user_text=state.get("user_text"), focus=focus_refs(state),
-                                               settled=settled_question(state), also_asked=also_asked, asked_names=names)
+                                               settled=settled_question(state), also_asked=also_asked, asked_names=names,
+                                               positions=screen_positions(state),
+                                               declined=said_ids(state.get("preface"), route_now, state.get("user_text")))
                         # What no longer binds the model's draft after a revision does not bind its repair either. A sentence cut at
                         # a clause was refused for "no materials are stated" on the same draft, and the template replaced an answer
                         # whose one fault was two words too many (the sixth live run, turn 22).
@@ -733,7 +827,7 @@ def make_critic_node(deps: Deps):  # type: ignore[no-untyped-def]
                 # way. So the model's products and reasons are kept with the rebuilt sentence, and the reply is cut to time
                 # where every reply is, when it is assembled. (A replay of the second live run, turn 30: three declined
                 # parts, a product with magnets, and the template took over an answer with nothing else wrong.)
-                if how in ("spoken_rebuilt", "fit_said", "origin_said") and left and all(i.code == "spoken_too_long" for i in left):
+                if how in ("spoken_rebuilt", "fit_said", "origin_said", "price_answered") and left and all(i.code == "spoken_too_long" for i in left):
                     left = []
                 if not left:                                  # the rest of the model's answer passed: keep it
                     for issue in blocking:

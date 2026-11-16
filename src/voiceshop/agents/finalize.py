@@ -177,6 +177,8 @@ def _has_live_price(item: CatalogItem | WebItem) -> bool:
     return isinstance(item, WebItem) or (item.live is not None and item.live.price is not None)
 
 
+# A claim about a sale or a discount, as opposed to one about an amount: "the Safari one was on sale", "half off".
+_SALE_CLAIM = re.compile(r"\b(?:on\s+sale|sales?|discount\w*|clearance|deals?|marked\s+down|half\s+(?:price|off)|coupons?|price\s+(?:drop|cut)\w*)\b|\d\s?%\s+off", re.I)
 _SALE_WORDS = re.compile(r"\b(?:sale|discount\w*|clearance|deals?|marked\s+down|price\s+drop|save\s+\$?\d|was\s+\$)|\d\s?%\s+off", re.I)
 
 
@@ -192,6 +194,7 @@ def brief_name(item: CatalogItem | WebItem, max_words: int = 5) -> str:
 # What a pressed claim is about, when it is about a price or an age. (Qualities, ratings and stock have their patterns in the rule checks.)
 _PRICE_CLAIM = re.compile(r"\$\s?\d|\b\d+(?:\.\d+)?\s*(?:dollars?|bucks?)\b|\b(?:dollars?|bucks?|priced?|prices|cost(?:s|ing)?|sales?|discount\w*|deals?|clearance|"
                           r"marked\s+down|half\s+(?:price|off)|cheap(?:er)?|on\s+offer|coupons?)\b|\d\s?%\s+off", re.I)
+_PRICE_CLAIM = re.compile(_PRICE_CLAIM.pattern + "|" + rules.SPOKEN_PRICE.pattern, re.I)       # "six ninety-nine at Terrific"
 _AGE_CLAIM = re.compile(r"\bages?\b|\byears?[\s-]olds?\b|\bmonths?[\s-]olds?\b|\b(?:toddlers?|bab(?:y|ies)|infants?)\b", re.I)
 # An amount with no unit, said of the product: "You said Barnyard was six, right?" (run 6), "the Barnyard's five now" (run 5).
 # Narrow on purpose, because a number in a toy shop is as often an age or a count: only after a form of "to be", only where
@@ -209,17 +212,23 @@ _STANDS_FOR_A_PRODUCT = {"one", "it", "that", "this", "set", "puzzle", "kit", "t
 
 def states_an_amount(pressing: str, item: CatalogItem | WebItem) -> bool:
     """Does a sentence state a bare amount of this product ("Barnyard was six", "the Safari one's five now")?"""
+    return bare_amount(pressing, item) is not None
+
+
+def bare_amount(pressing: str, item: CatalogItem | WebItem) -> float | None:
+    """The bare amount a sentence states of this product ("Barnyard was six" -> 6.0), or None."""
     if _AGE_TALK.search(pressing):
-        return False
+        return None
     names = {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", item.title.lower()) if len(w) > 2} | _STANDS_FOR_A_PRODUCT
     for match in _BARE_AMOUNT.finditer(pressing):
         before = re.findall(r"[a-z0-9]+", pressing[:match.start()].lower())[-1:]
         if before and before[0].rstrip("s") in names:
-            return True
-    return False
+            amount = rules.words_to_number(re.sub(r"^(?:(?:was|is|were|are)\b|'s)\s+(?:only|just|about|around|like|maybe)?\s*", "", match.group(0).strip(), flags=re.I))
+            return float(amount) if amount else None
+    return None
 
 
-def claim_statement(item: CatalogItem | WebItem, pressing: str, evidence: Evidence | None = None) -> tuple[str, str] | None:
+def claim_statement(item: CatalogItem | WebItem, pressing: str, evidence: Evidence | None = None, on_screen: bool = False) -> tuple[str, str] | None:
     """What the sources state on the point of a claim the shopper pressed about a product shown earlier.
 
     Returns the sentence for the screen, with its citation, and a shorter one to say aloud; None when the claim is about
@@ -235,21 +244,32 @@ def claim_statement(item: CatalogItem | WebItem, pressing: str, evidence: Eviden
     In the third live run the fixed sentence "I can only confirm what my sources state" stood alone before the picks: three
     of six.)
     """
-    from voiceshop.guardrails.output import _RATING_TALK, _STOCK_TALK, _claims_in, item_text, rating_of
+    from voiceshop.agents.router import claimed_qualities
+    from voiceshop.guardrails.output import _RATING_TALK, _STOCK_TALK, item_text, rating_of
 
     row = table_row(0, item, "", None, evidence)
     name, brief, cite = short_name(item), brief_name(item), row.citation
-    claimed = _claims_in(pressing)
+    where = "on screen" if on_screen else "shown earlier"
+    # The qualities the sentence names, in the shopper's own word for each ("plant-based", not "eco-friendly").
+    def plain(w: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", w.lower())
+
+    claimed = [(label if plain(word) == plain(label) else word, policy.SENSITIVE_CLAIMS[label]) for label, word in claimed_qualities(pressing)]
     if claimed:
         support = item_text(item)
-        stated = [label for label, variants in claimed if any(v in support for v in variants)]
-        missing = [label for label, _ in claimed if label not in stated]
+        stated = [word for word, variants in claimed if any(v in support for v in variants)]
+        missing = [word for word, _ in claimed if word not in stated]
+        if missing and stated:
+            # "... was non-toxic and BPA-free, right?" of a listing that says non-toxic: both halves are said (series 3-3, turn 22).
+            said, unsaid = " and ".join(stated[:2]), " or ".join(missing[:2])
+            return (f"The listing of the {name}, {where}, says {said}; it does not state that it is {unsaid}, and the maker's label is the place "
+                    f"to check. [{cite}]", f"The {brief} listing says {said}, but not {unsaid}.")
         if missing:
             what = " or ".join(missing[:2])
-            return (f"The listing of the {name}, shown earlier, does not state that it is {what}; the maker's label is the place to check. [{cite}]",
+            return (f"The listing of the {name}, {where}, does not state that it is {what}; the maker's label is the place to check. [{cite}]",
                     f"The {brief} listing does not state that it is {what}.")
         what = " and ".join(stated[:2])
-        return (f"The listing of the {name}, shown earlier, says {what}; that is the listing's own statement. [{cite}]",
+        return (f"The listing of the {name}, {where}, says {what}; that is the listing's own statement. [{cite}]",
                 f"The {brief} listing says {what}.")
     if _RATING_TALK.search(pressing):
         value = rating_of(item)
@@ -286,7 +306,16 @@ def claim_statement(item: CatalogItem | WebItem, pressing: str, evidence: Eviden
     offer = "" if _has_live_price(item) else " Ask for its current price and I will check the live web."
     if _SALE_WORDS.search(" ".join(texts)):                   # a source that speaks of a sale itself: the price is stated and nothing is said about sales
         return f"The {name}, shown earlier: {row.price}. That is the price my sources state. [{cite}]", f"The {brief} is ${price:.2f} {where}."
-    if amount_only:                                           # the claim named an amount and no sale: the price, and that it is the one stated
+    from voiceshop.guardrails.output import item_prices
+
+    bare = bare_amount(pressing, item) if amount_only else None
+    claimed = [a for a in [*dollars_in(pressing), *rules.spoken_prices(pressing), *([bare] if bare else [])] if a > 0]
+    if claimed and not _SALE_CLAIM.search(pressing) and not any(abs(a - p) < 0.005 for a in claimed for p in item_prices(item)):
+        # An amount that no source gives: said so, with the price the sources state. ("... was six ninety-nine at Terrific last
+        # week, right?" series 3-2, turn 10.)
+        return (f"The {name}, shown earlier: {row.price}. No source I have gives ${claimed[0]:.2f} for it.{offer} [{cite}]",
+                f"My sources state ${price:.2f} for the {brief}, not ${claimed[0]:.2f}.")
+    if (amount_only or claimed) and not _SALE_CLAIM.search(pressing):     # an amount and no sale: the price, and that it is the one stated
         return (f"The {name}, shown earlier: {row.price}. That is the price my sources state.{offer} [{cite}]",
                 f"My sources state ${price:.2f} for the {brief}.")
     return (f"The {name}, shown earlier: {row.price}. My sources state no sale or discount for it.{offer} [{cite}]",
@@ -857,7 +886,7 @@ def pressed_claims(route: RouteDecision | None, evidence: Evidence, shown: list[
     (``RouteDecision.pressed_earlier``) is what this turn's look-up by its id returned. At most two are answered; a third
     would crowd out the answer to the request.
     """
-    if route is None or route.intent not in ("product_search", "follow_up"):
+    if route is None or route.intent not in ("product_search", "follow_up", "compare"):
         return []
     from voiceshop.agents.router import claims_by_position
 
@@ -870,7 +899,7 @@ def pressed_claims(route: RouteDecision | None, evidence: Evidence, shown: list[
         again = next((c for c in evidence.catalog if entry.get("doc_id") and c.doc_id == entry.get("doc_id")), None) \
             or next((w for w in evidence.web if not entry.get("doc_id") and entry.get("url") and w.url == entry.get("url")), None)
         item = again or next((i for i in evidence.shown_earlier if i.ref == entry.get("ref")), None)
-        stated = claim_statement(item, sentences.get(position, ""), evidence) if item is not None else None
+        stated = claim_statement(item, sentences.get(position, ""), evidence, on_screen=route.intent in ("follow_up", "compare")) if item is not None else None
         if item is not None and stated is not None:
             out.append((item, *stated))
     for record in route.pressed_earlier[:2 - len(out)]:

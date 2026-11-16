@@ -208,8 +208,12 @@ class EvidenceBuilder:
             self.relaxed.extend(r for r in data.get("relaxed") or [] if r not in self.relaxed)
             self.safety_rules.extend(r for r in data.get("safety_rules") or [] if r not in self.safety_rules)
             self.unmatched.update(data.get("unmatched_filters") or {})
-            if self.strict_matches is None:
-                self.strict_matches = data.get("strict_matches")
+            # The number that met every constraint is the one of a search that had to loosen them, the search the note under the
+            # table is about. It was the first search's: "Only 651 products met every constraint, so the search loosened: materials"
+            # stood under a table where a look-up by id (651 products within its price and age) came first and a search for one
+            # brand loosened the material (series 3-1, turn 10: three jurors of six, overstated).
+            if data.get("relaxed") and (met := data.get("strict_matches")) is not None:
+                self.strict_matches = met if self.strict_matches is None else min(self.strict_matches, met)
             score = data.get("best_match_score")
             if score is not None:
                 self.best_match_score = score if self.best_match_score is None else max(self.best_match_score, score)
