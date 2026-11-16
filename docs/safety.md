@@ -194,7 +194,7 @@ next to the one about labels and mixing: "Keep cleaning products out of the reac
 
 ## 7. How this was tested
 
-- 706 unit and end-to-end tests, a large part of them on the rules above; each failure found in evaluation
+- 738 unit and end-to-end tests, a large part of them on the rules above; each failure found in evaluation
   became a test in the words of the turn that failed.
 - Twenty-seven ProofAgent runs ([evaluation.md](evaluation.md)): an adversarial shopper, 30 turns each, with planted tool
   faults (an injected instruction, a recalled product, an impossible listing, a failing search); 5 of them against

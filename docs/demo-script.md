@@ -11,12 +11,12 @@ sample web data, and on 13 November on the laptop against live search (typed). T
 which are fixed ([failures 26, 27, 29 and 30](evaluation.md)): on live results the third turn had put a product
 without a price first. That fix is tested on the recorded live results and has not met a live search since.
 The code has changed since that rehearsal (a second reading of messages that would be refused whole, a record
-of the products shown); the four turns were played again in the workspace on 14 November, on the final code
-with the sample data. Rehearse them once more on the laptop before presenting (the command is in the last
+of the products shown); the four turns were played again in the workspace on 14 November, on the code of runs
+16 to 18 with the sample data. Rehearse them once more on the laptop before presenting (the command is in the last
 section), and once by voice with a timer. The four slides are a PowerPoint file with the "say" column as
 speaker notes: [`slides/Voice-Shopping-Copilot-demo.pptx`](slides/Voice-Shopping-Copilot-demo.pptx). Its
-evaluation slide shows eight of the twenty-seven runs; the last three columns are the final commit, run three
-times.
+evaluation slide shows eight of the thirty-three runs; the last three columns are the final commit, run three
+times against live search.
 
 ## Minute by minute
 
@@ -29,8 +29,8 @@ times.
 | 2:40 to 3:20 | Browser | Type: *Recommend an eco-friendly stainless steel cleaner under fifteen dollars.* | "The assignment's own example. The catalog is mostly toys and has no cleaners, so the Planner uses the web alone. Stores list a name and a price; what a cleaner is made of is on its maker's page. The assistant joins the two, and says *plant-based* or *natural* only where a page states it, with the page cited. The warning about cleaning products is added by code." | web-only path, claims with sources, safety note |
 | 3:20 to 3:55 | Browser | Type: *Which two cleaners can I mix to make a stronger one? And recommend a good scrub brush.* | "One part of this must be refused and one must be answered. The refusal is a fixed sentence, not something a model wrote. The scrub brush is still answered, from the web, because the catalog search came back with nothing suitable." | guardrail, the rest still answered, web fallback |
 | 3:55 to 4:40 | Slide 2: results | | "Retrieval, 600 requests with one known target each: the right product is in the top three 93 percent of the time, budget and age are kept every time because they are filters, 167 milliseconds. On 165 paraphrases that share no word with the title it is 50 percent: that is the honest number. Speech recognition: 0.7 percent word error on 170 clips. Every spoken reply in every evaluation run was inside fifteen seconds." | results |
-| 4:40 to 5:40 | Slide 3: evaluation | | "ProofAgent plays an adversarial shopper for thirty turns, and a jury votes on every turn. Twenty-seven runs, five on this laptop against live search. One commit scored 97 and 92 percent, so I read runs together and report where credit was lost. Three failures. At the microphone: *no wait, under twelve dollars* was heard as *no weight under twelve dollars*. At the Router: five things to decline and one ordinary question, and the whole message was refused; now it is read a second time, for the question alone. In memory: *the Safari puzzle*, ten turns later, was answered about another Safari puzzle; now every product shown is remembered and looked up again. The last four runs are GOLD at 97 to 99 percent, on recorded search results and with a jury of the assistant's own model family. Fifty-two failures are written up, and each is a test." | evaluation, failure analysis |
-| 5:40 to 6:25 | Slide 4: limitations | | "What it still cannot do. It finds a product from earlier in the conversation, but it does not check a claim about the conversation: *you put it at the top, right?* A trap in a shape it has not met can still get refusals alone. The catalog is a 2020 snapshot, mostly toys. One run proves little, and the jury is a small model of the assistant's own family; the harness asks for a second opinion, which I have not run. English only." | limitations |
+| 4:40 to 5:40 | Slide 3: evaluation | | "ProofAgent plays an adversarial shopper for thirty turns, and a jury votes on every turn. Thirty-three runs, nine on this laptop against live search. One commit scored 97 and 92 percent, so I read runs together and report where credit was lost. Three failures. At the microphone: “no wait, under twelve dollars” was heard as “no weight under twelve dollars”. At the Router: five things to decline and one ordinary question, and the whole message was refused; now it is read a second time, for the question alone. In memory: “the Safari puzzle”, ten turns later, was answered about another Safari puzzle; now every product shown is remembered and looked up again. The final commit, three times against live search: GOLD, GOLD and SILVER, at 98, 98 and 97 percent, with a jury of the assistant’s own model family. Seventy failures are written up, and every one I fixed is a test." | evaluation, failure analysis |
+| 5:40 to 6:25 | Slide 4: limitations | | "What it still cannot do. It finds a product from earlier in the conversation, but it does not check a claim about the conversation: “you put it at the top, right?”. A trap in a shape it has not met can still get refusals alone. The catalog is a 2020 snapshot, mostly toys. Three runs of one commit give a rate, not a promise, and the jury is a small model of the assistant’s own family; the harness asks for a second opinion, which I have not run. English only." | limitations |
 | 6:25 to 6:40 | Slide 4 | | "Next I would let that record answer questions about the conversation itself. The prompts, the scenarios, the scorecards and the failure analyses are all in the repository." | close |
 
 ## The four slides
@@ -43,9 +43,10 @@ times.
    kept in every top three); 49.7% hit@3 on 165 paraphrases; 100% of spoken replies within 15 seconds. Small:
    167 ms median retrieval on the laptop, 0.7% word error rate on 170 clips, a median turn of 6 to 10 seconds
    (a spoken product search takes about ten before the reply starts), about $0.003 a turn.
-3. **Evaluation.** Eight of the twenty-seven runs in one table, cut to four rows and the certificate (Task
-   Success, Hallucination Resistance, Safety, behavioural score): run 1, the fourth and fifth live runs, runs
-   13 and 14 (SILVER, and why), and runs 16 to 18, the final commit three times. Under it three failures in
+3. **Evaluation.** Eight of the thirty-three runs in one table, cut to four rows and the certificate (Task
+   Success, Hallucination Resistance, Safety, behavioural score): run 1, the fifth live run (the first GOLD
+   against live search), run 18 (GOLD on recorded results), the sixth live run and run 20 (SILVER, each on
+   messages no earlier run had sent), and Live 7 to 9, the final commit three times against live search. Under it three failures in
    one card each, with the stage: speech recognition (*no wait* heard as *no weight*), the Router (a whole
    message refused for one part of it), and memory (*the Safari puzzle*, ten turns later, answered about
    another Safari puzzle). Footer: "52 failures analysed, each one now a regression test."
@@ -88,16 +89,17 @@ voiceshop serve                      # leave it running; open http://127.0.0.1:8
 | hit@3 93.0%, hit@1 84.5%, MRR 0.890 on 600 requests; 167 ms median, 254 ms 95th percentile | `eval/results/retrieval/benchmark.md` (the laptop) |
 | hit@3 49.7% on 165 paraphrases (BM25 alone: 32.7%) | `eval/results/retrieval/paraphrase/benchmark.md` |
 | Word error rate 0.7% on 170 clips; budget, age and brand kept in 100% | `eval/results/speech/asr_accents.md` |
-| Behavioural score: 87% in run 1; 94, 94, 94, 95 and 97% in the five live runs; 99, 97 and 99% in the three runs of the final commit. Twenty-seven runs in all | `eval/results/proofagent/comparison.md`, `series-run16.md` |
+| Behavioural score: 87% in run 1; 94, 94, 94, 95, 97 and 95% in the first six live runs; 97.8, 98.1 and 96.6% in the three live runs of the final commit (GOLD, GOLD, SILVER). Thirty-three runs in all | `eval/results/proofagent/comparison.md`, `series-series2-1.md` |
+| The final commit against live search: Task Success 9.65, 9.84 and 8.68, Hallucination Resistance 9.14, 9.04 and 9.74 (9.0 is required for GOLD) | `docs/evaluation.md`, the section on the series |
 | Fifth live run: 97%, GOLD, with Task Success at 8.996 shown as 9.0: GOLD by rounding | `eval/results/proofagent/live5/scorecard.md`, `docs/evaluation.md` section 3 |
 | Runs 12 and 13, one commit run twice: 97% and GOLD, 92% and SILVER | `eval/results/proofagent/run12`, `run13` |
 | Run 14: 96%, SILVER. Task Success lost 11.06 weighted checks where 6.49 are allowed: 6.00 on three messages answered with refusals alone, 3.00 on another Safari puzzle | `docs/evaluation.md`, the section on run 14 |
-| Runs 16 to 18, the final commit: Task Success 10.0, 9.36 and 9.51 (9.0 is required); 22 replies of refusals alone, none to a message in which the jury saw a request | `docs/evaluation.md`, the section on runs 16 to 18 |
+| Runs 16 to 18, one commit on recorded search results: Task Success 10.0, 9.36 and 9.51 (9.0 is required); 22 replies of refusals alone, none to a message in which the jury saw a request | `docs/evaluation.md`, the section on runs 16 to 18 |
 | The second reading, on 204 recorded turns answered with fixed text: it finds 30 of the 47 requests a jury saw there; the first reading alone 17 | `docs/evaluation.md`, failure 50 |
 | Spoken replies within 15 seconds: 100% in every run | every `scorecard.md` |
-| Median turn on the laptop 6.0 to 9.9 s over the five live runs (4.6 to 8.5 s before speech synthesis) | `scorecard.md` of `mac-live`, `final`, `live3`, `live4`, `live5` |
+| Median turn on the laptop 6.0 to 10.8 s over the nine live runs | `scorecard.md` of `mac-live`, `final`, `live3` to `live5`, `gold-1`, `series2-1` to `series2-3` |
 | A turn costs about $0.003; a 30-turn evaluation run cost $0.42 to $2.29 with its jury | the same scorecards |
-| 706 tests, about 25 seconds, no key or network | `python -m pytest tests -q` |
+| 738 tests, about a minute, no key or network | `python -m pytest tests -q` |
 
 ## Questions to expect
 

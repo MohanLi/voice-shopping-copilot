@@ -200,7 +200,7 @@ Router, Planner, RAG/MCP, Answerer, TTS) from the step trace of the turn.
 **Release rule:** a version ships when the tests and a ProofAgent run pass the governance gate declared in
 `eval/proofagent/governance.yaml`.
 
-Carried out: twenty-seven runs, fifty-two failures analysed, in [evaluation.md](../evaluation.md); the
+Carried out: thirty-three runs, seventy failures analysed, in [evaluation.md](../evaluation.md); the
 configuration is in [`eval/proofagent/`](../../eval/proofagent/). A seventeenth scenario was added after the
 seventh run and is part of the eighth: the assignment's own example, a product that only the live web
 carries, which the sixteen above did not ask for.
