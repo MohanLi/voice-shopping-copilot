@@ -1,6 +1,6 @@
 # PROGRESS — Voice Shopping Copilot build log
 
-**Last updated:** 2026-11-17 03:10 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
+**Last updated:** 2026-11-17 03:45 CT · **Built by:** Claude in a cloud workspace, mirrored to Kevin's Mac
 (`~/Desktop/2026 Autumn/Applied Generative AI/Final Project/voice-shopping-copilot`).
 **The folder on the Mac is the source of truth.**
 
@@ -243,11 +243,12 @@ Prompts: router 8, second look 7, planner 5, retriever 3, answerer 22, critic 10
 
 ## Next action
 
-1. **Push**, on the Mac: `git push` (the commits after `388655c` are on the Mac but not yet on GitHub). No more paid runs: the
-   budget left (about $4) does not hold another series, and the code that was measured is the code to submit.
+1. **No more paid runs.** The budget left (about $4) does not hold another series, and the code that was measured (`752442e`,
+   series 5, GOLD three times) is the code to submit. Everything up to the series 5 write-up is on GitHub (pushed 17 Nov).
 2. **The presentation.** `docs/demo-script.md` (the seven minutes turn by turn, a checklist, fallbacks, the numbers with their
-   sources) and the four slides as a PowerPoint file with speaker notes (`docs/slides/Voice-Shopping-Copilot-demo.pptx`, rebuilt
-   with the series). Open: Kevin's rehearsal (`bash scripts/rehearse_demo.sh`, then by voice with a timer).
+   sources) and the four slides as a PowerPoint file with speaker notes (`docs/slides/Voice-Shopping-Copilot-demo.pptx`), both
+   brought up to series 5 on 17 Nov. Open: Kevin's rehearsal on the final commit (`bash scripts/rehearse_demo.sh`, about three
+   cents), then by voice with a timer.
 3. **A jury of another model family** (Kevin's decision). The harness's own reports of runs 16 and 18 call scores this uniform
    improbable and ask for one. It needs another provider's key on the Mac (the OpenAI key is in `.env` since 14 Nov) and has not been tried.
 4. **Failure 75** is a prompt line (version 22 of the Answerer's prompt widened it); 76 is answered by code since failures 80 and 81
@@ -278,9 +279,8 @@ Open points:
 
 | # | What | Command | Needed for |
 |---|------|---------|------------|
-| 1 | Bring the fixes to the Mac and run the next series, then publish | `bash scripts/mac_pull.sh`, then `caffeinate -i bash scripts/run_proofagent_series.sh series4 3`, then `git push` | a jury's measurement of the fixes |
-| 2 | The demonstration's turns against live search: a minute and a half, three cents | `bash scripts/rehearse_demo.sh` | the four turns of the demonstration on the final code |
-| 3 | Rehearse the demonstration by voice, with a timer | `voiceshop serve`, then `docs/demo-script.md` | the presentation |
+| 1 | The demonstration's turns against live search, on the final commit: a minute and a half, three cents | `bash scripts/rehearse_demo.sh` | the four turns of the demonstration on the final code |
+| 2 | Rehearse the demonstration by voice, with a timer | `voiceshop serve`, then `docs/demo-script.md` | the presentation |
 
 After each, say "done" in the chat; nothing has to be committed by hand (Claude adds the commits).
 

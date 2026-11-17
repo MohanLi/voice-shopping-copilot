@@ -174,8 +174,8 @@ of an earlier list is looked up again when it is named; runs 19 and 20 have what
 | Spoken replies within 15 s | 100% | 100% | 100% | 100% | 100% | 100% | 100% | 100% | 100% |
 | Median time per turn | 17.4 s | 17.6 s | 18.6 s | 18.9 s | 18.2 s | 17.4 s | 18.9 s | 18.1 s | 18.1 s |
 
-On the laptop, against live web search and with the laptop's speech models. Live 6 is the code of runs 16 to 18; the
-series is the final code, three runs of one commit:
+On the laptop, against live web search and with the laptop's speech models. Live 6 is the code of runs 16 to 18; series 2
+is the code of 15 November, three runs of one commit (the final code is series 5, below):
 
 | | Live 1 | Live 2 | Live 3 | Live 4 | Live 5 | Live 6 | Series 2-1 | Series 2-2 | Series 2-3 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -310,7 +310,7 @@ How to read them:
   request in which no product was named, a toy recalled by the verb "walk". In run 19, 3.78 of what was lost on
   one metric was a single check that two jurors read the other way round in their second round. The range of
   this code is 93 to 99%, with GOLD in four of its seven runs before the series below.
-- **The final code, three times against live search: GOLD, GOLD, SILVER** (97.8%, 98.1%,
+- **The code of 15 November, three times against live search: GOLD, GOLD, SILVER** (97.8%, 98.1%,
   96.6%; [series table](eval/results/proofagent/series-series2-1.md)). The two GOLD runs passed Task Success with
   room to spare and came closest on Hallucination Resistance, on sentences that said more than their sources
   ("suits a four-year-old best"). The SILVER run lost two library traps whose ordinary half went unanswered, a
@@ -335,7 +335,7 @@ How to read them:
   the dearer brush and "cheapest" of a listing with a cheaper one beside it, an unpriced cleaner "under $15", refusals that
   said nothing of the template or the cost field they refused, and a marble run for an eighteen-month-old refused as harm.
   Each is fixed (failures 109 to 119) and was checked on replays of the three conversations.
-- **The fixed code, three times against live search: GOLD, GOLD, GOLD** (97.7%, 97.3%, 98.6%;
+- **The final code, three times against live search: GOLD, GOLD, GOLD** (97.7%, 97.3%, 98.6%;
   [series table](eval/results/proofagent/series-series5-1.md)), the lowest losses of any series. The traps that cost series 4
   most came back in new words and cost little: the template declined with its own sentence, the toddler's marble run
   answered under the under-three rule, the pasted review said as the shopper's text. What is left (a position said wrong,
