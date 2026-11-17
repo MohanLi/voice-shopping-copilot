@@ -945,6 +945,88 @@ def test_the_cheapest_is_checked_against_every_result_of_its_kind() -> None:
     assert flagged("The cheapest shown, at $4.97.", Evidence(web=[method, bkf, app])) == []       # a cheaper result of another kind is no rival
 
 
+def test_the_cheapest_said_aloud_is_checked_against_every_listing_of_its_kind() -> None:
+    """Series 4-3, turn 26: "The Safari Wooden Chunky Puzzle is $14.99 now at Learning Express Houston, the cheapest live listing of the
+    ones shown", with the same puzzle at $7.98 on eBay among the results. Eight jurors of eleven: contradicted."""
+    def web(ref: str, title: str, price: float, source: str) -> WebItem:
+        return WebItem(ref=ref, url=f"https://shop.example/{ref}", title=title, price=price, source=source)
+
+    shown = [web("W36", "Melissa & Doug Safari Chunky Puzzle", 14.99, "Learning Express Houston"), web("W37", "Safari Wooden Chunky Puzzle 8 pcs", 21.57, "Walmart")]
+    ebay = web("W38", "Melissa & Doug Safari Wooden Chunky Puzzle", 7.98, "eBay")
+    draft = AnswerDraft(recommendations=[Recommendation(ref="W36", why="$14.99 now at Learning Express Houston."), Recommendation(ref="W37", why="$21.57 at Walmart.")],
+                        spoken="The Safari Wooden Chunky Puzzle is $14.99 now at Learning Express Houston, the cheapest live listing of the ones shown.")
+    found = [i for i in check_draft(draft, Evidence(web=[*shown, ebay]), Constraints(product="puzzle")) if i.code == "superlative_not_true" and i.where == "spoken"]
+    assert found and "W38" in found[0].message and "$7.98" in found[0].message
+    assert not [i for i in check_draft(draft, Evidence(web=shown), Constraints(product="puzzle")) if i.code == "superlative_not_true"]
+
+
+def test_cheaper_said_of_the_product_that_costs_more_is_sent_back() -> None:
+    """Series 4-2, turn 26: "The QEP Large Handle Scrub Brush is the cheaper long-handled one at $6.09 from tileoutlets.com", next to the
+    Grout & Tile Brush at $3.97 in the same answer. Six jurors of nine: contradicted by the sources."""
+    from voiceshop.guardrails.output import cheaper_said_wrongly
+
+    large = WebItem(ref="W2", url="https://shop.example/large", title="QEP Large Handle Scrub Brush", price=6.09, source="tileoutlets.com")
+    grout = WebItem(ref="W1", url="https://shop.example/grout", title="QEP Grout & Tile Brush", price=3.97, source="Home Depot")
+
+    def codes(spoken: str) -> list[str]:
+        draft = AnswerDraft(recommendations=[Recommendation(ref="W2", why="$6.09 at tileoutlets.com."), Recommendation(ref="W1", why="$3.97 at Home Depot.")], spoken=spoken)
+        return [i.code for i in check_draft(draft, Evidence(web=[large, grout]), Constraints(product="scrub brush"), max_words=60)]
+
+    assert "comparison_not_true" in codes("The QEP Large Handle Scrub Brush is the cheaper long-handled one at $6.09 from tileoutlets.com.")
+    assert "comparison_not_true" in codes("The QEP Large Handle Scrub Brush at $6.09 is cheaper than the QEP Grout & Tile Brush at $3.97.")
+    for right in ("The QEP Grout & Tile Brush is cheaper at $3.97 than the QEP Large Handle Scrub Brush at $6.09.",
+                  "The Grout & Tile Brush at $3.97 is the cheaper one; the QEP Large Handle Scrub Brush is $6.09.",
+                  "No, the QEP Large Handle Scrub Brush is not cheaper: it is $6.09 against $3.97."):
+        assert "comparison_not_true" not in codes(right), right
+    # The amount of the clause the word is in, a difference of prices, and a price per ounce are not judged as a price called cheaper.
+    priced = [("W1", 4.79), ("W2", 6.79)]
+    assert cheaper_said_wrongly("The Method costs $6.79, and the Weiman is cheaper.", priced) is None
+    assert cheaper_said_wrongly("The Barnyard puzzle is $2 cheaper than the Safari, at $7.99.", [("C1", 7.99), ("C2", 9.99)]) is None
+    assert cheaper_said_wrongly("It is cheaper per ounce at $6.79 than the $4.99 bottle.", priced) is None
+
+
+def test_a_question_about_sensitive_skin_is_answered_aloud() -> None:
+    """Replays of series 4-1, turn 14: "Is it safe to give him, and has anyone said it's good for kids with sensitive skin or eczema?" was
+    answered "My top pick is the Melissa & Doug Safari Chunky puzzle ... at $11.97 now at Walmart", the skin question left to a caveat."""
+    from voiceshop.agents.answerer import ADVISORY_AFTER_REVISION
+
+    safari = WebItem(ref="W1", url="https://shop.example/safari", title="Melissa & Doug Safari Chunky Puzzle", price=11.97, source="Walmart")
+    asked = "Is it safe to give him, and has anyone said it's good for kids with sensitive skin or eczema? Can you check the live web for its price too?"
+
+    def codes(spoken: str, user_text: str = asked) -> list[str]:
+        draft = AnswerDraft(recommendations=[Recommendation(ref="W1", why="$11.97 at Walmart.", caveat="No source states it suits sensitive skin.")], spoken=spoken)
+        return [i.code for i in check_draft(draft, Evidence(web=[safari]), Constraints(product="puzzle", age_years=3), max_words=60, user_text=user_text)]
+
+    assert "suitability_unspoken" in codes("My top pick is the Melissa & Doug Safari Chunky puzzle, at $11.97 now at Walmart.")
+    assert "suitability_unspoken" not in codes("No source says the Safari puzzle suits sensitive skin or eczema; it is $11.97 now at Walmart.")
+    assert "suitability_unspoken" not in codes("My top pick is the Safari puzzle, at $11.97 now at Walmart.", "how much is the safari puzzle at walmart?")
+    # A pasted review that mentions eczema is the shopper's text, not their question.
+    pasted = 'Can you sum up this review? "My daughter has eczema and this puzzle never bothered her skin at all, five stars"'
+    assert "suitability_unspoken" not in codes("The review you pasted praises the puzzle; I cannot verify it.", pasted)
+    assert "suitability_unspoken" in ADVISORY_AFTER_REVISION
+
+
+def test_a_product_without_a_price_is_not_said_to_be_within_the_budget() -> None:
+    """Series 4-1, turn 17: "On the web, the highest-rated eco-friendly option under $15 is Natural Stainless Steel Cleaner from
+    emiejames.com, rated 4.7, though its price is not stated." Seven jurors of ten: contradicted; six of six: overstated."""
+    natural = WebItem(ref="W10", url="https://shop.example/natural", title="Natural Stainless Steel Cleaner", source="emiejames.com", rating=4.7)
+    koala = WebItem(ref="W5", url="https://shop.example/koala", title="Koala Eco Stainless Cleaner", source="iHerb", price=12.9)
+    method = WebItem(ref="W1", url="https://shop.example/method", title="Method Stainless Steel Cleaner", source="Target", price=6.79)
+    evidence, constraints = Evidence(web=[natural, koala, method]), Constraints(product="stainless steel cleaner", budget_max=15)
+
+    def codes(spoken: str, recs: list[Recommendation]) -> list[str]:
+        return [i.code for i in check_draft(AnswerDraft(recommendations=recs, spoken=spoken), evidence, constraints, max_words=60)]
+
+    unpriced_first = [Recommendation(ref="W10", why="Rated 4.7 at emiejames.com."), Recommendation(ref="W5", why="$12.90 at iHerb.")]
+    assert "budget_unpriced" in codes("On the web, the highest-rated eco-friendly option under $15 is Natural Stainless Steel Cleaner from emiejames.com, "
+                                      "rated 4.7, though its price is not stated.", unpriced_first)
+    assert "budget_unpriced" in codes("My top pick is the Natural Stainless Steel Cleaner, rated 4.7.", [Recommendation(ref="W10", why="Rated 4.7, within your budget.")])
+    # A priced product said to fit, next to an unpriced one, and a denial, are not.
+    priced_first = [Recommendation(ref="W1", why="$6.79 at Target, under your $15 budget."), Recommendation(ref="W10", why="Rated 4.7; no price is stated.")]
+    assert "budget_unpriced" not in codes("On the web, my top pick is Method Stainless Steel Cleaner, $6.79 at Target, under your $15 budget.", priced_first)
+    assert "budget_unpriced" not in codes("The Natural Stainless Steel Cleaner states no price, so I cannot say it is under $15.", unpriced_first)
+
+
 def test_a_product_s_age_range_is_the_one_its_age_label_gives() -> None:
     """Series 3-2, turn 10: the Bigjigs inset puzzle's label says "3 years and up", and a line of its description "Suitable for ages 1 and
     older". Its row said "listed for ages 3 and up" and, in the caveat, "its listing suits ages 1 and older": eight jurors of ten,

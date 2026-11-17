@@ -33,8 +33,14 @@ _CAUTION_RULES: list[tuple[str, re.Pattern[str]]] = [
     ("contains solvents", re.compile(r"\bcontains?\s+solvents?\b", re.I)),
     ("flammable", re.compile(r"\b(?:extremely\s+|highly\s+)?flammable\b", re.I)),
     ("corrosive", re.compile(r"\bcorrosive\b", re.I)),
-    # Safety notices: said plainly whoever asks, and such a product is not recommended (safety policy).
-    ("recalled", re.compile(r"\b(?:was|were|been|is|are)\s+recalled\b|\brecall(?:ed)?\s+(?:notice|in|over|because|due|for)\b|\bsafety\s+recall\b", re.I)),
+    # Safety notices: said plainly whoever asks, and such a product is not recommended (safety policy). A site's menu is not a
+    # notice: the maker's page of the Safari puzzle ended "... you have 90 days to return it, Safety Recall About Us", its links
+    # to a recall page and to the company. Read as a recall, it had the puzzle withheld "for a recall mention on the maker's own
+    # page", and the template recommended it in the reply's place (series 4-1, turn 14). "Safety recall" counts as a statement
+    # with an article or a word that goes on to say what was recalled ("a safety recall of", "Safety Recall: ...").
+    ("recalled", re.compile(r"\b(?:was|were|been|is|are|being)\s+recalled\b|\brecall(?:ed)?\s+(?:notice|in|over|because|due|for|of)\b"
+                            r"|\bannounce[sd]?\s+(?:a\s+)?recall\b|\b(?:a|the|this|voluntary)\s+safety\s+recall\b"
+                            r"|\bsafety\s+recall\s*(?::|(?:of|for|on|notice|issued|affecting|involving)\b)", re.I)),
     ("discontinued", re.compile(r"\bdiscontinued\b|\bno\s+longer\s+(?:made|sold|produced)\b", re.I)),
 ]
 

@@ -54,13 +54,43 @@ SPOKEN_PRICE = re.compile(
 
 
 def amounts_said(text: str) -> list[float]:
-    """Every amount of money a shopper's message states, in figures or in words: "$5", "six dollars", "six ninety-nine"."""
-    out = []
-    for m in _DOLLARS.finditer(text or ""):
-        value = float(m.group("a")) if m.group("a") else words_to_number(m.group("b") or "")
-        if value:
-            out.append(round(float(value), 2))
-    return [*out, *spoken_prices(text)]
+    """Every amount of money a shopper's message states, in figures or in words: "$5", "six dollars", "six ninety-nine".
+
+    Also as much of the world writes it, with the sign after the figure and a comma for the decimal point: "9,99 $", "12 $",
+    "US$ 12", "12 dólares". "¿El precio de 9,99 $ en usatoyfactory.com es del mismo juguete que el de Learning Express ... el de
+    12 $?" was answered "I could not find a usatoyfactory.com listing at $9.99 or a Learning Express listing at $12", and $12
+    was taken for a price the reply had made up: sent back twice, the reply was replaced by the template, "My top pick is
+    BeginAgain BuddyBlocks Safari Animals" (series 4-1, turn 19: none of four jurors found the question answered).
+    """
+    found: list[tuple[int, float]] = []
+    spans: list[tuple[int, int]] = []
+    for pattern in (_SIGN_BEFORE_COMMA, _DOLLARS, _SIGN_AFTER):
+        for m in pattern.finditer(text or ""):
+            if any(m.start() < end and start < m.end() for start, end in spans):
+                continue
+            if pattern is _DOLLARS:
+                value = float(m.group("a").replace(",", "")) if m.group("a") else words_to_number(m.group("b") or "")
+            else:
+                value = figure_amount(m.group("n"))
+            if value:
+                found.append((m.start(), round(float(value), 2)))
+                spans.append(m.span())
+    return [*(value for _, value in sorted(found)), *spoken_prices(text)]
+
+
+# The sign after the figure, and a decimal comma: "9,99 $", "12 $", "12$", "US$ 12" is caught by _DOLLARS, "1.299,00 $".
+_SIGN_AFTER = re.compile(r"(?<![\w.,$])(?P<n>\d+(?:[.,]\d{3})*(?:[.,]\d{1,2})?)\s?(?:US\s?\$|\$|USD\b|d[oó]lares\b)", re.I)
+_SIGN_BEFORE_COMMA = re.compile(r"\$\s?(?P<n>\d+(?:\.\d{3})*,\d{1,2})(?!\d|,\d)")       # "$9,99"
+
+
+def figure_amount(raw: str) -> float | None:
+    """A figure as an amount: "9,99" -> 9.99, "12" -> 12.0, "1.299,00" -> 1299.0, "1,000" -> 1000.0 (two digits or one after the last mark are cents)."""
+    m = re.fullmatch(r"(?P<whole>\d+(?:[.,]\d{3})*?)(?:[.,](?P<cents>\d{1,2}))?", raw.strip())
+    if m is None:
+        return None
+    whole = float(re.sub(r"[.,]", "", m.group("whole")))
+    cents = m.group("cents")
+    return round(whole + (float(cents) / 10 ** len(cents) if cents else 0.0), 2)
 
 
 def spoken_prices(text: str) -> list[float]:
@@ -112,7 +142,7 @@ _BUDGET_MAX = re.compile(
 _BETWEEN = re.compile(rf"\bbetween\s+\$?\s?(?P<lo>{_NUMBER})\s*(?:dollars?|bucks?)?\s+and\s+\$?\s?(?P<hi>{_NUMBER})\s*(?:dollars?|bucks?)?", re.I)
 _PRICED_NOUN = re.compile(rf"(?<![\w$])(?P<amount>{_NUMBER})[\s-]+(?:dollar|buck)\s+(?!budget\b)\w+", re.I)
 _BUDGET_MIN = re.compile(rf"\b(?:over|above|more\s+than|at\s+least)\s+{_MONEY}\s*(?:dollars?|bucks?|usd)\b", re.I)
-_DOLLARS = re.compile(rf"(?:\$\s?(?P<a>\d+(?:\.\d+)?)|(?P<b>{_NUMBER})\s*(?:dollars?|bucks?))", re.I)
+_DOLLARS = re.compile(rf"(?:\$\s?(?P<a>\d{{1,3}}(?:,\d{{3}})+(?:\.\d+)?|\d+(?:\.\d+)?)|(?P<b>{_NUMBER})\s*(?:dollars?|bucks?))", re.I)
 _AGE_YEARS = re.compile(rf"\b(?P<n>{_NUMBER})[\s-]*(?:years?|yrs?)[\s-]*(?:old|olds)?\b", re.I)
 _AGE_MONTHS = re.compile(rf"\b(?P<n>{_NUMBER})[\s-]*months?[\s-]*(?:old|olds)?\b", re.I)
 _AGE_FOR = re.compile(rf"\b(?:age[ds]?|turning|who\s+is|who's)\s+(?P<n>{_NUMBER})\b", re.I)
@@ -639,6 +669,8 @@ def wish_support(item: CatalogItem | WebItem, constraints: Constraints) -> list[
 def pick(evidence: Evidence, constraints: Constraints, weak_score: float | None = None, limit: int = 3) -> list[CatalogItem | WebItem]:
     """Up to ``limit`` items: catalog products that fit first, then ones that miss a constraint, then priced web results."""
     catalog = [c for c in evidence.catalog if weak_score is None or c.rerank_score is None or c.rerank_score >= weak_score]
+    # Nor is a catalog product whose live listings state a recall: the listing matched to it speaks for it.
+    catalog = [c for c in catalog if not any(w.matched_ref == c.ref and any(x in policy.WITHDRAWN for x in all_cautions(w)) for w in evidence.web)]
     fitting = [c for c in catalog if _fits(c, constraints)]
     missing = [c for c in catalog if not _fits(c, constraints)]
     web = [w for w in evidence.web if w.matched_ref is None and w.price is not None and not w.flagged and w.availability != "out_of_stock"

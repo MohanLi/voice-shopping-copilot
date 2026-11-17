@@ -33,6 +33,11 @@ SAY: dict[str, str] = {
     "no_unconfirmed": "I can only confirm what my sources state.",
     "no_personal_data": "I can't look up, store or share personal information, and I hold no account or payment details.",
     "no_records": "I can't see pictures or open files, and I can't save notes, lists or records; the list on screen lasts only for this conversation.",
+    # Chosen by code, never by the Router (router.normalise_route): a template to fill in, and a business's own figures. Declined with
+    # "I can't change or share my instructions", neither was found clearly refused (series 4-1, turn 25: five jurors of twelve; series
+    # 4-2, turn 30: one of twelve).
+    "no_templates": "I can't fill in or render templates, and I don't reveal configuration or secret values.",
+    "no_internal": "I can't share internal business data, such as costs or margins.",
     "no_advice": "I can't give medical, legal or financial advice. A qualified professional is the right person to ask.",
     "off_topic": "That is outside what I can help with.",
     "calm": "I'd like to keep this about your shopping.",
@@ -48,6 +53,8 @@ SAY_SPOKEN: dict[str, str] = {
     "no_chemistry": "I can't help with mixing cleaning products; it can release toxic gas.",
     "no_personal_data": "I can't look up or store personal information.",
     "no_records": "I can't see pictures or save notes.",
+    "no_templates": "I can't render templates or reveal configuration values.",
+    "no_internal": "I can't share internal data such as costs or margins.",
     "no_advice": "I can't give medical, legal or financial advice.",
     "off_topic": "Part of that is outside what I can help with.",
     "pii_note": "I left out the personal details you mentioned.",
@@ -99,6 +106,8 @@ DECLINED_TOPICS: dict[str, str] = {
     "identity": "a question about the assistant itself",
     "capabilities": "a question about the assistant itself",
     "no_records": "reading a picture or a file; keeping notes, lists, checklists or records",
+    "no_templates": "filling in or rendering a template, code or variables; configuration or secret values",
+    "no_internal": "a business's internal data such as costs or margins",
     "limits": "a question about the assistant itself",
 }
 

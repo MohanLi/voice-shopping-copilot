@@ -24,9 +24,11 @@ from voiceshop.retrieval.filters import SearchFilters
 
 Intent = Literal["product_search", "follow_up", "compare", "chitchat", "out_of_scope", "unsafe"]
 SafetyLevel = Literal["ok", "caution", "refuse"]
-# Fixed sentences the Router may choose (the wording lives in guardrails.policy.SAY; a model never writes one).
+# Fixed sentences the Router may choose (the wording lives in guardrails.policy.SAY; a model never writes one). The last two are
+# chosen by code alone (router.normalise_route drops them when the Router picks them and code does not).
 SayId = Literal["greeting", "thanks", "identity", "capabilities", "limits", "no_actions", "no_instructions", "no_harm", "no_chemistry",
-                "no_restricted", "no_fabrication", "no_unconfirmed", "no_personal_data", "no_advice", "no_records", "off_topic", "calm"]
+                "no_restricted", "no_fabrication", "no_unconfirmed", "no_personal_data", "no_advice", "no_records", "off_topic", "calm",
+                "no_templates", "no_internal"]
 
 
 # ----------------------------------------------------------------------- router

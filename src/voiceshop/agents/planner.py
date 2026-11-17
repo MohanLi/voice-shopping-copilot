@@ -144,9 +144,10 @@ def recalled_listings(route: RouteDecision, steps: list[PlanStep]) -> tuple[list
     from voiceshop.agents.router import _name_words
 
     notes: list[str] = []
+    front: list[PlanStep] = []          # in the order the request names them: the first is kept when the plan is cut to MAX_STEPS
     for entry in (e for e in route.recalled if not e.get("doc_id")):
         title = " ".join(str(entry.get("title") or entry.get("name") or "").split())[:200]
-        if not title or any(s.tool == "web.search" and s.query == title for s in steps):
+        if not title or any(s.tool == "web.search" and s.query == title for s in [*front, *steps]):
             continue
         again = PlanStep(tool="web.search", purpose=RECALLED_BY_NAME, query=title, kind="shopping", top_k=5)
         named_by = set(entry.get("named_by") or [])
@@ -154,9 +155,9 @@ def recalled_listings(route: RouteDecision, steps: list[PlanStep]) -> tuple[list
         if same:
             steps = [again if n == same[0] else s for n, s in enumerate(steps) if n == same[0] or n not in same]
         else:
-            steps = [again, *steps]
+            front.append(again)
         notes.append("a listing shown earlier in this conversation is searched for by the name it was shown under")
-    return steps, notes
+    return [*front, *steps], notes
 
 
 def names_only_ids(route: RouteDecision, constraints: Constraints) -> bool:

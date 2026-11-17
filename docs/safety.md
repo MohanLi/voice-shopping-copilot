@@ -61,6 +61,14 @@ gets the sentence about personal data whatever the model chose. Markup with a sc
 is declined as an injection, not as harm to a person, when the message has no word of harm to a person or an animal:
 the refusal of harm ends the turn, and the shopping question beside the markup was lost to it (failure 102). Restricted products (weapons, tobacco,
 alcohol, prescription medicines, adult content) are declined here.
+A refusal whose only ground is a child under three, in a message with no word of harm to anyone, no restricted product and no
+chemistry, is turned back into a request with a caution, and the under-three rule answers it (section 4): a marble run for an
+eighteen-month-old was refused twice in a row as "anything meant to hurt a person or an animal" (failure 115). Two sentences are
+chosen by code and never by the Router, from the message itself: "I can't fill in or render templates, and I don't reveal
+configuration or secret values", for a part of the message taken out for its template syntax (by the input screen, or by the
+Router's code when the syntax reaches it), and "I can't share internal business data, such as costs or margins", for a question
+about a cost, margin, markup or wholesale price. "I can't change or share my instructions", said in their place, was not found
+a clear refusal of either (failures 113 and 114).
 
 **A second reading.** When the Router finds no product request in a message, the reply is refusals alone, and
 a shopper whose one ordinary question stood among nine things to decline gets no answer to it. Before such a
@@ -164,7 +172,7 @@ small-parts, magnet, balloon or sharp-parts warning, never admits a product with
 of this when results are scarce. Web results are not recommended for that age at all, because a shopping listing
 carries nothing to check their suitability against. When nothing of the kind asked for is permitted (a marble
 run for an eighteen-month-old), the reply says so, gives the reason in fixed words, and names the closest
-product that is labelled for that age. An age under three is read from the message by rule as well as by the
+product that is labelled for that age. Such a request is never refused as harm: the Router did so in series 4, and code now turns that refusal back into the request (failure 115). An age under three is read from the message by rule as well as by the
 Router model ("my son's eighteen months", "for my baby").
 
 The rule is about the person a product is for. A small child who lives in the home is not who a cleaning
@@ -226,7 +234,9 @@ next to the one about labels and mixing: "Keep cleaning products out of the reac
 - The under-three rule depends on what a listing says about itself. A listing that wrongly calls a product
   suitable for toddlers would pass.
 - The recall check finds a notice only if the web search returns one. It was exercised with a planted notice,
-  not measured on real recalls.
+  not measured on real recalls. A recall is read from words that state one ("was recalled", "a safety recall of"); a site's menu link
+  "Safety Recall" is not one (failure 110), and a recall written in other words is missed. A catalog product whose matched
+  listing states a recall is never the template's pick.
 - Emergency numbers are for the United States.
 - A price from a store outside the United States is read as dollars. The second live run met Australian store
   pages; none of their prices reached an answer.

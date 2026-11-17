@@ -60,9 +60,13 @@ from voiceshop.speech.text import WORDS_PER_SECOND, estimate_seconds
 # answer, not a truer one, and a draft that still says it after the revision is better than the template in its place
 # (a replay of the fifth live run's turn 14: the page's only "material" was the tin the putty came in).
 # A second is "the product you also asked about is not mentioned": the reply is incomplete, not untrue.
+# So is "the shopper asked for a price and the spoken sentence gives none". "The Safari Chunky puzzle has a recall mention on the
+# maker's own page, so I can't recommend it" was a revision without the Walmart price, and the template took its place: "My top
+# pick is Melissa & Doug Safari Wooden Chunky Puzzle, $11.97 now at Walmart", the product the revision had held back, and not a
+# word about the safety and skin questions asked (series 4-1, turn 14: two jurors of four found the request answered).
 ADVISORY_AFTER_REVISION = ("critic_unsupported", "critic_constraint", "critic_unfit", "critic_safety", "critic_unanswered", "materials_overlooked",
                            "asked_product_unmentioned", "superlative_unscoped", "comparison_one_sided", "price_asked_not_said",
-                           "pick_reason_unanswered")
+                           "pick_reason_unanswered", "price_asked_not_given", "alternative_called_match", "suitability_unspoken")
 TAIL_WORDS = 9                   # "Two more options and the sources are on screen."
 QUESTION_WORDS = 12              # room for the follow-up question (or the safety sentence that replaces it)
 LEAD_SECONDS = 9.5               # how long the Answerer's own sentence may take to say; the pointer to the screen follows it
@@ -134,9 +138,14 @@ def _request_block(state: TurnState, constraints: Constraints, plan: Plan | None
                      "name if there is one (a set that includes it, another size).")
     for name in names_not_found(asked_names(state), state.get("evidence") or Evidence())[:2]:
         # Said before the first draft, so that the reply does not need a revision to say it (the sixth live run, turn 13).
+        # "I did not find the Zentrix Hoverboard Pro nine thousand. My closest match is the Hover-1 Helix, at a catalog price of $128.00"
+        # (series 4-1, turn 13: four jurors of ten, contradicted; four of six, overstated). The other hoverboard is no match for it, and
+        # its price is not the price asked for. "On the web, a kids' hoverboard at Walmart is listed at $85.89, but it is not the named
+        # product" lost a fifth as much (series 4-2, turn 13).
         lines.append(f'The request names "{name}". No evidence item carries that name: it was not found. Say so first in "spoken", in a few '
                      "words, then answer what was asked about the products that were found. State nothing about the product that was not "
-                     'found. Call an evidence item "the closest" only if it is the same kind of product as the one that was not found. Use '
+                     'found, and give no price for it. Call an evidence item "the closest" only if it is the same kind of product as the one '
+                     'that was not found, and say in the same sentence that it is a different product; never call it a match. Use '
                      '"follow_up_question" to offer a search for something similar.')
     if route and route.named_ids:
         lines.extend(named_id_lines(route.named_ids, state.get("evidence") or Evidence(), route.recalled_ids()))

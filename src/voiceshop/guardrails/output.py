@@ -177,6 +177,86 @@ def with_places_as_listed(text: str, positions: dict[str, int], evidence: Eviden
     return text
 
 
+_CHEAPER = re.compile(r"\b(?:cheaper|less\s+expensive|lower[-\s]priced|costs?\s+less|lower\s+price)\b", re.I)
+_SENTENCE_END = re.compile(r"[.!?;](?=\s|$)")
+_SUITS_SKIN = re.compile(r"\bsensitive\s+skin\b|\beczema\b|\ballerg(?:y|ies|ic)\b|\bhypoallergenic\b|\bdermatitis\b|\bpsoriasis\b", re.I)
+_CALLED_A_MATCH = re.compile(r"\b(?:closest|nearest|best|my|a|the)\s+(?:catalog\s+|web\s+)?match(?:es)?\b|\bmatch(?:es)?\s+(?:it|that|what\s+you)\b", re.I)
+_PER_UNIT = re.compile(r"\bper\s+(?:ounce|oz|fl\.?\s*oz|count|piece|unit|item)\b|/\s?oz\b|\beach\b", re.I)
+
+
+def cheaper_said_wrongly(text: str, priced: list[tuple[str, float]]) -> tuple[float, str, float] | None:
+    """(the amount a clause calls cheaper, the product that costs less, its price) when a comparison of prices is the wrong way round.
+
+    "The QEP Large Handle Scrub Brush is the cheaper long-handled one at $6.09 from tileoutlets.com", next to the Grout & Tile Brush
+    at $3.97 in the same answer (series 4-2, turn 26: six jurors of nine, contradicted by the sources). ``priced`` holds the
+    products the answer is about with their prices. In "X at $A is cheaper than Y at $B" the amount called cheaper is the one
+    before the word, compared with those after "than"; in "the cheaper one at $A" it is the nearest one, compared with every
+    other product of the answer. A comparison that is denied or hedged, or made per ounce, is not judged.
+    """
+    for m in all_asserted(_CHEAPER, text):
+        # The sentence of the word, ended by a mark that a space follows: "$6.09" and "tileoutlets.com" end nothing.
+        start = max((b.end() for b in _SENTENCE_END.finditer(text, 0, m.start())), default=0)
+        after = _SENTENCE_END.search(text, m.end())
+        sentence = text[start:after.start() if after else len(text)]
+        if _PER_UNIT.search(sentence):
+            continue
+        at = m.start() - start
+        amounts = [(a.start(), float(a.group(1).replace(",", ""))) for a in _DOLLARS.finditer(sentence)]
+        if not amounts:
+            continue
+        than = re.search(r"\bthan\b", sentence[at:])
+        if than is not None:
+            before = [value for pos, value in amounts if pos < at]
+            after = [value for pos, value in amounts if pos > at + than.start()]
+            called = before[-1] if before else next((value for pos, value in amounts if at < pos < at + than.start()), None)
+            if called is not None and after and called > min(after) + 0.005:
+                return called, "", min(after)
+            continue
+        # Without "than", the amount of the clause the word is in: "The Method costs $6.79, and the Weiman is cheaper" calls no amount cheaper.
+        bounds = [0, *(b.end() for b in _CLAUSE_OF_A_REPLY.finditer(sentence)), len(sentence)]
+        lo = max(b for b in bounds if b <= at)
+        hi = min(b for b in bounds if b > at)
+        in_clause = [(pos, value) for pos, value in amounts if lo <= pos < hi]
+        if not in_clause:
+            continue
+        called = min(in_clause, key=lambda pos_value: abs(pos_value[0] - at))[1]
+        if called < 1.0:
+            continue                                   # "$0.50 cheaper": a difference, not a price
+        cheaper = [(ref, price) for ref, price in priced if price < called - 0.005]
+        if cheaper and any(abs(price - called) <= 0.011 for _, price in priced):
+            ref, price = min(cheaper, key=lambda ref_price: ref_price[1])
+            return called, ref, price
+    return None
+
+
+_WITHIN_BUDGET = re.compile(r"\b(?:under|below|within|less\s+than|inside)\s+(?:(?:your|the|my|a)\s+)?(?:\$\s?\d[\d.,]*|[\w-]+\s+dollars?|budget|limit|price\s+range)"
+                            r"|\b(?:fits?|meets?|in|stays?\s+(?:in|within))\s+(?:your|the)\s+(?:\$\s?\d[\d.,]*\s+)?(?:budget|price\s+range|limit)\b", re.I)
+
+
+def budget_said_of_unpriced(text: str, items: list[CatalogItem | WebItem]) -> CatalogItem | WebItem | None:
+    """A product with no price that a clause of ``text`` says is under the budget, or None.
+
+    "On the web, the highest-rated eco-friendly option under $15 is Natural Stainless Steel Cleaner from emiejames.com, rated 4.7,
+    though its price is not stated" (series 4-1, turn 17: seven jurors of ten, contradicted; six of six, overstated). A product
+    whose listing gives no price is under no budget the reply can know of. The product is the one the clause names, by two words of
+    its name, or the only product of ``items``.
+    """
+    own = {item.ref: name_words(item.title) for item in items}
+    distinct = {ref: words - set().union(*(w for r, w in own.items() if r != ref)) for ref, words in own.items()}
+    for clause in _CLAUSE_OF_A_REPLY.split(text or ""):
+        if not _WITHIN_BUDGET.search(clause) or _HEDGE.search(clause):
+            continue
+        said = name_words(clause)
+        # Named by a word of its own ("Natural" against "Method"), else by two words of its name when no other product has them.
+        named = [item for item in items if distinct[item.ref] & said] \
+            or [item for item in items if len(own[item.ref] & said) >= 2 and not any(len(own[o.ref] & said) >= 2 for o in items if o is not item)] \
+            or (items if len(items) == 1 else [])
+        for item in named:
+            if best_price(item) is None:
+                return item
+    return None
+
+
 def cheaper_of_its_kind(item: CatalogItem | WebItem, price: float, evidence: Evidence, besides: set[str]) -> tuple[str, float] | None:
     """A result of the evidence, not among ``besides``, of the same kind of product as ``item`` and cheaper than ``price``.
 
@@ -349,6 +429,14 @@ def stated_by_a_named_source(text: str, variants: Sequence[str], evidence: Evide
             stem = re.sub(r"\.(?:com|org|net|co\.uk|ca|us)$", "", site)
             if len(stem) >= 4 and (site in low or stem in low) and any(v in item_text(other) for v in variants):
                 return True
+            # Or by its own name: "No catalog listing states it is non-toxic; a live web result, 3D Owl Wood Puzzle, is described as
+            # non-toxic but is a different product" was sent back as calling the Barnyard puzzle non-toxic, and the template took
+            # the place of a reply that had answered the question (a replay of series 4-1, turn 8). Two words of the result's
+            # title, one of them in no title of the product the text is about.
+            said, theirs = name_words(clause), name_words(other.title)
+            own = name_words(item.title) if item is not None else set()
+            if len(theirs & said) >= 2 and (theirs - own) & said and any(v in item_text(other) for v in variants):
+                return True
     return False
 
 
@@ -389,12 +477,31 @@ def denies_the_shoppers_amount(text: str, amount: float, user_text: str | None) 
 
     # Said in words counts as said: "I heard it dropped to six dollars" was answered "no source I have gives $6", sent back twice as a
     # price of nothing in the evidence, and the template took over (a replay of series 3-3, turn 4).
-    if not user_text or not any(abs(amount - said) <= 0.011 for said in [*dollars_in(user_text), *amounts_said(user_text)]):
+    theirs = [*dollars_in(user_text or ""), *amounts_said(user_text or "")]
+    if not user_text or not any(abs(amount - said) <= 0.011 for said in theirs):
         return False
     figure = rf"\$\s?{int(amount)}(?:\.{round((amount - int(amount)) * 100):02d})?(?![\d.]*\d)" if amount == round(amount, 2) else None
     if figure is None:
         return False
-    return bool(re.search(_DENIES + figure, text, re.I) or re.search(figure + _YOURS, text, re.I) or re.search(r"\b(?:you|your)\b[^.;!?$]{0,25}" + figure, text, re.I))
+    if re.search(_DENIES + figure, text, re.I) or re.search(figure + _YOURS, text, re.I) or re.search(r"\b(?:you|your)\b[^.;!?$]{0,25}" + figure, text, re.I):
+        return True
+    # A denial of two or more of the shopper's amounts at once: "I could not find a usatoyfactory.com listing at $9.99 or a Learning
+    # Express listing at $12" (series 4-1, turn 19). Between the denying word and this amount there may stand other amounts of the
+    # shopper's message and a site's name with its dot, within the clause; an amount that is not theirs ends the denial.
+    for clause in _CLAUSE_OF_A_REPLY.split(text):
+        at = re.search(figure, clause, re.I)
+        if at is None:
+            continue
+        denials = list(_DENYING_WORD.finditer(clause[:at.start()]))
+        if not denials:
+            continue
+        between = clause[denials[-1].end():at.start()]
+        if len(between) <= 100 and all(any(abs(a - said) <= 0.011 for said in theirs) for a in dollars_in(between)):
+            return True
+    return False
+
+
+_DENYING_WORD = re.compile(r"\b(?:not|no|never|neither|nor|cannot|without)\b|n't\b|\brather\s+than\b|\binstead\s+of\b", re.I)
 
 
 _CLAUSE_OF_A_REPLY = re.compile(r"[.;!?]\s+|,\s+(?:and|but|while|whereas|though|although|yet)\s+", re.I)
@@ -1168,10 +1275,40 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
                       if not rec.caveat and (o := evidence.get(rec.ref)) is not None and not (isinstance(o, CatalogItem) and o.constraint_notes)
                       and (p := best_price(o)) is not None]
             lowest = min(priced, key=lambda ref_price: ref_price[1], default=None)
+            first = evidence.get(draft.recommendations[0].ref)
             if lowest is not None and all(amount > lowest[1] + 0.005 for amount in said):
                 issues.append(Issue(code="superlative_not_true", severity="revise", where="spoken",
                                     message=f"The spoken sentence calls a product the cheapest at ${min(said):.2f}, but {lowest[0]} in the same answer costs "
                                             f"${lowest[1]:.2f}. Give the word to the right product, say how the two differ, or leave it out."))
+            elif first is not None and (cheaper := cheaper_of_its_kind(first, min(said), evidence, {rec.ref for rec in draft.recommendations})) is not None:
+                # "The Safari Wooden Chunky Puzzle is $14.99 now at Learning Express Houston, the cheapest live listing of the ones shown",
+                # with the same puzzle at $7.98 on eBay among the results (series 4-3, turn 26: eight jurors of eleven, contradicted). The
+                # reasons were held to every result of the kind; the sentence that is said was held to the rows of the table.
+                issues.append(Issue(code="superlative_not_true", severity="revise", where="spoken",
+                                    message=f"The spoken sentence calls ${min(said):.2f} the lowest, but {cheaper[0]} among the results, a listing of the same "
+                                            f"kind, costs ${cheaper[1]:.2f}. Give the lowest price with its store, or give the price without calling it the lowest."))
+
+    # ---- "cheaper" said of the product that costs more (series 4-2, turn 26), and a budget said of a product that has no price
+    compared_refs = list(dict.fromkeys([*(rec.ref for rec in draft.recommendations), *(focus or [])]))
+    priced_here = [(ref, p) for ref in compared_refs if (o := evidence.get(ref)) is not None and (p := best_price(o)) is not None]
+    for where, text in (("spoken", draft.spoken), *((rec.ref, rec.why) for rec in draft.recommendations)):
+        wrong = cheaper_said_wrongly(text or "", priced_here) if len(priced_here) >= 2 else None
+        if wrong is not None:
+            called, ref, price = wrong
+            issues.append(Issue(code="comparison_not_true", severity="revise", where=where,
+                                message=f"The text calls the product at ${called:.2f} the cheaper one, but "
+                                        + (f"{ref} in the same answer costs ${price:.2f}" if ref else f"the price it is compared with is ${price:.2f}")
+                                        + ". Say which costs less, with both prices, and what else sets them apart."))
+            break
+    unpriced = budget_said_of_unpriced(draft.spoken if draft.recommendations else "", [o for rec in draft.recommendations if (o := evidence.get(rec.ref)) is not None])
+    said_in = "spoken"                                        # where it is said: a spoken sentence can be rebuilt by code, a reason is sent back
+    for rec in draft.recommendations:
+        if unpriced is None and (o := evidence.get(rec.ref)) is not None and best_price(o) is None and budget_said_of_unpriced(rec.why or "", [o]) is not None:
+            unpriced, said_in = o, rec.ref
+    if unpriced is not None:
+        issues.append(Issue(code="budget_unpriced", severity="revise", where=said_in,
+                            message=f"{unpriced.ref} is said to be within the budget, but no source gives its price. Say that its price is not "
+                                    "stated, and do not call it under the budget; a product whose price is stated may be named as the one that fits."))
 
     # ---- which product suits an age best, and how big pieces are, are stated by no listing (_SUITS_BEST, _PIECE_SIZE)
     for where, text in (("spoken", draft.spoken), *((rec.ref, rec.why) for rec in draft.recommendations)):
@@ -1398,6 +1535,25 @@ def check_draft(draft: AnswerDraft, evidence: Evidence, constraints: Constraints
                                         + "If none is, say in the spoken text that it was not found, and name a result that carries part of its "
                                           "name if there is one."))
             break
+
+    # ---- asked whether a product suits sensitive skin, eczema or an allergy, the spoken answer says what the sources state of it
+    # "Is it safe to give him, and has anyone said it's good for kids with sensitive skin or eczema? Can you check the live web for its
+    # current price too?" was answered "My top pick is the Melissa & Doug Safari Chunky puzzle ... at $11.97 now at Walmart", with the
+    # skin question in a caveat on screen (replays of series 4-1, turn 14; the run lost 2.25 on the turn). Asked once.
+    if user_text and (asked := _SUITS_SKIN.search(re.sub(r'["“][^"“”]{20,}["”]', " ", user_text))) is not None \
+            and not _SUITS_SKIN.search(" ".join([draft.spoken or "", draft.abstain_reason or ""])) and not re.search(r"\bskin\b", draft.spoken or "", re.I):
+        issues.append(Issue(code="suitability_unspoken", severity="revise", where="spoken",
+                            message=f"The shopper asked about '{asked.group(0)}', and the spoken answer does not say. Say in it what the sources "
+                                    "state about that (\"no source says it suits sensitive skin or eczema\"), with the rest of the answer."))
+
+    # ---- a product found in place of one that was not is not called a match for it
+    # "I did not find the Zentrix Hoverboard Pro nine thousand. My closest match is the Hover-1 Helix, at a catalog price of $128.00"
+    # (series 4-1, turn 13: four jurors of ten, contradicted; four of six, overstated). Asked once.
+    if asked_names and not draft.abstain and (match := asserted(_CALLED_A_MATCH, draft.spoken or "")) is not None:
+        issues.append(Issue(code="alternative_called_match", severity="revise", where="spoken",
+                            message=f"'{match.group(0)}': the product asked for was not found, and what was found is another product, not a match for "
+                                    "it. Say that it is a different product (\"the closest hoverboard I found, a different model, is ...\"), and give "
+                                    "no price as the price of the one asked for."))
 
     # ---- a comparison names each product it compares, in the sentence that is said for certain
     # "Can you just compare the Barnyard puzzle and the Created by Me Monster for a 4-year-old?": both were in the answer and on
